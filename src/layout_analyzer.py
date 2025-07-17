@@ -54,24 +54,66 @@ class LayoutAnalyzer:
             "suitable_for": self._determine_layout_purpose(layout),
         }
 
-        # Analyze placeholders directly from layout to preserve custom names
+        # Analyze placeholders directly from layout to preserve custom names and instructions
         for placeholder in layout.placeholders:
             # Use the custom name set in Selection Pane, fallback to generated name
             custom_name = (
                 placeholder.name or f"Placeholder_{placeholder.placeholder_format.idx}"
             )
 
+            # Extract instructional text from placeholder (if any)
+            instructional_text = self._extract_placeholder_instructions(placeholder)
+
             placeholder_info = {
                 "index": placeholder.placeholder_format.idx,
                 "type": placeholder.placeholder_format.type,
                 "name": custom_name,
                 "shape_type": placeholder.shape_type,
+                "instructions": instructional_text,  # Add instructional text
             }
             layout_info["placeholders"].append(placeholder_info)
 
-        # Note: Using direct layout analysis preserves custom names from Selection Pane
+        # Note: Using direct layout analysis preserves custom names and instructions
 
         return layout_info
+
+    def _extract_placeholder_instructions(self, placeholder) -> str:
+        """
+        Extract instructional text from a placeholder in the slide master
+
+        Args:
+            placeholder: PowerPoint placeholder object
+
+        Returns:
+            Instructional text string, or empty string if none found
+        """
+        try:
+            # Try to get text from the placeholder's text frame
+            if hasattr(placeholder, "text_frame") and placeholder.text_frame:
+                if placeholder.text_frame.text:
+                    instruction_text = placeholder.text_frame.text.strip()
+
+                    # Filter out generic PowerPoint defaults
+                    generic_texts = [
+                        "Click to edit Master title style",
+                        "Click to edit Master text styles",
+                        "",
+                    ]
+
+                    # Return instruction text if it's not a generic default
+                    if instruction_text and instruction_text not in generic_texts:
+                        return instruction_text
+
+            elif hasattr(placeholder, "text") and placeholder.text:
+                instruction_text = placeholder.text.strip()
+                if instruction_text:
+                    return instruction_text
+
+        except Exception:
+            # If we can't read the text, that's fine - just continue without instructions
+            pass
+
+        return ""  # Return empty string if no instructional text found
 
     def _determine_layout_purpose(self, layout) -> List[str]:
         """

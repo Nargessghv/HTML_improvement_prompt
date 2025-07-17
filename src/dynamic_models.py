@@ -32,10 +32,13 @@ def create_placeholder_model(layout_info: Dict[str, Any]) -> Type[BaseModel]:
     for placeholder in placeholders:
         placeholder_name = placeholder["name"]
         placeholder_type = placeholder.get("type", 1)
+        instructions = placeholder.get("instructions", "")  # Get instructional text
 
         # Create field with exact placeholder name as key
-        # Add description to help LLM understand what content to generate
-        description = _generate_field_description(placeholder_name, placeholder_type)
+        # Add description including instructional text to help LLM understand what content to generate
+        description = _generate_field_description(
+            placeholder_name, placeholder_type, instructions
+        )
 
         field_definitions[placeholder_name] = (str, Field(description=description))
 
@@ -70,13 +73,16 @@ def create_presentation_models(
     return models
 
 
-def _generate_field_description(placeholder_name: str, placeholder_type: int) -> str:
+def _generate_field_description(
+    placeholder_name: str, placeholder_type: int, instructions: str = ""
+) -> str:
     """
-    Generate helpful description for LLM based on placeholder name and type
+    Generate helpful description for LLM based on placeholder name, type, and instructions
 
     Args:
         placeholder_name: Name of the placeholder
         placeholder_type: PowerPoint placeholder type (1=TITLE, 2=BODY, etc.)
+        instructions: Instructional text from the slide master (if any)
 
     Returns:
         Description string for the field
@@ -92,7 +98,17 @@ def _generate_field_description(placeholder_name: str, placeholder_type: int) ->
 
     base_description = type_descriptions.get(placeholder_type, "content")
 
-    # Enhance description based on placeholder name
+    # Start with the instructional text from slide master if available
+    if instructions:
+        description = f"Generate content for '{placeholder_name}': {instructions}"
+
+        # Add type context if it adds value
+        if base_description not in instructions.lower():
+            description += f" ({base_description})"
+
+        return description
+
+    # Fallback to name-based descriptions if no instructions
     name_lower = placeholder_name.lower()
 
     if "title" in name_lower:
