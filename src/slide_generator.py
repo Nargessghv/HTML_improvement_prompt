@@ -14,6 +14,7 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 from .chart_generator import ChartGenerator
 from .content_generator import ContentGenerator
 from .llm_client import SlideContent
+from .markdown_formatter import MarkdownFormatter
 
 
 class SlideGenerator:
@@ -29,7 +30,8 @@ class SlideGenerator:
         """
         self.template_path = template_path
         self.content_generator = ContentGenerator(template_path)
-        self.chart_generator = ChartGenerator()  # Initialize chart generator
+        self.chart_generator = ChartGenerator()
+        self.markdown_formatter = MarkdownFormatter()  # Initialize markdown formatter
 
     def create_presentation(
         self, topic: str, output_path: str, layout_indices: Optional[List[int]] = None
@@ -564,24 +566,19 @@ class SlideGenerator:
 
     def _set_text_preserving_formatting(self, text_frame, content: str) -> None:
         """
-        Set text content while preserving the original template formatting
+        Set text content with markdown formatting while preserving template styling
 
         Args:
             text_frame: PowerPoint text frame object
-            content: Text content to set
+            content: Markdown-formatted text content to set
         """
         try:
-            # Store original formatting from first paragraph/run before clearing
-            original_format = self._capture_original_formatting(text_frame)
-
-            # Clear existing text but preserve paragraph structure
-            text_frame.clear()
-
-            # Add our content with preserved formatting
-            self._add_formatted_content(text_frame, content, original_format)
+            # Use markdown formatter to apply proper formatting
+            self.markdown_formatter.format_text_frame(text_frame, content)
+            print("  ✓ Applied markdown formatting to content")
 
         except Exception as e:
-            print(f"Error preserving formatting: {e}")
+            print(f"Error applying markdown formatting: {e}")
             # Fallback to simple text setting
             text_frame.text = content
 

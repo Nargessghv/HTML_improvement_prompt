@@ -7,9 +7,12 @@ An AI-powered PowerPoint presentation generator that automatically creates profe
 - **AI-Powered Content Generation**: Uses OpenAI GPT models to create relevant, engaging slide content
 - **Intelligent Presentation Planning**: LLM decides optimal number of slides and strategically reuses layouts
 - **Smart Layout Selection**: Automatically chooses the best slide layouts for your topic
+- **Advanced Markdown Formatting**: LLM generates markdown content that's automatically converted to professional PowerPoint formatting
+- **Custom Placeholder Support**: Works with any custom placeholder names and instructional text from slide master
 - **Chart Creation with ekona Branding**: Automatically creates professional charts using python-pptx with ekona brand colors
 - **Template-Based**: Works with your existing PowerPoint templates
-- **Font & Style Preservation**: Maintains original template formatting, font sizes, and theme styles
+- **Font & Style Preservation**: Maintains original template formatting while applying markdown styling
+- **Dynamic Model Generation**: Creates Pydantic models based on your template for perfect placeholder matching
 - **Modular Architecture**: Clean, maintainable code with separate modules for different functions
 - **Command-Line Interface**: Easy-to-use CLI with multiple options
 - **Content Preview**: Preview generated content before creating slides
@@ -210,8 +213,19 @@ python auto_slides.py "Your Topic" --debug
 
 The Auto Slides Generator **automatically preserves** your PowerPoint template's original formatting, ensuring professional, consistent presentations.
 
+### 🆕 NEW: Template-First Formatting Approach
+
+**FIXED ISSUE**: Previously, content was capped at 20pt font size regardless of template design. Now the system **preserves your template's exact font sizes and styles**.
+
+- **Your Template Rules**: If your title placeholder is Calibri Bold 60pt, content will be Calibri Bold 60pt
+- **No Font Size Caps**: Removes the previous 20pt maximum limitation
+- **Smart Preservation**: Captures template formatting before applying markdown
+- **Graceful Fallbacks**: Handles theme-controlled properties safely
+
 ### How It Works
 
+- **Template Capture**: System reads your template's font sizes, styles, and colors BEFORE generating content
+- **Markdown Enhancement**: Applies **bold**, *italic*, headers, and bullets while preserving base formatting
 - **Theme Inheritance**: Generated content inherits font sizes, colors, and styles from your template's theme
 - **Placeholder Respect**: Different placeholder types (title, content, subtitle) maintain their distinct formatting
 - **No Override**: The system doesn't impose uniform font sizes - your template's design rules apply
@@ -219,10 +233,11 @@ The Auto Slides Generator **automatically preserves** your PowerPoint template's
 
 ### What This Means
 
-✅ **Title placeholders** use your template's title formatting (typically larger, bold)  
-✅ **Content placeholders** use body text formatting (smaller, readable)  
+✅ **Title placeholders** use your template's title formatting (e.g., Calibri Bold 60pt)  
+✅ **Content placeholders** use body text formatting (e.g., Calibri Regular 18pt)  
 ✅ **Bullet point levels** maintain proper hierarchy with different sizes  
 ✅ **Colors and fonts** match your template's theme exactly  
+✅ **Markdown formatting** (bold, italic) enhances content without overriding font sizes
 ✅ **Brand consistency** is automatically maintained  
 
 ### Before vs After
@@ -318,6 +333,59 @@ When generating a "Financial Performance Dashboard" presentation:
 - **Error Handling**: Graceful fallback to text if chart creation fails
 
 This ensures your presentations maintain consistent visual branding while providing rich data visualization capabilities.
+
+## 🎨 Advanced Markdown Formatting
+
+The system now features **intelligent markdown processing** that automatically converts AI-generated markdown content into professional PowerPoint formatting.
+
+### Supported Markdown Elements
+
+#### **Headers**
+- `# Main Header` → Large bold title (24pt)
+- `## Section Header` → Medium bold header (20pt)  
+- `### Subsection` → Small bold header (18pt)
+
+#### **Text Emphasis**
+- `**Bold Text**` → **Bold formatting** in PowerPoint
+- `*Italic Text*` → *Italic formatting* in PowerPoint
+- Combined: `**Bold and *italic* text**` → Proper mixed formatting
+
+#### **Lists**
+- `- Bullet point` → Properly indented bullet lists
+- `* Alternative bullets` → Also creates bullet lists
+- `1. Numbered item` → Numbered lists with proper indentation
+- `2. Second item` → Sequential numbering
+
+#### **Complex Content**
+```markdown
+# Implementation Strategy
+Here are the **key steps** for success:
+
+## Phase 1: Planning
+- **Define objectives** clearly
+- *Identify stakeholders* and requirements
+- Create detailed project timeline
+
+## Phase 2: Development  
+1. **Setup infrastructure** and tools
+2. *Implement core features* systematically
+3. **Test thoroughly** before deployment
+```
+
+### How It Works
+
+1. **LLM Generation**: AI creates content in markdown format with proper structure
+2. **Intelligent Parsing**: System analyzes markdown syntax and identifies elements
+3. **PowerPoint Conversion**: Converts to native PowerPoint formatting (bold, italic, headers, lists)
+4. **Template Integration**: Applies formatting while preserving your template's styling
+
+### Benefits
+
+✅ **Professional Formatting**: Automatic bold, italic, headers, and lists  
+✅ **Consistent Structure**: Well-organized content with proper hierarchy  
+✅ **Visual Appeal**: Enhanced readability with varied font sizes and emphasis  
+✅ **Time Saving**: No manual formatting required  
+✅ **Template Compatibility**: Works with any PowerPoint template
 
 ## 📝 Best Practices
 

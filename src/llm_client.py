@@ -733,13 +733,25 @@ Always respond with only the layout indices as requested."""
         """Get system prompt for content generation"""
         return """You are an expert content creator specializing in presentations. 
 Your task is to generate engaging, informative, and well-structured content 
-for PowerPoint slides. Ensure content is:
-- Clear and concise
+for PowerPoint slides.
+
+FORMATTING REQUIREMENTS:
+- Use MARKDOWN formatting in all your content responses
+- Use **bold** for emphasis and key points
+- Use *italic* for terminology and subtle emphasis  
+- Use # ## ### for headers of different levels
+- Use - or * for bullet points
+- Use 1. 2. 3. for numbered lists
+- Structure content with clear headings and organized lists
+
+Content should be:
+- Clear and concise with professional markdown formatting
 - Appropriate for business/professional audiences
 - Properly formatted for the placeholder type
 - Coherent with the overall topic
+- Visually appealing when converted to PowerPoint format
 
-Always respond in the requested JSON format."""
+Always respond in the requested JSON format with markdown-formatted content."""
 
     def _get_dynamic_content_system_prompt(self) -> str:
         """Get system prompt for dynamic model content generation"""
@@ -747,16 +759,26 @@ Always respond in the requested JSON format."""
 Your task is to generate engaging, informative, and well-structured content 
 for PowerPoint slides using the EXACT field names provided.
 
-CRITICAL: Use the EXACT field names as they appear in the response format. 
-Do NOT shorten, abbreviate, or modify the field names in any way.
+CRITICAL FORMATTING REQUIREMENTS:
+- Use MARKDOWN formatting in your content responses
+- Use **bold** for emphasis and important points
+- Use *italic* for subtle emphasis or terminology
+- Use # for main headers, ## for subheaders, ### for smaller headers
+- Use - or * for bullet points
+- Use 1. 2. 3. for numbered lists
+- Structure content with proper headings and lists for visual appeal
 
-Ensure content is:
-- Clear and concise
+FIELD NAME REQUIREMENT:
+- Use the EXACT field names as they appear in the response format
+- Do NOT shorten, abbreviate, or modify the field names in any way
+
+Content should be:
+- Clear and concise with proper markdown formatting
 - Appropriate for business/professional audiences
-- Properly formatted for the placeholder type
+- Properly structured with headers, lists, and emphasis
 - Coherent with the overall topic
 
-Follow the structured response format exactly."""
+Follow the structured response format exactly and use markdown formatting throughout."""
 
     def _parse_layout_selection(self, response: str) -> List[int]:
         """Parse layout indices from LLM response"""
