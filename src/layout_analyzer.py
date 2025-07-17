@@ -54,22 +54,22 @@ class LayoutAnalyzer:
             "suitable_for": self._determine_layout_purpose(layout),
         }
 
-        # Create a temporary slide to get actual placeholder names
-        temp_slide = self.presentation.slides.add_slide(layout)
+        # Analyze placeholders directly from layout to preserve custom names
+        for placeholder in layout.placeholders:
+            # Use the custom name set in Selection Pane, fallback to generated name
+            custom_name = (
+                placeholder.name or f"Placeholder_{placeholder.placeholder_format.idx}"
+            )
 
-        # Analyze placeholders from the actual slide (these are the real names)
-        for placeholder in temp_slide.placeholders:
             placeholder_info = {
                 "index": placeholder.placeholder_format.idx,
                 "type": placeholder.placeholder_format.type,
-                "name": placeholder.name
-                or f"Placeholder_{placeholder.placeholder_format.idx}",
+                "name": custom_name,
                 "shape_type": placeholder.shape_type,
             }
             layout_info["placeholders"].append(placeholder_info)
 
-        # Note: We keep temporary slides to avoid XML manipulation issues
-        # Template will have extra slides, but placeholder names will be correct
+        # Note: Using direct layout analysis preserves custom names from Selection Pane
 
         return layout_info
 

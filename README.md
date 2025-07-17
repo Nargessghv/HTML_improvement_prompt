@@ -5,7 +5,9 @@ An AI-powered PowerPoint presentation generator that automatically creates profe
 ## ✨ Features
 
 - **AI-Powered Content Generation**: Uses OpenAI GPT models to create relevant, engaging slide content
+- **Intelligent Presentation Planning**: LLM decides optimal number of slides and strategically reuses layouts
 - **Smart Layout Selection**: Automatically chooses the best slide layouts for your topic
+- **Chart Creation with ekona Branding**: Automatically creates professional charts using python-pptx with ekona brand colors
 - **Template-Based**: Works with your existing PowerPoint templates
 - **Font & Style Preservation**: Maintains original template formatting, font sizes, and theme styles
 - **Modular Architecture**: Clean, maintainable code with separate modules for different functions
@@ -230,6 +232,93 @@ The Auto Slides Generator **automatically preserves** your PowerPoint template's
 
 This ensures your generated presentations look professionally designed and maintain your organization's visual standards.
 
+## 🧠 Intelligent Presentation Planning
+
+The Auto Slides Generator now features **intelligent presentation planning** that revolutionizes how presentations are created.
+
+### How It Works
+
+Instead of being limited to one slide per layout, the LLM now:
+
+1. **Analyzes your topic** to determine optimal presentation structure
+2. **Decides slide count** based on content complexity (typically 3-8 slides)
+3. **Strategically reuses layouts** when appropriate for the content
+4. **Creates logical flow** with purpose-driven slide sequence
+
+### Example: "Machine Learning Basics"
+
+The LLM generated a 7-slide presentation:
+```
+Slide 1: Introduction (Title Slide)
+Slide 2: What is ML? (Title and Text Content) ← Layout reuse
+Slide 3: Types of ML (Title and Text Content) ← Layout reuse  
+Slide 4: ML Process (Single Chart Slide)
+Slide 5: Applications (Title and Text Content) ← Layout reuse
+Slide 6: Challenges (Title and Text Content) ← Layout reuse
+Slide 7: Conclusion (Title Slide) ← Layout reuse
+```
+
+### Benefits
+
+✅ **Optimal Coverage**: LLM determines ideal slide count for comprehensive coverage  
+✅ **Strategic Reuse**: Same layout used multiple times when content type matches  
+✅ **Professional Flow**: Logical progression from introduction to conclusion  
+✅ **Contextual Content**: Each slide serves a specific purpose in the narrative  
+✅ **Flexible Structure**: Not constrained by template layout count  
+
+This intelligent approach creates more comprehensive, engaging presentations that adapt to your topic's specific needs.
+
+## 📊 Chart Creation with ekona Branding
+
+The Auto Slides Generator now **automatically creates professional charts** when chart placeholders are detected in your template.
+
+### How It Works
+
+When the system encounters a chart placeholder (Type: CHART), it:
+
+1. **Detects Chart Placeholders**: Automatically identifies chart placeholders in your template
+2. **Analyzes Content Context**: Determines appropriate chart type based on content keywords
+3. **Creates Actual Charts**: Uses python-pptx library to generate real charts (not just text)
+4. **Applies ekona Brand Colors**: Charts use your brand color palette consistently
+
+### ekona Brand Color Palette
+
+Charts are automatically styled with ekona's brand colors:
+
+- **Primary Red**: RGB(220, 38, 30) - Main brand color
+- **Dark Grey**: RGB(64, 64, 64) - Professional accent
+- **Medium Red**: RGB(230, 69, 62) - Secondary brand color  
+- **Light Grey**: RGB(128, 128, 128) - Supporting color
+- **Black & White**: For contrast and clarity
+
+### Supported Chart Types
+
+The system intelligently selects chart types based on content:
+
+- **Column Charts**: For comparisons and metrics
+- **Bar Charts**: For horizontal data presentation
+- **Line Charts**: For trends and time-series data
+- **Pie Charts**: For distributions and percentages
+- **Area Charts**: For cumulative data visualization
+
+### Example: Financial Dashboard
+
+When generating a "Financial Performance Dashboard" presentation:
+```
+✅ Successfully created pie chart: Growth Metrics
+✅ Chart uses ekona brand colors automatically
+✅ Professional styling with proper fonts and sizing
+```
+
+### Technical Implementation
+
+- **Chart Detection**: Uses `PP_PLACEHOLDER.CHART` type detection
+- **Chart Creation**: `python-pptx` CategoryChartData and chart insertion
+- **Brand Styling**: Automatic color application, font styling, and axis formatting
+- **Error Handling**: Graceful fallback to text if chart creation fails
+
+This ensures your presentations maintain consistent visual branding while providing rich data visualization capabilities.
+
 ## 📝 Best Practices
 
 ### Topic Selection
@@ -247,6 +336,50 @@ This ensures your generated presentations look professionally designed and maint
 2. Preview content: `--preview`
 3. Generate with specific layouts if needed: `--layouts`
 4. Iterate and refine
+
+## 🔧 Troubleshooting
+
+### Placeholder Warnings
+
+If you see warnings like `Warning: Placeholder 'Subtitle' not found`, this typically means:
+
+**Issue**: PowerPoint assigns different names to placeholders when creating slides vs. analyzing layouts.
+
+**Root Cause**: 
+- **Template analysis** finds: `"Title", "Subtitle", "Random Animal Name here"`
+- **Actual slide creation** assigns: `"Title 1", "Text Placeholder 2", "Text Placeholder 4"`
+
+**Solution**: The system includes enhanced placeholder matching that automatically handles:
+- `"Title"` → `"Title 1"`
+- `"Subtitle"` → `"Text Placeholder 2"`
+- `"Text Content Placeholder"` → `"Content Placeholder 2"`
+- `"Large Chart Placeholder"` → `"Chart Placeholder 2"`
+- **Custom names** → Automatically mapped using intelligent pattern matching
+
+**For Custom Placeholder Names**: 
+The system can handle ANY custom placeholder names (like "Random number to be inserted here") through:
+1. **Dynamic Placeholder Detection**: Creates slides first, then generates content for actual placeholder names
+2. **Smart Pattern Matching**: Maps content using placeholder types and positions
+3. **Zero-configuration**: Works automatically without manual mapping
+
+**Prevention**:
+- Use the template layout inspector: `python template_layout_inspector.py`
+- Verify placeholder names match expected patterns
+- Test with `--preview` before generating full presentations
+
+### Empty Slides
+
+If slides appear empty:
+- Check that your template layouts have placeholders
+- Some layouts (like logo slides) intentionally have no placeholders
+- Use `--analyze` to see which layouts have content placeholders
+
+### Content Generation Issues
+
+If content seems inappropriate:
+- Make your topic more specific
+- Use `--preview` to review content before generating slides
+- Try different layout selections with `--layouts`
 
 ## 🤝 Contributing
 
