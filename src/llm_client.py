@@ -2,6 +2,7 @@
 LLM Client Module
 
 This module handles communication with OpenAI's API for content generation.
+Supports both direct OpenAI API calls and Langchain integration for unified tracing.
 """
 
 import json
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
+from langchain_openai import ChatOpenAI
 from openai import OpenAI
 
 from .llm_models import LayoutSelection, PresentationPlan, SlideSpec
@@ -26,8 +29,280 @@ class SlideContent:
     content: Dict[str, str]  # placeholder_name -> content
 
 
+class LangchainLLMClient:
+    """
+    Langchain-compatible LLM client for unified tracing with Langfuse
+
+    This client uses Langchain's ChatOpenAI and works with callback handlers
+    to provide unified tracing across the entire workflow.
+    """
+
+    def __init__(self, model: str = "gpt-4o-mini"):
+        """
+        Initialize the Langchain LLM client
+
+        Args:
+            model: OpenAI model to use
+        """
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+
+        # Initialize Langchain ChatOpenAI
+        self.chat_client = ChatOpenAI(
+            model=self.model,
+            max_completion_tokens=self.max_tokens,
+            temperature=0.7,
+        )
+
+    def generate_structured_content(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: Any,
+        config: Optional[RunnableConfig] = None,
+    ) -> Any:
+        """
+        Generate structured content using Langchain with callback support
+
+        Args:
+            system_prompt: System instructions
+            user_prompt: User input
+            response_model: Pydantic model for structured output
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Generated content in the specified format
+        """
+        try:
+            # Create structured chat client
+            structured_client = self.chat_client.with_structured_output(response_model)
+
+            # Create messages
+            messages = [
+                ("system", system_prompt),
+                ("human", user_prompt),
+            ]
+
+            # Generate with callback support
+            response = structured_client.invoke(messages, config=config)
+            return response
+
+        except Exception as e:
+            print(f"❌ Error generating structured content: {e}")
+            raise
+
+    def generate_content(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> str:
+        """
+        Generate text content using Langchain with callback support
+
+        Args:
+            system_prompt: System instructions
+            user_prompt: User input
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Generated text content
+        """
+        try:
+            # Create messages
+            messages = [
+                ("system", system_prompt),
+                ("human", user_prompt),
+            ]
+
+            # Generate with callback support
+            response = self.chat_client.invoke(messages, config=config)
+
+            # Ensure we return a string
+            if hasattr(response, "content"):
+                return str(response.content)
+            return str(response)
+
+        except Exception as e:
+            print(f"❌ Error generating content: {e}")
+            raise
+
+    def generate_contextual_slide_content(
+        self,
+        layout_info: Dict[str, Any],
+        topic: str,
+        slide_spec: Any,  # SlideSpec object
+        slide_number: int,
+        total_slides: int,
+        dynamic_model: Optional[Any] = None,
+        config: Optional[RunnableConfig] = None,
+    ) -> Optional[Any]:  # SlideContent object
+        """
+        Generate content for a specific slide with contextual awareness using Langchain
+
+        Args:
+            layout_info: Information about the slide layout
+            topic: The overall presentation topic
+            slide_spec: Specification for this particular slide
+            slide_number: Current slide number (1-indexed)
+            total_slides: Total number of slides in presentation
+            dynamic_model: Dynamic Pydantic model for exact placeholder matching
+            config: Langchain configuration with callbacks
+
+        Returns:
+            SlideContent object or None if generation fails
+        """
+        prompt = self._create_contextual_content_prompt(
+            layout_info, topic, slide_spec, slide_number, total_slides
+        )
+
+        try:
+            # Use dynamic model if provided for perfect placeholder matching
+            if dynamic_model:
+                system_prompt = self._get_content_generation_system_prompt()
+                response = self.generate_structured_content(
+                    system_prompt=system_prompt,
+                    user_prompt=prompt,
+                    response_model=dynamic_model,
+                    config=config,
+                )
+
+                if response:
+                    # Convert dynamic model response to SlideContent
+                    content_dict = {}
+                    for field_name, field_value in response.__dict__.items():
+                        if field_value is not None:
+                            content_dict[field_name] = str(field_value)
+
+                    return SlideContent(
+                        layout_index=slide_spec.layout_index,
+                        content=content_dict,
+                    )
+
+            # Fallback to text generation
+            system_prompt = self._get_content_generation_system_prompt()
+            response_text = self.generate_content(
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                config=config,
+            )
+
+            # Parse response and create SlideContent
+            placeholders = layout_info.get("placeholders", {})
+            content_dict = {}
+
+            # Handle placeholders list vs dict format
+            if isinstance(placeholders, list):
+                # Convert list of placeholder objects to names
+                placeholder_names = [
+                    p.get("name", f"placeholder_{i}") if isinstance(p, dict) else str(p)
+                    for i, p in enumerate(placeholders)
+                ]
+            elif isinstance(placeholders, dict):
+                placeholder_names = list(placeholders.keys())
+            else:
+                placeholder_names = []
+
+            # Simple content extraction for fallback
+            if placeholder_names:
+                if len(placeholder_names) == 1:
+                    # Single placeholder - use entire response
+                    content_dict[placeholder_names[0]] = response_text
+                else:
+                    # Multiple placeholders - split content
+                    lines = response_text.split("\n\n")
+                    for i, placeholder in enumerate(placeholder_names):
+                        if i < len(lines):
+                            content_dict[placeholder] = lines[i].strip()
+                        else:
+                            content_dict[placeholder] = f"Content for {placeholder}"
+
+            return SlideContent(
+                layout_index=slide_spec.layout_index,
+                content=content_dict,
+            )
+
+        except Exception as e:
+            print(
+                f"❌ Error generating contextual content for slide {slide_number}: {e}"
+            )
+            return self._create_fallback_content(
+                layout_info, topic, slide_spec.layout_index
+            )
+
+    def _create_contextual_content_prompt(
+        self,
+        layout_info: Dict[str, Any],
+        topic: str,
+        slide_spec: Any,
+        slide_number: int,
+        total_slides: int,
+    ) -> str:
+        """Create a contextual prompt for slide content generation"""
+        placeholders = layout_info.get("placeholders", {})
+
+        # Handle placeholders list vs dict format
+        if isinstance(placeholders, list):
+            placeholder_list = [
+                p.get("name", f"placeholder_{i}") if isinstance(p, dict) else str(p)
+                for i, p in enumerate(placeholders)
+            ]
+        elif isinstance(placeholders, dict):
+            placeholder_list = list(placeholders.keys())
+        else:
+            placeholder_list = []
+
+        return f"""
+Create compelling content for slide {slide_number} of {total_slides}:
+
+Topic: {topic}
+Slide Title: {getattr(slide_spec, 'slide_title', 'Slide Title')}
+Slide Purpose: {getattr(slide_spec, 'slide_purpose', 'Present information')}
+
+Available placeholders: {', '.join(placeholder_list)}
+
+Requirements:
+- Make content engaging and informative
+- Ensure content fits the slide's purpose in the overall presentation
+- Keep content appropriate for a professional presentation
+- Make content relevant to the specific slide context
+"""
+
+    def _get_content_generation_system_prompt(self) -> str:
+        """Get system prompt for content generation"""
+        return """You are an expert content creator for professional presentations. 
+Create engaging, informative, and well-structured content that effectively 
+communicates key messages to the audience."""
+
+    def _create_fallback_content(
+        self, layout_info: Dict[str, Any], topic: str, layout_index: int
+    ) -> Any:
+        """Create basic fallback content when generation fails"""
+        placeholders = layout_info.get("placeholders", {})
+        content_dict = {}
+
+        # Handle placeholders list vs dict format
+        if isinstance(placeholders, list):
+            placeholder_names = [
+                p.get("name", f"placeholder_{i}") if isinstance(p, dict) else str(p)
+                for i, p in enumerate(placeholders)
+            ]
+        elif isinstance(placeholders, dict):
+            placeholder_names = list(placeholders.keys())
+        else:
+            placeholder_names = []
+
+        for placeholder_name in placeholder_names:
+            content_dict[placeholder_name] = f"Content about {topic}"
+
+        return SlideContent(
+            layout_index=layout_index,
+            content=content_dict,
+        )
+
+
 class LLMClient:
-    """Client for OpenAI API communication"""
+    """Client for OpenAI API communication (legacy direct API)"""
 
     def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         """

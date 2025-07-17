@@ -56,7 +56,7 @@ package-lock.json
 
 # Generated presentations (keep template.pptx)
 *.pptx
-!template.pptx
+!ekona_slides_template_new.pptx
 
 # Logs
 *.log

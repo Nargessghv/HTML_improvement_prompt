@@ -1,213 +1,158 @@
 # PowerPoint Slide Creator
 
-An AI-powered tool that generates professional PowerPoint presentations from text prompts using intelligent layout selection and content generation.
+An AI-powered slide generation system using **agent-based architecture** with **unified Langfuse tracing** for comprehensive monitoring and analytics.
 
-## 🆕 NEW: Icon Integration (Layout 8)
+## 🌟 Key Features
 
-The system now supports **automatic icon selection and insertion** for Layout 8 ("Slide with icons and short text as a list of items"). 
+### **🤖 Agent-Based Architecture**
+- **5 Specialized Agents**: Layout Analysis → Planning → Content Generation → Quality Review → Assembly
+- **LangGraph Orchestration**: Coordinated workflow with error handling and retry logic
+- **Unified Generation**: Single workflow system - eliminates duplicate content generation
+- **Modular Design**: Each agent handles specific aspects of presentation creation
 
-### How Icon Integration Works
+### **📊 Unified Langfuse Tracing** ✨ **NEW**
+- **Single Comprehensive Trace**: Complete workflow visibility in one unified trace
+- **End-to-End Monitoring**: Track all 5 agents and LLM calls in sequence
+- **Enhanced Analytics**: Better insights into workflow performance and costs
+- **Langchain Integration**: Uses `CallbackHandler` for proper trace unification
 
-1. **Intelligent Icon Selection**: The LLM analyzes your slide content and automatically selects appropriate icons from 1600+ Lucide icons
-2. **Swiss Red Styling**: All icons are automatically converted to Swiss red color to match your brand
-3. **High Resolution**: Icons are converted to PNG format at optimal resolution for presentations
-4. **Content-Aware**: Icons are chosen based on the semantic meaning of the accompanying text
+### **🧠 Enhanced Content Generation**
+- **Contextual Awareness**: Each slide generated with full presentation context
+- **Presentation Outline**: Shows complete slide structure before generation
+- **Dynamic Models**: Perfect placeholder matching using Pydantic models
+- **Quality Assessment**: Content completeness and relevance metrics
 
-### Layout 8 Structure
+### **🎨 Advanced Slide Creation**
+- **Layout Analysis**: Automatic template analysis and dynamic model creation
+- **Intelligent Planning**: LLM-powered slide structure optimization
+- **Icon Integration**: Automatic icon insertion with visual elements
+- **Chart Generation**: Data visualization with branded styling
 
-Layout 8 provides:
-- 1 title placeholder: "Conclusion Title" 
-- 3 icon placeholders: "Icon 1", "Icon 2", "Icon 3"
-- 3 text placeholders: "Text Beside Icon 1", "Text Beside Icon 2", "Text Beside Icon 3"
+## 🚀 Quick Start
 
-Example usage:
+### Using the Agent-Based Workflow (Recommended)
+
 ```bash
-python3 auto_slides.py "AI Business Solutions" --layouts "8"
+# Preview the agent workflow
+python -m src.agent_main "Your Topic" --preview
+
+# Generate presentation with unified tracing
+python -m src.agent_main "Your Topic" --template template.pptx --output result.pptx
 ```
 
-This will generate a slide with:
-- A title about AI Business Solutions
-- 3 automatically selected icons (e.g., trending-up, users, lightbulb)
-- 3 corresponding text descriptions (max 10 words each)
-- All icons rendered in Swiss red
+## 📈 Monitoring & Analytics
 
-## Features
+### **Langfuse Dashboard Integration**
+- **Unified Traces**: See complete workflow in single trace view
+- **Agent Performance**: Track each agent's execution time and success rate
+- **LLM Usage**: Comprehensive token usage and cost tracking
+- **Quality Metrics**: Content completeness and relevance scores
 
-- **Intelligent Layout Selection**: AI automatically chooses the best slide layouts for your content
-- **Dynamic Content Generation**: Creates engaging, contextually relevant slide content
-- **Template-Based**: Works with your existing PowerPoint templates
-- **Icon Integration**: Automatically selects and inserts relevant icons (Layout 8)
-- **Chart Support**: Generates charts and data visualizations when appropriate
-- **Markdown Formatting**: Supports rich text formatting in slide content
+### **What You'll See in Langfuse:**
 
-## Requirements
+**Before (Individual Traces):**
+```
+❌ OpenAI-generation (slide 1)
+❌ OpenAI-generation (slide 2) 
+❌ OpenAI-generation (slide 3)
+```
 
-- Python 3.8+
-- OpenAI API key
-- PowerPoint template file
+**Now (Unified Trace):**
+```
+✅ slide_generation_workflow
+   ├── Layout Analysis Agent
+   ├── Presentation Planning Agent  
+   ├── Content Generation Agent
+   ├── Quality Review Agent
+   └── Slide Assembly Agent
+```
 
-### Dependencies
+## 🔧 Agent Workflow Details
+
+### **1. 🔍 Layout Analysis Agent**
+- Analyzes PowerPoint template layouts
+- Creates dynamic Pydantic models for exact placeholder matching
+- Identifies suitable layouts for different content types
+
+### **2. 📋 Presentation Planning Agent** 
+- Uses LLM to create intelligent slide structure
+- Selects optimal layouts for each slide's purpose
+- Ensures logical flow and narrative coherence
+
+### **3. ✍️ Content Generation Agent**
+- Generates contextual content with full presentation awareness
+- Shows complete presentation outline before generation
+- Uses dynamic models for perfect placeholder alignment
+
+### **4. 🎯 Quality Review Agent**
+- Assesses content completeness and topic relevance
+- Provides quality metrics and improvement suggestions
+- Ensures professional presentation standards
+
+### **5. 🔧 Slide Assembly Agent**
+- Creates final PowerPoint presentation
+- Applies formatting, icons, and visual elements
+- Handles template mapping and content placement
+
+## 🛠️ Requirements
 
 ```bash
 pip install -r requirements.txt
 ```
 
-For icon conversion (optional but recommended):
-```bash
-# macOS with Homebrew
-brew install cairo
+### Environment Setup
 
-# Ubuntu/Debian
-sudo apt-get install libcairo2-dev
-
-# Windows
-# Download and install Cairo libraries
+Create a `.env` file:
+```env
+OPENAI_API_KEY=your_openai_api_key
+LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+LANGFUSE_SECRET_KEY=your_langfuse_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-## Quick Start
-
-1. **Set up your environment**:
-   ```bash
-   export OPENAI_API_KEY="your-api-key-here"
-   ```
-
-2. **Generate a presentation**:
-   ```bash
-   python3 auto_slides.py "Your presentation topic"
-   ```
-
-3. **Use specific layouts** (including icon-enabled Layout 8):
-   ```bash
-   python3 auto_slides.py "Digital Transformation" --layouts "1,5,8,9"
-   ```
-
-## Available Layouts
-
-- **Layout 0**: Main Logo Start Slide
-- **Layout 1**: Title Slide with subtitle and presenter
-- **Layout 2**: Why Ekona slide 
-- **Layout 3**: Why Ekona slide 2
-- **Layout 4**: Title and Picture
-- **Layout 5**: Title and Text Content
-- **Layout 6**: Single Chart Slide
-- **Layout 7**: Title and Two Column Content
-- **🆕 Layout 8**: Slide with icons and short text (NEW!)
-- **Layout 9**: Conclusion Slide
-
-## Icon Integration Details
-
-### Icon Categories Available
-
-- **Business**: briefcase, building, chart, graph, presentation, target, trending, users, team, office
-- **Technology**: cpu, database, server, code, robot, computer, settings, gear, tool, wrench, monitor  
-- **Communication**: message, mail, phone, chat, speak, voice, megaphone, bell, notification
-- **Data**: bar-chart, pie-chart, analytics, stats, graph, trend, file, folder, document
-- **UI Elements**: check, x, plus, minus, star, heart, thumb, eye, edit, trash, download
-- **Arrows**: arrow, chevron, triangle, move, corner, expand
-- **Social**: share, link, globe, network, users, person
-- **Finance**: dollar, euro, pound, credit-card, bank, coin, wallet, payment
-- **General**: Various other icons for flexibility
-
-### Icon Selection Algorithm
-
-The system uses a multi-step process:
-1. **Content Analysis**: Extracts keywords from slide text
-2. **Semantic Matching**: Maps content concepts to appropriate icons
-3. **LLM Enhancement**: Uses AI to select the most contextually relevant icons
-4. **Validation**: Ensures selected icons exist in the icon database
-5. **Fallback**: Provides sensible defaults if selection fails
-
-## Usage Examples
-
-### Basic Usage
-```bash
-# Generate presentation with automatic layout selection
-python3 auto_slides.py "Machine Learning in Healthcare"
-
-# Use specific layouts including icons
-python3 auto_slides.py "Customer Success Strategy" --layouts "1,5,8"
-
-# Preview content before generating
-python3 auto_slides.py "Product Roadmap" --preview
-```
-
-### Advanced Usage
-```bash
-# Analyze template layouts
-python3 auto_slides.py --analyze
-
-# Generate with custom output name
-python3 auto_slides.py "Q4 Results" --output "quarterly_presentation"
-```
-
-## File Structure
+## 📊 Example Output
 
 ```
-src/
-├── __init__.py
-├── main.py                 # Main slide generation logic
-├── content_generator.py    # LLM content generation
-├── slide_generator.py      # PowerPoint slide creation
-├── layout_analyzer.py      # Template layout analysis
-├── llm_client.py          # OpenAI API integration
-├── llm_models.py          # Pydantic models
-├── dynamic_models.py      # Dynamic model generation
-├── chart_generator.py     # Chart creation
-├── markdown_formatter.py  # Text formatting
-├── icon_manager.py        # Icon management and conversion (NEW!)
-└── icon_selector.py       # AI-powered icon selection (NEW!)
+🚀 Starting AI-powered slide generation workflow...
+✅ Unified Langfuse tracing enabled for workflow
+⚡ Executing agent workflow...
+
+🔍 layout_analyzer: Analyzed 10 layouts
+📋 presentation_planner: Created plan with 5 slides
+✍️ content_generator: Generated content for 5 slides
+🎯 quality_reviewer: Quality review complete (100% completeness)
+🔧 slide_assembler: Presentation saved to output.pptx
+
+🎉 Agent-based presentation generation completed successfully!
+📈 View detailed analytics at your Langfuse dashboard
 ```
 
-## Testing Icon Integration
+## 🎯 Benefits
 
-Run the icon integration test:
-```bash
-python3 test_icon_integration.py
-```
+- **🔄 Complete Workflow Visibility**: Unified traces show entire agent flow
+- **📈 Better Analytics**: Comprehensive metrics across all agents  
+- **🐛 Improved Debugging**: Full context when issues occur
+- **💰 Cost Tracking**: Complete token usage across workflow
+- **⚡ Performance Insights**: End-to-end workflow timing
+- **🤖 Agent Performance**: Individual agent success rates and bottlenecks
 
-This will test:
-- Icon database creation
-- Icon suggestion algorithm  
-- Icon selection for sample content
-- Template layout analysis
-- Icon conversion (if Cairo libraries available)
+## 🔬 Technical Architecture
 
-## Configuration
+- **Framework**: LangGraph for agent orchestration
+- **LLM Integration**: Langchain with OpenAI ChatGPT
+- **Monitoring**: Langfuse with unified callback tracing
+- **Template Processing**: python-pptx for PowerPoint manipulation
+- **Content Models**: Dynamic Pydantic models for structured output
 
-### Environment Variables
+## 📝 Recent Updates
 
-- `OPENAI_API_KEY`: Your OpenAI API key (required)
-- `OPENAI_MODEL`: Model to use (default: gpt-4o)
+### ✨ Version 2.0 - Unified Tracing & Enhanced Agents
+- **🎯 Unified Langfuse Tracing**: Complete workflow in single trace
+- **🤖 Agent-Based Architecture**: 5 specialized agents with LangGraph
+- **📊 Enhanced Monitoring**: Comprehensive analytics and performance tracking
+- **🧠 Contextual Content**: Presentation-aware slide generation
+- **🎨 Quality Assessment**: Content completeness and relevance metrics
 
-### Template Requirements
+---
 
-- Template must be a valid PowerPoint (.pptx) file
-- Layout 8 should have picture placeholders for icons
-- Placeholder names should match expected format
-
-## Troubleshooting
-
-### Icon Conversion Issues
-
-If you see "Icon conversion not available":
-1. Install Cairo libraries for your system
-2. Install cairosvg: `pip install cairosvg`
-3. Restart your terminal session
-
-### Common Issues
-
-- **"Layout 8 not found"**: Check your template file has the correct layout
-- **"No icons selected"**: Verify your content has descriptive text
-- **"OpenAI API error"**: Check your API key and quota
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly (including icon integration)
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License. 
+**🚀 Ready to create intelligent presentations with unified tracing!** 
