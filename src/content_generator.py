@@ -113,10 +113,23 @@ class ContentGenerator:
 
         # Use intelligent planning or provided layouts
         if layout_indices is None:
+            print("🧠 Using intelligent LLM-based layout planning")
             # Use intelligent presentation planning
             presentation_plan = self.generate_intelligent_presentation_plan(topic)
             slide_contents = self._generate_contents_from_plan(topic, presentation_plan)
         else:
+            print(f"📋 Using provided layout indices: {layout_indices}")
+            if len(layout_indices) >= 5:
+                max_check = min(5, len(layout_indices))
+                is_sequential = all(
+                    layout_indices[i] == layout_indices[i - 1] + 1
+                    for i in range(1, max_check)
+                )
+                if is_sequential:
+                    print("⚠️ WARNING: Sequential layout assignment detected!")
+                    print("   Consider using intelligent planning instead")
+                    print("   (set layout_indices=None)")
+
             # Use provided layout indices (backward compatibility)
             slide_contents = self._generate_contents_from_layouts(topic, layout_indices)
 
@@ -329,7 +342,8 @@ class ContentGenerator:
         self, topic: str, layout_indices: List[int]
     ) -> List[SlideContent]:
         """
-        Generate content from layout indices using dynamic models (backward compatibility)
+        Generate content from layout indices using
+        dynamic models (backward compatibility)
 
         Args:
             topic: The presentation topic

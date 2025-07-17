@@ -45,6 +45,11 @@ class SlideGenerationState(TypedDict):
     # Content generation results
     slide_contents: Optional[List[SlideContent]]
 
+    # Icon validation results
+    icon_errors: Optional[List[str]]
+    icon_corrections: Optional[Dict[str, str]]
+    needs_icon_retry: bool
+
     # Final output
     presentation_path: Optional[str]
     success: bool
@@ -154,6 +159,18 @@ class PresentationPlanningAgent:
 
             # Extract layout indices from the plan
             selected_layouts = [spec.layout_index for spec in presentation_plan]
+
+            # Add debugging to detect sequential layout assignment
+            if len(selected_layouts) >= 5:
+                is_sequential = all(
+                    selected_layouts[i] == selected_layouts[i - 1] + 1
+                    for i in range(1, min(5, len(selected_layouts)))
+                )
+                if is_sequential:
+                    print("⚠️ WARNING: Detected sequential layout assignment!")
+                    print(f"   Layout pattern: {selected_layouts}")
+                    print("   This suggests the LLM defaulted to sequential ordering")
+                    print("   instead of strategic content-based selection.")
 
             # Update state with planning results
             state["presentation_plan"] = presentation_plan
@@ -307,13 +324,29 @@ class PresentationPlanningAgent:
         return f"""
 Create a strategic presentation plan for the topic: "{topic}"
 
-Available layouts:
+Available layouts for you to choose from, you can use the same layout for
+multiple slides when it makes sense.
+
+Here are the layouts:
 {layouts_text}
 
-Requirements:
+🎯 CRITICAL LAYOUT SELECTION REQUIREMENTS:
+1. **DO NOT use layouts sequentially** (0,1,2,3,4,5,6,7,8,9)
+2. **CHOOSE layouts based on CONTENT TYPE**, not sequence
+3. **REUSE effective layouts** for similar content types
+4. **SKIP layouts** that don't fit your content strategy
+
+Strategic Guidelines:
+- **Title slides**: Use layouts with title placeholders (0, 1, 2, 3)  
+- **Content with icons**: Prefer layouts with multiple icon placeholders (8, 7)
+- **Charts/Data**: Use chart-specific layouts (6, 5)
+- **Images**: Use picture-focused layouts (4)
+- **Conclusion**: Use conclusion-specific layouts (9)
+
+Content Planning Requirements:
 1. Use the right number of slides for comprehensive coverage, but do not 
-   exceed 10 slides
-2. Create a logical flow from introduction to conclusion
+   exceed 15 slides
+2. Create a logical flow from introduction to conclusion  
 3. Select appropriate layouts for each slide's content type
 4. Ensure each slide has a clear purpose and advances the narrative
 5. IMPORTANT: You can and SHOULD use the same layout for multiple slides 
@@ -323,13 +356,18 @@ Requirements:
 8. Some slides are available in the template for branding (e.g Logo, why 
    ekona etc..) add them to the presentation plan.
 
-STRATEGIC LAYOUT REUSE GUIDELINES:
-- Don't feel obligated to use every layout - focus on what serves the content 
-  best
-- Quality content with repeated effective layouts is better than forced layout 
-  variety
+🚫 AVOID THESE ANTI-PATTERNS:
+- Sequential layout usage (0,1,2,3,4,5,6,7,8,9)
+- Using every available layout regardless of content fit
+- Forcing layout variety over content quality
+
+✅ PREFERRED PATTERNS:
+- Content-driven selection: [0,1,2,8,8,8,4,9] 
+- Strategic reuse: [0,1,8,8,6,8,9]
+- Purpose-focused: [0,2,4,8,8,8,8,9]
 
 Consider the audience and the topic's complexity when planning the structure.
+Focus on telling a compelling story with the most appropriate layouts.
 """
 
     def _get_planning_system_prompt(self) -> str:
@@ -435,7 +473,8 @@ class ContentGenerationAgent:
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideContent]:
         """
-        Generate content for all slides with full presentation context
+        Generate content for all slides with full presentation context using
+        unified generation for better coherence
 
         Args:
             topic: Presentation topic
@@ -446,11 +485,46 @@ class ContentGenerationAgent:
         Returns:
             List of generated slide content with full contextual awareness
         """
-        slide_contents = []
-
         print("  📋 Presentation Outline:")
         for i, slide_spec in enumerate(presentation_plan, 1):
             print(f"    {i}. {slide_spec.slide_title}")
+
+        print(
+            f"  🔄 Generating ALL {len(presentation_plan)} slides in one unified call..."
+        )
+
+        # Use unified generation for better context and coherence
+        slide_contents = self.llm_client.generate_unified_presentation_content(
+            topic=topic,
+            presentation_plan=presentation_plan,
+            layouts_info=layouts_info,
+            config=config,
+        )
+
+        if slide_contents:
+            print(f"  ✅ Generated unified content for {len(slide_contents)} slides")
+            return slide_contents
+        print("  ⚠️ Unified generation failed, falling back to individual generation")
+        # Fallback to individual generation if unified fails
+        return self._generate_individual_slide_content(
+            topic, presentation_plan, layouts_info, dynamic_models, config
+        )
+
+    def _generate_individual_slide_content(
+        self,
+        topic: str,
+        presentation_plan: List[SlideSpec],
+        layouts_info: Dict[int, Dict[str, Any]],
+        dynamic_models: Dict[int, Any],
+        config: Optional[RunnableConfig] = None,
+    ) -> List[SlideContent]:
+        """
+        Fallback method: Generate content for slides individually
+        (used only if unified generation fails)
+        """
+        slide_contents = []
+
+        print("  🔄 Fallback: Generating slides individually...")
 
         # Generate content for all slides with awareness of the full presentation
         for i, slide_spec in enumerate(presentation_plan, 1):
@@ -466,11 +540,7 @@ class ContentGenerationAgent:
             # Get dynamic model for this layout
             dynamic_model = dynamic_models.get(slide_spec.layout_index)
 
-            # Note: Context tracking for future enhancements
-
             # Generate content with full presentation context
-            # Note: Enhanced contextual information is used internally by the agent
-            # but passed through the existing LLM client interface
             slide_content = self.llm_client.generate_contextual_slide_content(
                 layout_info=layout_info,
                 topic=topic,
@@ -529,34 +599,60 @@ class SlideAssemblyAgent:
             # Import here to avoid circular imports
             from .slide_generator import SlideGenerator
 
-            # Initialize slide generator
+            # Initialize slide generator with icon management
             slide_generator = SlideGenerator(state["template_path"])
 
             # Set up layout information for proper placeholder mapping
             # Use the layouts_info from the LayoutAnalysisAgent
             slide_generator.content_generator.layouts_info = layouts_info
 
-            # Create presentation using the already generated slide contents
-            # from the workflow. This ensures we use the content created
-            # by the ContentGenerationAgent
+            # Pass topic to slide generator for icon-aware content population
+            slide_generator._current_topic = state["topic"]
 
-            # Create PowerPoint presentation from the agent-generated content
-            presentation = slide_generator._create_powerpoint_presentation(
-                slide_contents
-            )
+            # Capture icon errors during presentation creation
+            import io
+            from contextlib import redirect_stderr, redirect_stdout
+
+            # Capture stdout and stderr to collect icon warning messages
+            captured_output = io.StringIO()
+            captured_errors = io.StringIO()
+
+            with redirect_stdout(captured_output), redirect_stderr(captured_errors):
+                # Create presentation using existing working method
+                # The SlideGenerator already has icon support built-in
+                presentation = slide_generator._create_powerpoint_presentation(
+                    slide_contents
+                )
+
+            # Extract icon errors from captured output
+            all_output = captured_output.getvalue() + captured_errors.getvalue()
+            icon_errors = self._extract_icon_errors_from_output(all_output)
+
+            # Print the captured output to user so they can see progress
+            if captured_output.getvalue():
+                print(captured_output.getvalue(), end="")
+
+            # Determine if we need icon validation
+            needs_icon_retry = len(icon_errors) > 0
 
             # Save the presentation
             full_output_path = slide_generator._ensure_output_path(state["output_path"])
             presentation.save(full_output_path)
 
-            output_path = full_output_path
-
-            # Update state with final results
-            state["presentation_path"] = output_path
+            # Update state with results
+            state["presentation_path"] = full_output_path
+            state["icon_errors"] = icon_errors
+            state["needs_icon_retry"] = needs_icon_retry
             state["current_step"] = "assembly_complete"
             state["success"] = True
 
-            print(f"✅ {self.name}: Presentation saved to {output_path}")
+            if icon_errors:
+                print(f"⚠️ {self.name}: Found {len(icon_errors)} icon errors")
+                print(f"🔄 {self.name}: Will proceed to icon validation")
+            else:
+                print(f"✅ {self.name}: No icon errors detected")
+
+            print(f"✅ {self.name}: Presentation saved to {full_output_path}")
 
             return state
 
@@ -566,6 +662,302 @@ class SlideAssemblyAgent:
             state["current_step"] = "error"
             state["success"] = False
             return state
+
+    def _extract_icon_errors_from_output(self, output: str) -> List[str]:
+        """
+        Extract icon error messages from the output stream.
+        This is a placeholder and needs to be implemented based on
+        the actual output format of the SlideGenerator.
+        """
+        icon_errors = []
+        # Example: Look for lines starting with "Warning: SVG icon not found:"
+        # or "Warning: Icon '... not found or failed to prepare"
+        for line in output.splitlines():
+            if line.startswith("Warning: SVG icon not found:"):
+                icon_name = line.replace("Warning: SVG icon not found:", "").strip()
+                icon_errors.append(icon_name)
+            elif line.startswith("Warning: Icon '"):
+                icon_name = (
+                    line.replace("Warning: Icon '", "")
+                    .replace("' not found or failed to prepare", "")
+                    .strip()
+                )
+                icon_errors.append(icon_name)
+        return list(set(icon_errors))  # Remove duplicates
+
+
+class IconValidationAgent:
+    """
+    Agent responsible for validating and correcting invalid icon names
+    when icon errors are detected during slide assembly
+    """
+
+    def __init__(self):
+        self.name = "icon_validator"
+        # Use gpt-4o-mini specifically for icon validation
+        self.llm_client = LangchainLLMClient(model="gpt-4o-mini")
+        # Initialize icon manager to get list of available icons
+        from .icon_manager import IconManager
+
+        self.icon_manager = IconManager()
+
+    @monitor_agent_execution("icon_validator")
+    def execute(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Validate and correct invalid icon names using LLM knowledge
+
+        Args:
+            state: Current workflow state
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Updated state with corrected icon names
+        """
+        print(f"🔍 {self.name}: Validating and correcting icon names...")
+
+        try:
+            # Check if we have icon errors to process
+            icon_errors = state.get("icon_errors", [])
+            if not icon_errors:
+                print(f"✅ {self.name}: No icon errors to correct")
+                state["needs_icon_retry"] = False
+                state["current_step"] = "icon_validation_complete"
+                return state
+
+            print(f"⚠️ {self.name}: Found {len(icon_errors)} icon errors to correct")
+
+            # Extract invalid icon names from error messages
+            invalid_icons = self._extract_invalid_icon_names(icon_errors)
+
+            if not invalid_icons:
+                print(f"✅ {self.name}: No extractable icon names to correct")
+                state["needs_icon_retry"] = False
+                state["current_step"] = "icon_validation_complete"
+                return state
+
+            print(f"🔍 {self.name}: Correcting icons: {invalid_icons}")
+
+            # Use LLM to suggest correct icon names
+            icon_corrections = self._get_icon_corrections_from_llm(
+                invalid_icons, state["topic"], config
+            )
+
+            if icon_corrections:
+                print(f"✅ {self.name}: Generated corrections: {icon_corrections}")
+                state["icon_corrections"] = icon_corrections
+                state["needs_icon_retry"] = True
+                state["current_step"] = "icon_validation_complete"
+            else:
+                print(f"⚠️ {self.name}: No corrections generated")
+                state["needs_icon_retry"] = False
+                state["current_step"] = "icon_validation_complete"
+
+            return state
+
+        except Exception as e:
+            print(f"❌ {self.name}: Error during icon validation: {e}")
+            state["error_message"] = f"Icon validation failed: {str(e)}"
+            state["current_step"] = "error"
+            return state
+
+    def _extract_invalid_icon_names(self, icon_errors: List[str]) -> List[str]:
+        """
+        Extract invalid icon names from error messages
+
+        Args:
+            icon_errors: List of error messages from icon insertion
+
+        Returns:
+            List of invalid icon names
+        """
+        import re
+
+        invalid_icons = []
+
+        for error in icon_errors:
+            # Pattern to extract icon name from error messages like:
+            # "Warning: SVG icon not found:
+            #   node_modules/lucide-static/icons/bar-chart.svg"
+            # "Warning: Icon 'money' not found or failed to prepare"
+
+            # Try pattern 1: from SVG path
+            match = re.search(r"icons/([^/\.]+)\.svg", error)
+            if match:
+                invalid_icons.append(match.group(1))
+                continue
+
+            # Try pattern 2: from quoted icon name
+            match = re.search(r"Icon '([^']+)' not found", error)
+            if match:
+                invalid_icons.append(match.group(1))
+                continue
+
+        return list(set(invalid_icons))  # Remove duplicates
+
+    def _get_icon_corrections_from_llm(
+        self,
+        invalid_icons: List[str],
+        topic: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> Dict[str, str]:
+        """
+        Use LLM to suggest correct lucide-static icon names
+
+        Args:
+            invalid_icons: List of invalid icon names
+            topic: Presentation topic for context
+            config: Langchain configuration
+
+        Returns:
+            Dictionary mapping invalid icons to corrected icons
+        """
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        # Create the correction prompt
+        prompt = self._create_icon_correction_prompt(invalid_icons, topic)
+        system_prompt = self._get_icon_correction_system_prompt()
+
+        try:
+            # Create messages
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt),
+            ]
+
+            # Generate corrections using Langchain
+            response = self.llm_client.chat_client.invoke(messages, config=config)
+
+            if response and response.content:
+                content = str(response.content) if response.content else ""
+                return self._parse_icon_corrections(content, invalid_icons)
+
+            print("⚠️ No response received from LLM for icon corrections")
+            return {}
+
+        except Exception as e:
+            print(f"❌ Error getting icon corrections from LLM: {e}")
+            return {}
+
+    def _create_icon_correction_prompt(
+        self, invalid_icons: List[str], topic: str
+    ) -> str:
+        """Create prompt for LLM icon correction"""
+        invalid_list = ", ".join(invalid_icons)
+
+        # Get the actual list of available icons from the IconManager
+        all_available_icons = self.icon_manager.icons_database.get("all_icons", [])
+
+        # Take a sample of available icons to show in prompt (first 50)
+        # Sort alphabetically for better organization
+        sample_icons = sorted(all_available_icons)
+        available_icons_text = ", ".join(sample_icons)
+
+        # Also get categorized suggestions for context
+        icon_categories = self.icon_manager.icons_database.get("categories", {})
+        category_samples = {}
+        for category, icons in icon_categories.items():
+            if icons:
+                category_samples[category] = icons[:5]  # First 5 from each category
+
+        return f"""
+The following icon names are INVALID in the lucide-static library and need correction:
+{invalid_list}
+
+Presentation topic: {topic}
+
+🎯 AVAILABLE LUCIDE-STATIC ICONS:
+{available_icons_text}
+
+📊 ICON CATEGORIES WITH EXAMPLES:
+{self._format_category_samples(category_samples)}
+
+📋 TOTAL AVAILABLE: {len(all_available_icons)} icons in the lucide-static library
+
+For each invalid icon, suggest the closest valid lucide-static icon name that:
+1. ✅ EXISTS in the lucide-static library (from the list above)
+2. 🎯 Has similar meaning/purpose to the invalid icon
+3. 📝 Fits the presentation topic: "{topic}"
+4. 🔤 Uses exact lucide-static naming (hyphen-separated, lowercase)
+5. 🔤 Is a possible abstraction of the invalid icon (e.g circle-dot for molecule)
+
+Please respond in this EXACT format:
+invalid_icon1 -> valid_icon1
+invalid_icon2 -> valid_icon2
+
+Example:
+bar-chart -> bar-chart-3
+money -> coins
+tools -> wrench
+time -> clock
+check-circle -> circle-check
+"""
+
+    def _format_category_samples(self, category_samples: Dict[str, List[str]]) -> str:
+        """Format category samples for the prompt"""
+        formatted = []
+        for category, icons in category_samples.items():
+            if icons:
+                icons_text = ", ".join(icons)
+                formatted.append(f"  • {category}: {icons_text}")
+        return "\n".join(formatted)
+
+    def _get_icon_correction_system_prompt(self) -> str:
+        """Get system prompt for icon correction"""
+        return """You are an expert lucide-static icon validation specialist with 
+access to the COMPLETE database of all available lucide-static icons.
+
+🎯 YOUR TASK: Correct invalid icon names to valid lucide-static alternatives using 
+the provided comprehensive list of available icons.
+
+🚨 CRITICAL REQUIREMENTS:
+- You have been provided with the COMPLETE list of available lucide-static icons
+- ONLY suggest icon names that appear in the provided list
+- Do NOT rely on general knowledge - use ONLY the provided icon list
+- Choose icons with similar semantic meaning to the invalid ones
+- Consider the presentation context when choosing alternatives
+- Use exact lucide-static naming conventions (lowercase, hyphen-separated)
+
+📋 VALIDATION PROCESS:
+1. Review the invalid icon name
+2. Find semantically similar icons from the provided available list
+3. Select the best match considering the presentation topic
+4. Ensure the suggested icon exists in the provided list
+
+You have been given the actual database of available icons - use this authoritative 
+source to make accurate corrections."""
+
+    def _parse_icon_corrections(
+        self, response_text: str, invalid_icons: List[str]
+    ) -> Dict[str, str]:
+        """
+        Parse LLM response to extract icon corrections
+
+        Args:
+            response_text: Raw LLM response
+            invalid_icons: Original invalid icon names
+
+        Returns:
+            Dictionary mapping invalid to corrected icon names
+        """
+        corrections = {}
+
+        lines = response_text.strip().split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if "->" in line:
+                parts = line.split("->")
+                if len(parts) == 2:
+                    invalid = parts[0].strip()
+                    valid = parts[1].strip()
+
+                    # Only include if the invalid icon was in our original list
+                    if invalid in invalid_icons:
+                        corrections[invalid] = valid
+
+        return corrections
 
 
 class QualityReviewAgent:

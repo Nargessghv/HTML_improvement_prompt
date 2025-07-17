@@ -139,9 +139,11 @@ def _generate_field_description(
         ]
         icon_list = ", ".join(valid_icons[:20])  # Show first 20 icons
         return (
+            f"🚨 CRITICAL: Use ONLY lucide-static icon names. "
             f"Select ONE icon name from this list for '{placeholder_name}': "
             f"{icon_list}. Choose the icon that best represents the content. "
-            f"Respond with ONLY the icon name (e.g., 'users' or 'trending-up')."
+            f"Respond with ONLY the icon name (e.g., 'users' or 'trending-up'). "
+            f"DO NOT use invalid names like 'money', 'tools', 'time', 'exclamation'."
         )
 
     # Map PowerPoint placeholder types to descriptions

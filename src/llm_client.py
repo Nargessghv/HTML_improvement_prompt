@@ -300,6 +300,180 @@ communicates key messages to the audience."""
             content=content_dict,
         )
 
+    def generate_unified_presentation_content(
+        self,
+        topic: str,
+        presentation_plan: List[Any],  # List of SlideSpec objects
+        layouts_info: Dict[int, Dict[str, Any]],
+        config: Optional[RunnableConfig] = None,
+    ) -> Optional[List[Any]]:  # List of SlideContent objects
+        """
+        Generate content for ALL slides in one unified LLM call with full
+        presentation context for better coherence between slides.
+
+        Args:
+            topic: The presentation topic
+            presentation_plan: Complete list of SlideSpec objects
+            layouts_info: Layout information for all slides
+            config: Langchain configuration with callbacks
+
+        Returns:
+            List of SlideContent objects with contextually aware content
+        """
+        prompt = self._create_unified_presentation_prompt(
+            topic, presentation_plan, layouts_info
+        )
+        system_prompt = self._get_unified_generation_system_prompt()
+
+        try:
+            # Import here to avoid circular import
+            from .llm_models import PresentationContent
+
+            # Use structured output with full presentation context
+            response = self.generate_structured_content(
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                response_model=PresentationContent,
+                config=config,
+            )
+
+            if response and hasattr(response, "slide_contents"):
+                print(
+                    f"✅ Generated unified content for "
+                    f"{len(response.slide_contents)} slides"
+                )
+                print(f"📝 Presentation Summary: {response.presentation_summary}")
+
+                # Convert to SlideContent objects
+                slide_contents = []
+                for i, slide_data in enumerate(response.slide_contents):
+                    if i < len(presentation_plan):
+                        slide_content = SlideContent(
+                            layout_index=presentation_plan[i].layout_index,
+                            content=slide_data.placeholder_content,
+                        )
+                        slide_contents.append(slide_content)
+
+                return slide_contents
+
+            return None
+
+        except Exception as e:
+            print(f"❌ Error in unified content generation: {e}")
+            return None
+
+    def _create_unified_presentation_prompt(
+        self,
+        topic: str,
+        presentation_plan: List[Any],
+        layouts_info: Dict[int, Dict[str, Any]],
+    ) -> str:
+        """Create comprehensive prompt for unified presentation generation"""
+
+        # Build detailed presentation outline
+        outline_text = ""
+        detailed_slides = ""
+
+        for i, slide_spec in enumerate(presentation_plan, 1):
+            layout_info = layouts_info.get(slide_spec.layout_index, {})
+            layout_name = layout_info.get("name", f"Layout {slide_spec.layout_index}")
+
+            outline_text += f"{i}. {slide_spec.slide_title}\n"
+
+            # Get placeholder details for this slide
+            placeholders = layout_info.get("placeholders", [])
+            placeholder_details = []
+
+            for p in placeholders:
+                if isinstance(p, dict):
+                    name = p.get("name", "Placeholder")
+                    instructions = p.get("instructions", "")
+                    if instructions:
+                        placeholder_details.append(f"  - {name}: {instructions}")
+                    else:
+                        placeholder_details.append(f"  - {name}")
+                else:
+                    placeholder_details.append(f"  - {str(p)}")
+
+            placeholder_text = (
+                "\n".join(placeholder_details)
+                if placeholder_details
+                else "  - No placeholders"
+            )
+
+            detailed_slides += f"""
+Slide {i}: {slide_spec.slide_title}
+Purpose: {slide_spec.slide_purpose}
+Layout: {layout_name}
+Placeholders:
+{placeholder_text}
+"""
+
+        return f"""Create a comprehensive, coherent presentation about: "{topic}"
+
+PRESENTATION STRUCTURE ({len(presentation_plan)} slides total):
+{outline_text}
+
+DETAILED SLIDE SPECIFICATIONS:
+{detailed_slides}
+
+CRITICAL REQUIREMENTS:
+1. Generate content for ALL {len(presentation_plan)} slides in one unified response
+2. Ensure content flows logically from slide to slide
+3. Maintain consistent messaging and terminology throughout
+4. Each slide should build upon previous slides and prepare for upcoming ones
+5. Use the EXACT placeholder names as specified for each slide
+6. Create engaging, professional content appropriate for business audiences
+7. Ensure content coherence across the entire presentation narrative
+
+CONTENT STRATEGY:
+- Introduction slides should set the stage for detailed content
+- Middle slides should develop key concepts with supporting details
+- Conclusion slides should synthesize and reinforce main messages
+- Use consistent examples and case studies throughout when appropriate
+- Maintain professional tone and clear, concise language
+
+Generate content that creates a unified, compelling presentation experience 
+where each slide contributes to a coherent whole."""
+
+    def _get_unified_generation_system_prompt(self) -> str:
+        """Get system prompt for unified presentation generation"""
+        return """You are an expert presentation content strategist specializing 
+in creating coherent, engaging business presentations. 
+
+Your task is to generate content for an ENTIRE presentation in one unified 
+response, ensuring perfect flow and coherence between all slides.
+
+CRITICAL FORMATTING REQUIREMENTS:
+- Use MARKDOWN formatting in your content responses
+- Use **bold** for emphasis and important points
+- Use *italic* for subtle emphasis or terminology
+- Use # for main headers, ## for subheaders, ### for smaller headers
+- Use - or * for bullet points
+- Use 1. 2. 3. for numbered lists
+- Structure content with proper headings and lists for visual appeal
+
+UNIFIED CONTENT STRATEGY:
+- Consider the ENTIRE presentation narrative when creating each slide
+- Ensure smooth transitions between slides
+- Use consistent terminology and examples throughout
+- Build arguments progressively across slides
+- Create compelling opening, strong development, and memorable conclusion
+- Maintain professional, engaging tone throughout
+
+ICON PLACEHOLDER HANDLING:
+- For icon fields, provide ONLY the icon name 
+  (e.g., "users", "trending-up", "lightbulb")
+- Choose icons that reinforce the overall presentation theme
+- Select contextually appropriate icons for each slide's purpose
+- 🚨 CRITICAL: ONLY use lucide-static icon names that exist in the library
+- You have knowledge of lucide-static - stick to valid icon names only
+- INVALID examples: money, tools, time, exclamation (these don't exist)
+
+Your content should create a presentation that flows like a well-structured 
+story, where each slide serves the overall narrative while standing strong 
+individually."""
+
 
 class LLMClient:
     """Client for OpenAI API communication (legacy direct API)"""
@@ -1055,6 +1229,9 @@ ICON PLACEHOLDER HANDLING:
 - DO NOT provide descriptive text like "Icon representing..." 
 - Examples: "users", "trending-up", "lightbulb" (NOT "Icon showing growth")
 - Select icons that match the slide content and context
+- 🚨 CRITICAL: ONLY use lucide-static icon names that exist in the library
+- You have knowledge of lucide-static - stick to valid icon names only
+- INVALID examples: money, tools, time, exclamation (these don't exist)
 
 Content should be:
 - Clear and concise with proper markdown formatting

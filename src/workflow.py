@@ -12,6 +12,7 @@ from langgraph.graph import END, StateGraph
 
 from .agents import (
     ContentGenerationAgent,
+    IconValidationAgent,
     LayoutAnalysisAgent,
     PresentationPlanningAgent,
     QualityReviewAgent,
@@ -36,6 +37,7 @@ class SlideGenerationWorkflow:
         self.content_agent = ContentGenerationAgent()
         self.assembly_agent = SlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
+        self.icon_validator = IconValidationAgent()
 
         # Build the workflow graph
         self.workflow = self._build_workflow_graph()
@@ -56,6 +58,8 @@ class SlideGenerationWorkflow:
         workflow.add_node("content_generation", self._content_generation_node)
         workflow.add_node("quality_review", self._quality_review_node)
         workflow.add_node("slide_assembly", self._slide_assembly_node)
+        workflow.add_node("icon_validation", self._icon_validation_node)
+        workflow.add_node("icon_retry", self._icon_retry_node)
         workflow.add_node("error_handler", self._error_handler_node)
 
         # Define the workflow edges (execution flow)
@@ -85,10 +89,32 @@ class SlideGenerationWorkflow:
         # Quality review -> Assembly (always proceed, as quality is optional)
         workflow.add_edge("quality_review", "slide_assembly")
 
-        # Assembly -> End or Error
+        # Assembly -> Icon validation or End or Error
         workflow.add_conditional_edges(
             "slide_assembly",
             self._check_assembly_success,
+            {
+                "success_no_icon_errors": END,
+                "success_with_icon_errors": "icon_validation",
+                "error": "error_handler",
+            },
+        )
+
+        # Icon validation -> Icon retry or End or Error
+        workflow.add_conditional_edges(
+            "icon_validation",
+            self._check_icon_validation_success,
+            {
+                "retry_needed": "icon_retry",
+                "no_retry_needed": END,
+                "error": "error_handler",
+            },
+        )
+
+        # Icon retry -> End or Error
+        workflow.add_conditional_edges(
+            "icon_retry",
+            self._check_icon_retry_success,
             {"success": END, "error": "error_handler"},
         )
 
@@ -137,6 +163,9 @@ class SlideGenerationWorkflow:
             "presentation_plan": None,
             "selected_layouts": None,
             "slide_contents": None,
+            "icon_errors": None,
+            "icon_corrections": None,
+            "needs_icon_retry": False,
             "presentation_path": None,
             "success": False,
             "monitor_trace": None,
@@ -167,7 +196,9 @@ class SlideGenerationWorkflow:
             final_state = self.workflow.invoke(initial_state, config=config)
 
             # Process and return results
-            return self._process_workflow_results(final_state)
+            # Cast to SlideGenerationState for type safety
+            typed_final_state: SlideGenerationState = final_state  # type: ignore
+            return self._process_workflow_results(typed_final_state)
 
         except Exception as e:
             print(f"❌ Workflow execution failed: {e}")
@@ -188,42 +219,66 @@ class SlideGenerationWorkflow:
                 },
             }
 
-    def _process_workflow_results(self, final_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_workflow_results(
+        self, final_state: SlideGenerationState
+    ) -> Dict[str, Any]:
         """
-        Process and format final workflow results
+        Process workflow results and prepare return data
 
         Args:
             final_state: Final workflow state
 
         Returns:
-            Formatted results dictionary
+            Dictionary with comprehensive workflow results
         """
-        success = final_state.get("success", False)
-        error_message = final_state.get("error_message")
+        # Determine success - check various completion states
+        success = final_state.get("success", False) or final_state.get(
+            "current_step"
+        ) in ["assembly_complete", "icon_validation_complete", "icon_retry_complete"]
+
+        # Get presentation path and metadata
         presentation_path = final_state.get("presentation_path")
-        current_step = final_state.get("current_step", "unknown")
+        slide_contents = final_state.get("slide_contents", [])
+        selected_layouts = final_state.get("selected_layouts", [])
 
-        if success and presentation_path:
-            print("🎉 Slide generation workflow completed successfully!")
-            print(f"📄 Presentation saved: {presentation_path}")
+        # Icon validation results
+        icon_errors = final_state.get("icon_errors", [])
+        icon_corrections = final_state.get("icon_corrections", {})
 
-            return {
-                "success": True,
-                "presentation_path": presentation_path,
-                "current_step": current_step,
-                "slide_count": len(final_state.get("slide_contents") or []),
-                "layouts_used": final_state.get("selected_layouts", []),
-                "error": None,
-            }
-        print("❌ Slide generation workflow failed")
-        if error_message:
-            print(f"💭 Error: {error_message}")
+        # Calculate metrics
+        slide_count = len(slide_contents) if slide_contents else 0
+        execution_time = 0  # Could be calculated from monitoring
+
+        # Flush monitoring data
+        slide_monitor.flush()
 
         return {
-            "success": False,
-            "presentation_path": None,
-            "current_step": current_step,
-            "error": error_message or "Unknown workflow error",
+            "success": success,
+            "error": final_state.get("error_message"),
+            "current_step": final_state.get("current_step", "unknown"),
+            "presentation_path": presentation_path,
+            "slide_count": slide_count,
+            "layouts_used": selected_layouts,
+            "icon_errors_found": len(icon_errors) if icon_errors else 0,
+            "icon_corrections_applied": (
+                len(icon_corrections) if icon_corrections else 0
+            ),
+            "agent_results": {
+                "layout_analysis": bool(final_state.get("layouts_info")),
+                "presentation_planning": bool(final_state.get("presentation_plan")),
+                "content_generation": bool(final_state.get("slide_contents")),
+                "quality_review": True,  # Always runs
+                "slide_assembly": bool(final_state.get("presentation_path")),
+                "icon_validation": bool(final_state.get("icon_errors") is not None),
+                "icon_retry": bool(final_state.get("icon_corrections")),
+            },
+            "metadata": {
+                "topic": final_state.get("topic", "Unknown"),
+                "template_path": final_state.get("template_path", "Unknown"),
+                "execution_time": execution_time,
+                "total_tokens": 0,  # Could be calculated from monitoring
+                "cost_estimate": 0.0,  # Could be calculated from monitoring
+            },
         }
 
     # Agent node wrapper methods
@@ -256,6 +311,105 @@ class SlideGenerationWorkflow:
     ) -> SlideGenerationState:
         """Slide assembly agent node"""
         return self.assembly_agent.execute(state, config)
+
+    def _icon_validation_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """Icon validation agent node"""
+        return self.icon_validator.execute(state, config)
+
+    def _icon_retry_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """Icon retry node - applies corrections and re-runs slide assembly"""
+        print("🔄 icon_retry: Applying icon corrections and retrying assembly...")
+
+        try:
+            # Check if we have corrections to apply
+            icon_corrections = state.get("icon_corrections", {})
+            if not icon_corrections:
+                print("✅ icon_retry: No corrections to apply")
+                state["needs_icon_retry"] = False
+                state["current_step"] = "icon_retry_complete"
+                return state
+
+            # Apply icon corrections to slide contents
+            slide_contents = state.get("slide_contents")
+            if not slide_contents:
+                raise ValueError("No slide contents to correct")
+
+            corrected_contents = self._apply_icon_corrections(
+                slide_contents, icon_corrections
+            )
+
+            print(f"🔧 icon_retry: Applied {len(icon_corrections)} corrections")
+
+            # Update state with corrected contents
+            state["slide_contents"] = corrected_contents
+
+            # Re-run slide assembly with corrected icons
+            updated_state = self.assembly_agent.execute(state, config)
+
+            # Check if we still have icon errors after correction
+            remaining_errors = updated_state.get("icon_errors", [])
+            if remaining_errors:
+                error_count = len(remaining_errors)
+                print(f"⚠️ icon_retry: Still have {error_count} errors after fix")
+                # Could implement further retry logic here
+                updated_state["needs_icon_retry"] = False
+            else:
+                print("✅ icon_retry: All icon errors resolved")
+                updated_state["needs_icon_retry"] = False
+
+            updated_state["current_step"] = "icon_retry_complete"
+            return updated_state
+
+        except Exception as e:
+            print(f"❌ icon_retry: Error during icon retry: {e}")
+            state["error_message"] = f"Icon retry failed: {str(e)}"
+            state["current_step"] = "error"
+            return state
+
+    def _apply_icon_corrections(
+        self, slide_contents: List[Any], icon_corrections: Dict[str, str]
+    ) -> List[Any]:
+        """
+        Apply icon corrections to slide contents
+
+        Args:
+            slide_contents: List of slide content objects
+            icon_corrections: Dictionary mapping invalid to valid icon names
+
+        Returns:
+            Updated slide contents with corrected icon names
+        """
+        corrected_contents = []
+
+        for slide_content in slide_contents:
+            if hasattr(slide_content, "content") and slide_content.content:
+                # Apply corrections to the content dictionary
+                corrected_content = {}
+                for key, value in slide_content.content.items():
+                    # Check if this is an icon field and needs correction
+                    if key.lower().startswith("icon") and value in icon_corrections:
+                        corrected_value = icon_corrections[value]
+                        print(
+                            f"   📝 Correcting '{value}' → '{corrected_value}' in {key}"
+                        )
+                        corrected_content[key] = corrected_value
+                    else:
+                        corrected_content[key] = value
+
+                # Create new slide content with corrected content
+                new_slide_content = type(slide_content)(
+                    layout_index=slide_content.layout_index, content=corrected_content
+                )
+                corrected_contents.append(new_slide_content)
+            else:
+                # No content to correct, keep original
+                corrected_contents.append(slide_content)
+
+        return corrected_contents
 
     def _error_handler_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
@@ -292,6 +446,24 @@ class SlideGenerationWorkflow:
     def _check_assembly_success(self, state: SlideGenerationState) -> str:
         """Check if slide assembly was successful"""
         if state.get("current_step") == "assembly_complete":
+            # Check if there are icon errors that need validation
+            icon_errors = state.get("icon_errors", [])
+            if icon_errors:
+                return "success_with_icon_errors"
+            return "success_no_icon_errors"
+        return "error"
+
+    def _check_icon_validation_success(self, state: SlideGenerationState) -> str:
+        """Check if icon validation was successful"""
+        if state.get("current_step") == "icon_validation_complete":
+            if state.get("needs_icon_retry"):
+                return "retry_needed"
+            return "no_retry_needed"
+        return "error"
+
+    def _check_icon_retry_success(self, state: SlideGenerationState) -> str:
+        """Check if icon retry was successful"""
+        if state.get("current_step") == "icon_retry_complete":
             return "success"
         return "error"
 

@@ -39,6 +39,9 @@ class SlideGenerator:
         self.icon_manager = IconManager()
         self.icon_selector = IconSelector(self.icon_manager)
 
+        # Store current topic for icon-aware population
+        self._current_topic = "Presentation Topic"
+
     def create_presentation(
         self, topic: str, output_path: str, layout_indices: Optional[List[int]] = None
     ) -> str:
@@ -314,6 +317,63 @@ class SlideGenerator:
 
         return presentation
 
+    def _create_icon_aware_presentation(
+        self, slide_contents: List[SlideContent], topic: str
+    ) -> Presentation:
+        """
+        Create PowerPoint presentation with full icon management
+        and smart content mapping
+
+        Args:
+            slide_contents: List of slide content objects
+            topic: Presentation topic for icon selection context
+
+        Returns:
+            PowerPoint presentation object with proper icon handling
+        """
+        # Load template
+        presentation = Presentation(self.template_path)
+
+        # Create slides with icon-aware content population
+        for slide_content in slide_contents:
+            self._add_icon_aware_slide_to_presentation(
+                presentation, slide_content, topic
+            )
+
+        return presentation
+
+    def _add_icon_aware_slide_to_presentation(
+        self, presentation: Presentation, slide_content: SlideContent, topic: str
+    ) -> None:
+        """
+        Add a single slide to the presentation with full icon support
+
+        Args:
+            presentation: PowerPoint presentation object
+            slide_content: Content for this slide
+            topic: Presentation topic for icon context
+        """
+        # Get the layout
+        layout = presentation.slide_layouts[slide_content.layout_index]
+
+        # Add slide with the specified layout
+        slide = presentation.slides.add_slide(layout)
+
+        # Get the actual placeholder names and info from the created slide
+        actual_placeholders = self._get_actual_placeholder_info(slide)
+
+        if slide_content.content and actual_placeholders:
+            # Use icon-aware population method
+            self._populate_slide_with_icons(
+                slide, slide_content.content, actual_placeholders, topic
+            )
+        elif actual_placeholders:
+            # No content provided but slide has placeholders
+            print(
+                f"  → Slide created with {len(actual_placeholders)} placeholders, "
+                "no content"
+            )
+
     def _add_slide_to_presentation(
         self, presentation: Presentation, slide_content: SlideContent
     ) -> None:
@@ -333,10 +393,10 @@ class SlideGenerator:
         # Get the actual placeholder names from the created slide
         actual_placeholders = self._get_actual_placeholder_info(slide)
 
-        # If we have content to place, use it directly
+        # If we have content to place, use the working layout mapping approach
         # If not, we might need to generate content based on actual placeholders
         if slide_content.content:
-            # Use existing content with improved matching
+            # Use the same approach as the working system - layout mapping
             self._populate_slide_placeholders(slide, slide_content.content)
         elif actual_placeholders:
             # No content provided but slide has placeholders

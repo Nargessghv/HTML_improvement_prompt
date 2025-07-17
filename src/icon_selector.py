@@ -190,6 +190,16 @@ Select the most appropriate icons for these text items:
 
 Available icon suggestions: {suggestions_text}
 
+🚨 CRITICAL REQUIREMENT: Use ONLY lucide-static icon names that exist 
+in the library. You have knowledge of lucide-static icons - only use names 
+from that library.
+
+VALID lucide-static examples: users, trending-up, lightbulb, check-circle, 
+arrow-right, bar-chart, settings, heart, star, target, zap, shield, 
+clock, mail, phone, database, cpu, server, code, search, eye, etc.
+
+INVALID examples (DO NOT USE): money, tools, time, exclamation
+
 Instructions:
 1. Choose icons that best represent the meaning/concept of each text
 2. Consider the overall topic: {topic}
@@ -197,6 +207,7 @@ Instructions:
 4. Return ONLY the icon names, one per line
 5. Return exactly {len(text_content)} icon names
 6. Use hyphens for multi-word icon names (e.g., "bar-chart" not "bar chart")
+7. 🚨 ONLY use icon names that exist in lucide-static library
 
 Example response:
 trending-up
@@ -211,7 +222,21 @@ lightbulb
         Returns:
             System prompt string
         """
-        return """You are an expert UI/UX designer specializing in icon selection for business presentations. Your task is to select the most appropriate and visually coherent icons that best represent the given text content.
+        return """You are an expert UI/UX designer specializing in icon selection 
+for business presentations. Your task is to select the most appropriate and 
+visually coherent icons that best represent the given text content.
+
+🚨 CRITICAL: You must ONLY use icon names from the lucide-static library. 
+You have knowledge of this library - stick to icons that actually exist in 
+lucide-static.
+
+VALID lucide-static icons include: users, trending-up, lightbulb, 
+check-circle, arrow-right, bar-chart, settings, heart, star, target, zap, 
+shield, clock, mail, phone, database, cpu, server, code, search, eye, 
+activity, gauge, grid, layers, link, share, etc.
+
+DO NOT use icons like: money, tools, time, exclamation (these don't exist 
+in lucide-static)
 
 Consider:
 - Semantic meaning of the text
@@ -220,8 +245,8 @@ Consider:
 - Consistency across selections
 - Modern design principles
 
-Always respond with simple icon names using hyphens for spaces (e.g., "check-circle", "trending-up", "user-check").
-"""
+Always respond with simple icon names using hyphens for spaces 
+(e.g., "check-circle", "trending-up", "user-check")."""
 
     def _parse_icon_selection_response(self, response_text: str) -> List[str]:
         """

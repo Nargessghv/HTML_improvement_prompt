@@ -17,6 +17,7 @@ An AI-powered slide generation system using **agent-based architecture** with **
 - **Langchain Integration**: Uses `CallbackHandler` for proper trace unification
 
 ### **🧠 Enhanced Content Generation**
+- **🆕 Unified Generation**: All slides generated in one LLM call with full presentation context for maximum coherence
 - **Contextual Awareness**: Each slide generated with full presentation context
 - **Presentation Outline**: Shows complete slide structure before generation
 - **Dynamic Models**: Perfect placeholder matching using Pydantic models
