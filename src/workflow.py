@@ -19,6 +19,7 @@ from .agents import (
     SlideAssemblyAgent,
     SlideGenerationState,
 )
+from .html_content_agent import HTMLContentGenerationAgent
 from .monitoring import slide_monitor
 
 
@@ -35,6 +36,7 @@ class SlideGenerationWorkflow:
         self.layout_agent = LayoutAnalysisAgent()
         self.planning_agent = PresentationPlanningAgent()
         self.content_agent = ContentGenerationAgent()
+        self.html_content_agent = HTMLContentGenerationAgent()  # Add HTML agent
         self.assembly_agent = SlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
         self.icon_validator = IconValidationAgent()
@@ -56,6 +58,9 @@ class SlideGenerationWorkflow:
         workflow.add_node("layout_analysis", self._layout_analysis_node)
         workflow.add_node("presentation_planning", self._presentation_planning_node)
         workflow.add_node("content_generation", self._content_generation_node)
+        workflow.add_node(
+            "html_content_generation", self._html_content_generation_node
+        )  # Add HTML node
         workflow.add_node("quality_review", self._quality_review_node)
         workflow.add_node("slide_assembly", self._slide_assembly_node)
         workflow.add_node("icon_validation", self._icon_validation_node)
@@ -79,12 +84,15 @@ class SlideGenerationWorkflow:
             {"success": "content_generation", "error": "error_handler"},
         )
 
-        # Content generation -> Quality review or Error
+        # Content generation -> HTML content generation or Error
         workflow.add_conditional_edges(
             "content_generation",
             self._check_content_success,
-            {"success": "quality_review", "error": "error_handler"},
+            {"success": "html_content_generation", "error": "error_handler"},
         )
+
+        # HTML content generation -> Quality review (always proceed)
+        workflow.add_edge("html_content_generation", "quality_review")
 
         # Quality review -> Assembly (always proceed, as quality is optional)
         workflow.add_edge("quality_review", "slide_assembly")
@@ -299,6 +307,12 @@ class SlideGenerationWorkflow:
     ) -> SlideGenerationState:
         """Content generation agent node"""
         return self.content_agent.execute(state, config)
+
+    def _html_content_generation_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """HTML content generation agent node"""
+        return self.html_content_agent.execute(state, config)
 
     def _quality_review_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None

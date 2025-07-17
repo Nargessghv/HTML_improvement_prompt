@@ -19,7 +19,7 @@ load_dotenv()
 class LLMConfig:
     """Configuration for LLM settings"""
 
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-4o"
     max_tokens: int = 2000
     temperature: float = 0.7
     api_key: Optional[str] = None
@@ -158,13 +158,13 @@ def print_config_status():
         print(f"🔗 Host: {config.monitoring.host}")
 
     print("\n🤖 Agents:")
-    print(
-        f"   Quality Review: {'Enabled' if config.agents.enable_quality_review else 'Disabled'}"
-    )
+    quality_status = "Enabled" if config.agents.enable_quality_review else "Disabled"
+    print(f"   Quality Review: {quality_status}")
     print(f"   Max Retries: {config.agents.max_retries}")
-    print(
-        f"   Parallel Processing: {'Enabled' if config.agents.enable_parallel_processing else 'Disabled'}"
+    parallel_status = (
+        "Enabled" if config.agents.enable_parallel_processing else "Disabled"
     )
+    print(f"   Parallel Processing: {parallel_status}")
 
     print("\n📁 Paths:")
     print(f"   Template: {config.default_template}")
@@ -181,7 +181,8 @@ def create_env_template():
 
 # OpenAI Configuration (Required)
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-4o
+OPENAI_MODEL_FAST=gpt-4o-mini
 OPENAI_MAX_TOKENS=2000
 OPENAI_TEMPERATURE=0.7
 
@@ -200,7 +201,13 @@ AGENT_VALIDATION=true
 DEFAULT_TEMPLATE=ekona_slides_template_new.pptx
 OUTPUT_DIRECTORY=generated_presentations
 
+# HTML Debug Configuration
+# Set to 'true' to save generated HTML files for debugging/comparison
+HTML_DEBUG=true
+
 # Note: Copy this to .env and fill in your actual API keys
+# OPENAI_MODEL: Main model for content generation
+# OPENAI_MODEL_FAST: Fast model for simple tasks like icons
 """
 
     with open(".env.template", "w") as f:

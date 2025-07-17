@@ -37,14 +37,14 @@ class LangchainLLMClient:
     to provide unified tracing across the entire workflow.
     """
 
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: Optional[str] = None):
         """
         Initialize the Langchain LLM client
 
         Args:
-            model: OpenAI model to use
+            model: OpenAI model to use (defaults to OPENAI_MODEL env var)
         """
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
 
         # Initialize Langchain ChatOpenAI
@@ -478,16 +478,16 @@ individually."""
 class LLMClient:
     """Client for OpenAI API communication (legacy direct API)"""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize the LLM client
 
         Args:
             api_key: OpenAI API key (if None, will try to get from environment)
-            model: OpenAI model to use
+            model: OpenAI model to use (defaults to OPENAI_MODEL env var)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
 
         if not self.api_key:
@@ -1091,29 +1091,44 @@ Create an intelligent presentation plan that:
 2. Selects appropriate layouts for each slide (can reuse layouts)
 3. Defines clear purpose for each slide
 4. Creates logical flow and structure
+5. **PRIORITIZES HTML visualizations** for timeline, process, and workflow content
+
+🎯 CRITICAL: Use Layout 3 ("Title and Picture generated from HTML") for:
+- Timelines, roadmaps, chronological sequences
+- Process flows, workflows, step-by-step procedures
+- Comparisons, before/after scenarios  
+- Complex data requiring custom visualization
+- Any content that would benefit from interactive-style graphics
 
 Consider:
 - Topic complexity and scope
-- Audience engagement 
-- Information hierarchy
-- Visual variety
-- Logical progression
+- Audience engagement through rich visuals
+- Information hierarchy with HTML visualizations
+- Visual storytelling opportunities
+- Logical progression with strategic visual elements
 
-You can use the same layout multiple times if appropriate for the content."""
+You can and SHOULD use the same layout multiple times when appropriate. 
+Prioritize HTML visualizations at the same level as icon usage."""
 
     def _get_planning_system_prompt(self) -> str:
         """Get system prompt for presentation planning"""
-        return """You are an expert presentation designer and content strategist. 
+        return """You are an expert presentation designer and content strategist 
+specialized in creating visually rich, engaging presentations.
         
 Your role is to create intelligent presentation plans that:
 - Determine optimal number of slides for comprehensive coverage
-- Select appropriate layouts based on content type and purpose
-- Create logical flow and narrative structure
-- Balance information density with visual appeal
-- Ensure engaging and professional presentations
+- PROACTIVELY identify content requiring HTML visualizations
+- Select appropriate layouts based on content type and visual needs
+- Create logical flow and narrative structure with rich visual elements
+- Balance information density with compelling visual storytelling
+- Ensure engaging and professional presentations with custom graphics
+
+CRITICAL: Always consider if content would benefit from Layout 3 HTML 
+visualizations (timelines, processes, workflows, comparisons). Prioritize 
+visual impact at the same level as textual content.
 
 Consider the topic's complexity, target audience, and educational value 
-when planning."""
+when planning, with emphasis on visual engagement opportunities."""
 
     def _create_layout_selection_prompt(
         self, layouts_info: Dict[int, Dict[str, Any]], topic: str

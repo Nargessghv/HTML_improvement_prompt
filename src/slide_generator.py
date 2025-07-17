@@ -13,6 +13,7 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 
 from .chart_generator import ChartGenerator
 from .content_generator import ContentGenerator
+from .html_renderer import HTMLRenderer
 from .icon_manager import IconManager
 from .icon_selector import IconSelector
 from .llm_client import SlideContent
@@ -34,6 +35,14 @@ class SlideGenerator:
         self.content_generator = ContentGenerator(template_path)
         self.chart_generator = ChartGenerator()
         self.markdown_formatter = MarkdownFormatter()  # Initialize markdown formatter
+
+        # Initialize HTML renderer for custom visualizations
+        try:
+            self.html_renderer = HTMLRenderer()
+            print("✅ HTML renderer initialized successfully")
+        except RuntimeError as e:
+            print(f"⚠️ HTML renderer not available: {e}")
+            self.html_renderer = None
 
         # Initialize icon management components
         self.icon_manager = IconManager()
@@ -83,7 +92,7 @@ class SlideGenerator:
 
     def create_slide_with_dynamic_content(
         self,
-        presentation: Presentation,
+        presentation: Any,
         layout_index: int,
         topic: str,
         slide_spec: Optional[Any] = None,
@@ -110,7 +119,8 @@ class SlideGenerator:
 
         if not actual_placeholders:
             print(
-                f"  → Slide {slide_number} has no placeholders, skipping content generation"
+                f"  → Slide {slide_number} has no placeholders, "
+                "skipping content generation"
             )
             return
 
@@ -265,7 +275,8 @@ class SlideGenerator:
                     # The content is descriptive text, not an icon name
                     print(
                         f"  ✓ Skipped regular picture placeholder "
-                        f"'{placeholder_name}' (content: '{content[placeholder_name][:50]}...')"
+                        f"'{placeholder_name}' "
+                        f"(content: '{content[placeholder_name][:50]}...')"
                     )
         else:
             # Regular slide without icons, use standard population
@@ -292,12 +303,13 @@ class SlideGenerator:
                 print(f"  ✓ Set content for '{placeholder_name}'")
             else:
                 print(
-                    f"  ✗ Warning: Placeholder '{placeholder_name}' not found in actual placeholders"
+                    f"  ✗ Warning: Placeholder '{placeholder_name}' "
+                    "not found in actual placeholders"
                 )
 
     def _create_powerpoint_presentation(
         self, slide_contents: List[SlideContent]
-    ) -> Presentation:
+    ) -> Any:
         """
         Create the actual PowerPoint presentation
 
@@ -319,7 +331,7 @@ class SlideGenerator:
 
     def _create_icon_aware_presentation(
         self, slide_contents: List[SlideContent], topic: str
-    ) -> Presentation:
+    ) -> Any:
         """
         Create PowerPoint presentation with full icon management
         and smart content mapping
@@ -343,7 +355,7 @@ class SlideGenerator:
         return presentation
 
     def _add_icon_aware_slide_to_presentation(
-        self, presentation: Presentation, slide_content: SlideContent, topic: str
+        self, presentation: Any, slide_content: SlideContent, topic: str
     ) -> None:
         """
         Add a single slide to the presentation with full icon support
@@ -375,7 +387,7 @@ class SlideGenerator:
             )
 
     def _add_slide_to_presentation(
-        self, presentation: Presentation, slide_content: SlideContent
+        self, presentation: Any, slide_content: SlideContent
     ) -> None:
         """
         Add a single slide to the presentation
@@ -490,7 +502,8 @@ class SlideGenerator:
                     print(f"    ✓ '{custom_name}' → Index {placeholder_index}")
                 else:
                     print(
-                        f"    ✗ Index {placeholder_index} not found in slide for '{custom_name}'"
+                        f"    ✗ Index {placeholder_index} not found in slide "
+                        f"for '{custom_name}'"
                     )
             else:
                 print(f"    - No content for '{custom_name}'")
@@ -616,7 +629,7 @@ class SlideGenerator:
 
         Args:
             placeholder: PowerPoint placeholder object
-            content: Text content to set, chart data, or icon name for pictures
+            content: Text content to set, chart data, icon name, or HTML content
             custom_name: Custom placeholder name from template analysis
         """
         try:
@@ -629,6 +642,11 @@ class SlideGenerator:
                 if "icon" in custom_name.lower():
                     # Handle as icon placeholder
                     self._insert_icon_into_placeholder(placeholder, content)
+                elif self._is_html_content(content) and self.html_renderer:
+                    # Handle as HTML visualization
+                    self._insert_html_visualization_into_placeholder(
+                        placeholder, content, custom_name
+                    )
                 else:
                     # Handle as regular picture placeholder - leave as placeholder
                     print(
@@ -660,13 +678,296 @@ class SlideGenerator:
         except Exception as e:
             print(f"Error setting placeholder content: {e}")
 
+    def _is_html_content(self, content: str) -> bool:
+        """
+        Check if content contains HTML that should be rendered as visualization
+
+        Args:
+            content: Content string to check
+
+        Returns:
+            True if content appears to be HTML for visualization
+        """
+        html_indicators = [
+            "timeline:",
+            "process:",
+            "flowchart:",
+            "diagram:",
+            "<html>",
+            "<!DOCTYPE",
+            "<div",
+            "<timeline>",
+            "<process>",
+        ]
+        content_lower = content.lower().strip()
+        return any(indicator in content_lower for indicator in html_indicators)
+
+    def _insert_html_visualization_into_placeholder(
+        self, placeholder, content: str, custom_name: str
+    ) -> None:
+        """
+        Render HTML content as an image and insert into picture placeholder
+
+        Args:
+            placeholder: PowerPoint picture placeholder object
+            content: HTML content or visualization instructions
+            custom_name: Custom placeholder name for context
+        """
+        try:
+            if not self.html_renderer:
+                print(f"HTML renderer not available for '{custom_name}'")
+                return
+
+            # Parse content to determine visualization type
+            html_content = self._generate_html_from_content(content)
+
+            if not html_content:
+                print(f"Could not generate HTML for content: {content[:50]}...")
+                return
+
+            # Create temporary file for rendered image
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+                temp_image_path = temp_file.name
+
+            # Render HTML to image with 2x resolution for crisp rendering
+            # Renderer will divide by 2 to get 1577x603 viewport (matching HTML design)
+            success = self.html_renderer.render_html_to_image(
+                html_content=html_content,
+                output_path=temp_image_path,
+                width=3154,  # 2x resolution (1577*2) - will be divided by 2 for viewport
+                height=1206,  # 2x resolution (603*2) - will be divided by 2 for viewport
+            )
+
+            if success and os.path.exists(temp_image_path):
+                # Replace placeholder with rendered image
+                self._replace_placeholder_with_image(
+                    placeholder, temp_image_path, custom_name
+                )
+
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_image_path)
+                except OSError:
+                    pass  # Ignore cleanup errors
+
+                print(f"✅ Inserted HTML visualization for '{custom_name}'")
+            else:
+                print(f"Failed to render HTML visualization for '{custom_name}'")
+
+        except Exception as e:
+            print(f"Error inserting HTML visualization '{custom_name}': {e}")
+
+    def _generate_html_from_content(self, content: str) -> Optional[str]:
+        """
+        Generate HTML from content string based on visualization type
+
+        Args:
+            content: Content string with visualization instructions
+
+        Returns:
+            HTML string or None if can't generate
+        """
+        content_lower = content.lower().strip()
+
+        # Timeline visualization
+        if "timeline:" in content_lower:
+            return self._create_timeline_from_content(content)
+
+        # Process flow visualization
+        if "process:" in content_lower:
+            return self._create_process_flow_from_content(content)
+
+        # Direct HTML content
+        if any(tag in content_lower for tag in ["<html>", "<!doctype", "<div"]):
+            return content
+
+        # Default: treat as timeline if it has timeline-like structure
+        if self._looks_like_timeline(content):
+            return self._create_timeline_from_content(content)
+
+        return None
+
+    def _create_timeline_from_content(self, content: str) -> str:
+        """Create timeline HTML from content description"""
+        # Parse timeline events from content
+        events = self._parse_timeline_events(content)
+
+        # Extract title from content
+        lines = content.split("\n")
+        title = "Timeline"
+        for line in lines:
+            if line.strip() and not line.lower().startswith("timeline:"):
+                title = line.strip()
+                break
+
+        if self.html_renderer:
+            return self.html_renderer.create_timeline_html(
+                events=events, title=title, theme="ekona"
+            )
+        return ""
+
+    def _create_process_flow_from_content(self, content: str) -> str:
+        """Create process flow HTML from content description"""
+        # Parse process steps from content
+        steps = self._parse_process_steps(content)
+
+        # Extract title from content
+        lines = content.split("\n")
+        title = "Process Flow"
+        for line in lines:
+            if line.strip() and not line.lower().startswith("process:"):
+                title = line.strip()
+                break
+
+        if self.html_renderer:
+            return self.html_renderer.create_process_flow_html(
+                steps=steps, title=title, theme="ekona"
+            )
+        return ""
+
+    def _parse_timeline_events(self, content: str) -> List[Dict[str, str]]:
+        """Parse timeline events from content string"""
+        events = []
+        lines = content.split("\n")
+
+        current_event = {}
+        for line in lines:
+            line = line.strip()
+            if not line or line.lower().startswith("timeline:"):
+                continue
+
+            # Look for date patterns
+            if any(char.isdigit() for char in line) and len(line) < 20:
+                if current_event:
+                    events.append(current_event)
+                current_event = {"date": line, "title": "", "description": ""}
+            elif not current_event.get("title"):
+                current_event["title"] = line
+            else:
+                current_event["description"] = line
+
+        if current_event:
+            events.append(current_event)
+
+        # Default events if parsing fails
+        if not events:
+            events = [
+                {
+                    "date": "2024 Q1",
+                    "title": "Project Start",
+                    "description": "Initiative launched",
+                },
+                {
+                    "date": "2024 Q2",
+                    "title": "Development",
+                    "description": "Core development phase",
+                },
+                {
+                    "date": "2024 Q3",
+                    "title": "Testing",
+                    "description": "Quality assurance phase",
+                },
+                {"date": "2024 Q4", "title": "Launch", "description": "Product launch"},
+            ]
+
+        return events
+
+    def _parse_process_steps(self, content: str) -> List[Dict[str, str]]:
+        """Parse process steps from content string"""
+        steps = []
+        lines = content.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.lower().startswith("process:"):
+                continue
+
+            # Simple parsing - each line is a step
+            if line:
+                steps.append({"title": line, "description": f"Complete {line.lower()}"})
+
+        # Default steps if parsing fails
+        if not steps:
+            steps = [
+                {"title": "Plan", "description": "Define requirements and strategy"},
+                {"title": "Design", "description": "Create detailed design"},
+                {"title": "Build", "description": "Implement solution"},
+                {"title": "Test", "description": "Verify quality and functionality"},
+                {"title": "Deploy", "description": "Launch to production"},
+            ]
+
+        return steps
+
+    def _looks_like_timeline(self, content: str) -> bool:
+        """Check if content looks like timeline data"""
+        timeline_keywords = [
+            "date",
+            "time",
+            "year",
+            "month",
+            "quarter",
+            "phase",
+            "milestone",
+            "event",
+            "history",
+            "chronology",
+        ]
+        content_lower = content.lower()
+        return any(keyword in content_lower for keyword in timeline_keywords)
+
+    def _replace_placeholder_with_image(
+        self, placeholder, image_path: str, name: str
+    ) -> None:
+        """
+        Replace a placeholder with an image file
+
+        Args:
+            placeholder: PowerPoint placeholder object
+            image_path: Path to image file
+            name: Name for the new image shape
+        """
+        try:
+            # Get placeholder properties before replacement
+            left = placeholder.left
+            top = placeholder.top
+            width = placeholder.width
+            height = placeholder.height
+
+            # Get the slide and shapes collection
+            slide = placeholder.part.slide
+            shapes = slide.shapes
+
+            # Remove the original placeholder
+            placeholder_idx = None
+            for i, shape in enumerate(shapes):
+                if shape == placeholder:
+                    placeholder_idx = i
+                    break
+
+            if placeholder_idx is not None:
+                # Delete the placeholder
+                shapes._spTree.remove(placeholder._element)
+
+                # Add the image in the same position and size
+                picture = shapes.add_picture(image_path, left, top, width, height)
+                picture.name = f"{name}_visualization"
+
+                print("✅ Replaced placeholder with visualization image")
+            else:
+                print("Warning: Could not find placeholder in shapes collection")
+
+        except Exception as e:
+            print(f"Error replacing placeholder with image: {e}")
+
     def _set_placeholder_content(self, placeholder, content: str) -> None:
         """
         Set content for a placeholder while preserving original formatting
 
         Args:
             placeholder: PowerPoint placeholder object
-            content: Text content to set, chart data, or icon name for pictures
+            content: Text content to set, chart data, icon name, or HTML content
         """
         try:
             # Check if this is a picture placeholder
@@ -674,8 +975,16 @@ class SlideGenerator:
                 hasattr(placeholder, "placeholder_format")
                 and placeholder.placeholder_format.type == PP_PLACEHOLDER.PICTURE
             ):
-                # Only treat as icon if placeholder name contains "icon"
+                # Get placeholder name for detection logic
                 placeholder_name = getattr(placeholder, "name", "")
+
+                # Check for HTML visualization content
+                if self._is_html_content(content) and self.html_renderer:
+                    # Handle as HTML visualization
+                    self._insert_html_visualization_into_placeholder(
+                        placeholder, content, placeholder_name
+                    )
+                    return
                 if "icon" in placeholder_name.lower():
                     # Handle as icon placeholder
                     self._insert_icon_into_placeholder(placeholder, content)

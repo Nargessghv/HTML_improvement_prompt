@@ -79,3 +79,7 @@ tmp/
 temp/
 test_*
 debug_* 
+
+# HTML Debug Output
+html_debug/
+generated_html/ 

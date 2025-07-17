@@ -5,14 +5,14 @@ An AI-powered slide generation system using **agent-based architecture** with **
 ## 🌟 Key Features
 
 ### **🤖 Agent-Based Architecture**
-- **5 Specialized Agents**: Layout Analysis → Planning → Content Generation → Quality Review → Assembly
+- **6 Specialized Agents**: Layout Analysis → Planning → Content Generation → **HTML Visualization** → Quality Review → Assembly
 - **LangGraph Orchestration**: Coordinated workflow with error handling and retry logic
 - **Unified Generation**: Single workflow system - eliminates duplicate content generation
 - **Modular Design**: Each agent handles specific aspects of presentation creation
 
 ### **📊 Unified Langfuse Tracing** ✨ **NEW**
 - **Single Comprehensive Trace**: Complete workflow visibility in one unified trace
-- **End-to-End Monitoring**: Track all 5 agents and LLM calls in sequence
+- **End-to-End Monitoring**: Track all 6 agents and LLM calls in sequence
 - **Enhanced Analytics**: Better insights into workflow performance and costs
 - **Langchain Integration**: Uses `CallbackHandler` for proper trace unification
 
@@ -28,6 +28,147 @@ An AI-powered slide generation system using **agent-based architecture** with **
 - **Intelligent Planning**: LLM-powered slide structure optimization
 - **Icon Integration**: Automatic icon insertion with visual elements
 - **Chart Generation**: Data visualization with branded styling
+- **🆕 HTML Visualizations**: Intelligent detection and generation of custom visualizations
+
+## 🎨 HTML Content Generation Agent ✨ **NEW**
+
+The **HTML Content Generation Agent** automatically detects when slide content would benefit from visual representation and generates stunning HTML visualizations that are rendered as ultra-high-resolution images (2560x1440 with 2x scaling) and inserted into picture placeholders.
+
+### **Automatic Detection**
+The agent intelligently identifies content that should be visualized based on:
+- **Picture Placeholders**: Only processes actual picture/image placeholders (not icons)
+- **Content Keywords**: Detects timelines, processes, workflows, comparisons, metrics
+- **Structured Data**: Recognizes dates, sequential steps, and multi-item lists
+
+### **Supported Visualization Types**
+- **📅 Timelines**: Project phases, roadmaps, chronological events
+- **🔄 Process Flows**: Step-by-step workflows, methodologies  
+- **📊 Comparison Charts**: Before/after, traditional vs modern
+- **📈 Infographics**: Metrics, statistics, key performance indicators
+- **🗺️ Diagrams**: Relationships, hierarchies, system architecture
+
+### **Agent Integration**
+```python
+# The HTML agent runs automatically in the workflow
+workflow = SlideGenerationWorkflow()
+results = workflow.run(
+    topic="Product Development Timeline",
+    template_path="template.pptx",
+    output_path="presentation"
+)
+
+# Agent workflow sequence:
+# 1. Layout Analysis → 2. Planning → 3. Content Generation 
+# 4. HTML Visualization → 5. Quality Review → 6. Assembly
+```
+
+### **Content Examples That Trigger HTML Generation**
+
+**Timeline Content:**
+```
+Our development follows this timeline:
+- Q1 2024: Requirements gathering and team formation
+- Q2 2024: Design phase with user experience focus  
+- Q3 2024: Development sprint with agile methodology
+- Q4 2024: Testing, quality assurance, and launch prep
+```
+
+**Process Flow Content:**
+```
+Our development process includes these steps:
+1. Discovery and planning
+2. Design and prototyping
+3. Development and testing
+4. Quality assurance
+5. Deployment and monitoring
+```
+
+**Comparison Content:**
+```
+Performance comparison:
+- Traditional approach: 73% efficiency
+- Our innovative approach: 96% efficiency
+- Cost reduction: 40% compared to industry standard
+```
+
+### **Professional Styling**
+All HTML visualizations use:
+- **Ekona Branding**: Primary color #dc261e, secondary #404040
+- **Modern Design**: Clean layouts, professional typography
+- **High Resolution**: Ultra-crisp 2560x1440 rendering
+- **Responsive Layout**: Optimized for PowerPoint integration
+
+## 🎨 HTML Visualizations Feature
+
+Create beautiful timelines, process flows, and custom visualizations that are automatically rendered as **ultra-high-resolution images** (2560x1440 with 2x device scaling) and inserted into slides:
+
+### **Timeline Example**
+```python
+# Content that gets detected and rendered as a timeline
+timeline_content = """timeline: Product Development Roadmap
+2024 Q1 - Project Kickoff
+2024 Q2 - Design Phase  
+2024 Q3 - Development Sprint
+2024 Q4 - Launch Preparation"""
+
+# Use in picture placeholders - automatically rendered as image
+slide_content = SlideContent(
+    layout_index=4,  # Title and Picture layout
+    content={
+        "Title 1": "Development Timeline",
+        "Picture Placeholder 2": timeline_content
+    }
+)
+```
+
+### **Process Flow Example**
+```python
+process_content = """process: Customer Onboarding
+Welcome & Registration
+Account Setup  
+Product Training
+First Success Milestone"""
+```
+
+### **Custom HTML**
+```python
+# Full custom HTML with CSS styling
+custom_html = """
+<div style="text-align: center; padding: 40px;">
+    <h1 style="color: #dc261e;">Custom Visualization</h1>
+    <div style="display: flex; justify-content: space-around;">
+        <div style="background: #f8f8f8; padding: 20px; border-radius: 10px;">
+            <h3>Before</h3><p>Manual Process</p>
+        </div>
+        <div style="background: #dc261e; color: white; padding: 20px; border-radius: 10px;">
+            <h3>After</h3><p>AI-Powered</p>
+        </div>
+    </div>
+</div>
+"""
+```
+
+### **High-Resolution Image Quality**
+- **Default Resolution**: 2560x1440 (QHD) with 16:9 aspect ratio
+- **Device Scaling**: 2x pixel ratio for ultra-crisp rendering  
+- **Professional Quality**: Perfect for presentations and large displays
+- **Multiple Options**: HD (1920x1080), Standard (1280x720) also available
+
+### **Installation for HTML Rendering**
+```bash
+# Option 1: Playwright (recommended for best quality)
+pip install playwright
+playwright install chromium
+
+# Option 2: Selenium (reliable fallback) 
+pip install selenium
+# Requires Chrome browser installed
+
+# Option 3: WeasyPrint (lightweight)
+pip install weasyprint
+```
+
+See `example_html_timeline.py` for complete working examples.
 
 ## 🚀 Quick Start
 

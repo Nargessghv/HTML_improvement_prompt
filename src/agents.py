@@ -5,6 +5,7 @@ Langgraph agent implementations for the slide generation workflow.
 Each agent handles a specific step in the presentation creation process.
 """
 
+import os
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.runnables import RunnableConfig
@@ -338,10 +339,12 @@ Here are the layouts:
 
 Strategic Guidelines:
 - **Title slides**: Use layouts with title placeholders (0, 1, 2, 3)  
-- **Content with icons**: Prefer layouts with multiple icon placeholders (8, 7)
-- **Charts/Data**: Use chart-specific layouts (6, 5)
-- **Images**: Use picture-focused layouts (4)
-- **Conclusion**: Use conclusion-specific layouts (9)
+- **HTML Visualizations**: Use Layout 3 for timelines, processes, workflows, 
+  comparisons, and data visualizations
+- **Content with icons**: Prefer layouts with multiple icon placeholders (7, 8)
+- **Charts/Data**: Use chart-specific layouts (5, 6)
+- **Images**: Use picture-focused layouts (2, 4)
+- **Conclusion**: Use conclusion-specific layouts (8, 9)
 
 Content Planning Requirements:
 1. Use the right number of slides for comprehensive coverage, but do not 
@@ -353,7 +356,8 @@ Content Planning Requirements:
    when it makes sense
 6. Make the presentation engaging and informative
 7. Use icons as much as possible when conveying information
-8. Some slides are available in the template for branding (e.g Logo, why 
+8. Use HTML visualizations for complex data, timelines, processes, and workflows
+9. Some slides are available in the template for branding (e.g Logo, why 
    ekona etc..) add them to the presentation plan.
 
 🚫 AVOID THESE ANTI-PATTERNS:
@@ -362,9 +366,10 @@ Content Planning Requirements:
 - Forcing layout variety over content quality
 
 ✅ PREFERRED PATTERNS:
-- Content-driven selection: [0,1,2,8,8,8,4,9] 
-- Strategic reuse: [0,1,8,8,6,8,9]
-- Purpose-focused: [0,2,4,8,8,8,8,9]
+- Content-driven selection: [0,1,3,7,7,7,2,8] 
+- Strategic reuse: [0,1,3,3,5,7,8]
+- Purpose-focused: [0,3,2,7,7,7,7,8]
+- HTML-focused: [0,3,3,7,3,8]
 
 Consider the audience and the topic's complexity when planning the structure.
 Focus on telling a compelling story with the most appropriate layouts.
@@ -372,9 +377,26 @@ Focus on telling a compelling story with the most appropriate layouts.
 
     def _get_planning_system_prompt(self) -> str:
         """Get the system prompt for presentation planning"""
-        return """You are an expert presentation designer. Create strategic, 
-engaging presentation plans that tell a compelling story. Focus on logical flow, 
-audience engagement, and clear communication of key messages."""
+        return """You are an expert presentation designer specialized in creating 
+engaging, data-rich presentations. Create strategic presentation plans that 
+maximize visual impact through:
+
+1. **HTML Visualizations**: Proactively identify content that would benefit from 
+   custom HTML visualizations (timelines, processes, comparisons, workflows)
+2. **Icon Integration**: Use icons extensively to enhance understanding
+3. **Visual Storytelling**: Create compelling narrative flow with appropriate 
+   visual elements
+
+PRIORITIZE Layout 3 ("Title and Picture generated from HTML") for any content 
+involving:
+- Timelines, roadmaps, or chronological information
+- Process flows, workflows, or step-by-step procedures  
+- Comparisons, before/after scenarios
+- Complex data that needs visual representation
+- Interactive-style content that benefits from custom graphics
+
+Focus on logical flow, audience engagement, and clear communication of key 
+messages through strategic visual choices."""
 
     def _create_default_plan(
         self, layouts_info: Dict[int, Dict[str, Any]]
@@ -694,8 +716,9 @@ class IconValidationAgent:
 
     def __init__(self):
         self.name = "icon_validator"
-        # Use gpt-4o-mini specifically for icon validation
-        self.llm_client = LangchainLLMClient(model="gpt-4o-mini")
+        # Use OPENAI_MODEL_FAST for icon validation (fast, simple model)
+        fast_model = os.getenv("OPENAI_MODEL_FAST", "gpt-4o-mini")
+        self.llm_client = LangchainLLMClient(model=fast_model)
         # Initialize icon manager to get list of available icons
         from .icon_manager import IconManager
 

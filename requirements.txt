@@ -15,6 +15,13 @@ langchain-openai>=0.1.0  # OpenAI integration for Langchain
 # LLM Monitoring and Observability
 langfuse>=2.20.0,<3.0.0  # For LLM call monitoring and analytics (SDK v2)
 
+# HTML Rendering for Visualizations (install at least one)
+# Choose one based on your system and preferences:
+playwright>=1.40.0  # Recommended: Most reliable, best quality
+selenium>=4.15.0  # Alternative: Widely compatible
+weasyprint>=60.0  # Alternative: Lightweight, CSS-focused
+imgkit>=1.2.3  # Alternative: wkhtmltopdf wrapper
+
 # Quarto
 quarto>=0.1.0
 
