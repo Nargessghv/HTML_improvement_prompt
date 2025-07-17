@@ -13,6 +13,8 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 
 from .chart_generator import ChartGenerator
 from .content_generator import ContentGenerator
+from .icon_manager import IconManager
+from .icon_selector import IconSelector
 from .llm_client import SlideContent
 from .markdown_formatter import MarkdownFormatter
 
@@ -32,6 +34,10 @@ class SlideGenerator:
         self.content_generator = ContentGenerator(template_path)
         self.chart_generator = ChartGenerator()
         self.markdown_formatter = MarkdownFormatter()  # Initialize markdown formatter
+
+        # Initialize icon management components
+        self.icon_manager = IconManager()
+        self.icon_selector = IconSelector(self.icon_manager)
 
     def create_presentation(
         self, topic: str, output_path: str, layout_indices: Optional[List[int]] = None
@@ -117,14 +123,15 @@ class SlideGenerator:
 
             if content:
                 # Populate placeholders with generated content
-                self._populate_slide_with_actual_names(
-                    slide, content, actual_placeholders
+                self._populate_slide_with_icons(
+                    slide, content, actual_placeholders, topic
                 )
             else:
                 print(f"  → Warning: No content generated for slide {slide_number}")
         else:
             print(
-                f"  → Warning: No content generator available for slide {slide_number}"
+                f"  → Warning: No content generator available for "
+                f"slide {slide_number}"
             )
 
     def _generate_content_for_actual_placeholders(
@@ -175,6 +182,91 @@ class SlideGenerator:
         except Exception as e:
             print(f"  → Error generating content: {e}")
             return None
+
+    def _populate_slide_with_icons(
+        self,
+        slide,
+        content: Dict[str, str],
+        actual_placeholders: Dict[str, Dict[str, Any]],
+        topic: str,
+    ) -> None:
+        """
+        Populate slide with content and automatically select/insert icons
+
+        Args:
+            slide: PowerPoint slide object
+            content: Dictionary mapping placeholder names to content
+            actual_placeholders: Dictionary of actual placeholder info
+            topic: Presentation topic for icon selection context
+        """
+        # Check if this slide has ICON placeholders (specifically named with "icon")
+        # NOT just any picture placeholder
+        icon_placeholders = {
+            name: info
+            for name, info in actual_placeholders.items()
+            if (info["type"] == PP_PLACEHOLDER.PICTURE and "icon" in name.lower())
+        }
+
+        if icon_placeholders:
+            print(f"  → Found {len(icon_placeholders)} icon placeholders")
+
+            # Select appropriate icons based on content
+            icon_selections = self.icon_selector.select_icons_for_content(
+                content, topic
+            )
+
+            # Prepare the selected icons
+            prepared_icons = self.icon_selector.prepare_icons_for_slide(icon_selections)
+
+            # Insert text content first
+            for placeholder_name, text_content in content.items():
+                if placeholder_name in actual_placeholders:
+                    placeholder_info = actual_placeholders[placeholder_name]
+
+                    # Skip picture placeholders for now, handle them separately
+                    if placeholder_info["type"] != PP_PLACEHOLDER.PICTURE:
+                        placeholder_obj = placeholder_info["placeholder"]
+                        self._set_placeholder_content(placeholder_obj, text_content)
+                        print(f"  ✓ Set text content for '{placeholder_name}'")
+
+            # Insert icons based on selections
+            for icon_placeholder_name, icon_path in prepared_icons.items():
+                if (
+                    icon_placeholder_name in actual_placeholders
+                    and icon_path
+                    and os.path.exists(icon_path)
+                ):
+
+                    placeholder_info = actual_placeholders[icon_placeholder_name]
+                    placeholder_obj = placeholder_info["placeholder"]
+
+                    # Get the selected icon name
+                    icon_name = icon_selections.get(icon_placeholder_name, "circle")
+
+                    # Insert the icon
+                    self._set_placeholder_content(placeholder_obj, icon_name)
+                    print(
+                        f"  ✓ Inserted icon '{icon_name}' for '{icon_placeholder_name}'"
+                    )
+
+            # Handle regular picture placeholders (not icons)
+            regular_picture_placeholders = {
+                name: info
+                for name, info in actual_placeholders.items()
+                if info["type"] == PP_PLACEHOLDER.PICTURE and "icon" not in name.lower()
+            }
+
+            for placeholder_name in regular_picture_placeholders:
+                if placeholder_name in content:
+                    # For regular picture placeholders, just leave them as placeholders
+                    # The content is descriptive text, not an icon name
+                    print(
+                        f"  ✓ Skipped regular picture placeholder "
+                        f"'{placeholder_name}' (content: '{content[placeholder_name][:50]}...')"
+                    )
+        else:
+            # Regular slide without icons, use standard population
+            self._populate_slide_with_actual_names(slide, content, actual_placeholders)
 
     def _populate_slide_with_actual_names(
         self,
@@ -330,7 +422,11 @@ class SlideGenerator:
                 if placeholder_index in placeholder_by_index:
                     placeholder_obj = placeholder_by_index[placeholder_index]
                     text_content = content[custom_name]
-                    self._set_placeholder_content(placeholder_obj, text_content)
+
+                    # Pass custom name info to determine if this is an icon placeholder
+                    self._set_placeholder_content_with_custom_name(
+                        placeholder_obj, text_content, custom_name
+                    )
                     print(f"    ✓ '{custom_name}' → Index {placeholder_index}")
                 else:
                     print(
@@ -452,21 +548,40 @@ class SlideGenerator:
 
         return None
 
-    def _set_placeholder_content(self, placeholder, content: str) -> None:
+    def _set_placeholder_content_with_custom_name(
+        self, placeholder, content: str, custom_name: str
+    ) -> None:
         """
-        Set content for a placeholder while preserving original formatting
+        Set content for a placeholder using custom name to determine handling
 
         Args:
             placeholder: PowerPoint placeholder object
-            content: Text content to set or chart data
+            content: Text content to set, chart data, or icon name for pictures
+            custom_name: Custom placeholder name from template analysis
         """
         try:
+            # Check if this is a picture placeholder
+            if (
+                hasattr(placeholder, "placeholder_format")
+                and placeholder.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+            ):
+                # Use custom name to determine if this is an icon placeholder
+                if "icon" in custom_name.lower():
+                    # Handle as icon placeholder
+                    self._insert_icon_into_placeholder(placeholder, content)
+                else:
+                    # Handle as regular picture placeholder - leave as placeholder
+                    print(
+                        f"  ✓ Left regular picture placeholder '{custom_name}' "
+                        f"as placeholder (content: '{content[:30]}...')"
+                    )
+                return
+
             # Check if this is a chart placeholder
             if (
                 hasattr(placeholder, "placeholder_format")
                 and placeholder.placeholder_format.type == PP_PLACEHOLDER.CHART
             ):
-
                 # Try to create chart from content
                 if self._create_chart_from_content(placeholder, content):
                     return  # Chart created successfully
@@ -484,6 +599,112 @@ class SlideGenerator:
                 )
         except Exception as e:
             print(f"Error setting placeholder content: {e}")
+
+    def _set_placeholder_content(self, placeholder, content: str) -> None:
+        """
+        Set content for a placeholder while preserving original formatting
+
+        Args:
+            placeholder: PowerPoint placeholder object
+            content: Text content to set, chart data, or icon name for pictures
+        """
+        try:
+            # Check if this is a picture placeholder
+            if (
+                hasattr(placeholder, "placeholder_format")
+                and placeholder.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+            ):
+                # Only treat as icon if placeholder name contains "icon"
+                placeholder_name = getattr(placeholder, "name", "")
+                if "icon" in placeholder_name.lower():
+                    # Handle as icon placeholder
+                    self._insert_icon_into_placeholder(placeholder, content)
+                else:
+                    # Handle as regular picture placeholder - leave as placeholder
+                    print(
+                        f"  ✓ Left regular picture placeholder '{placeholder_name}' "
+                        f"as placeholder (content: '{content[:30]}...')"
+                    )
+                return
+
+            # Check if this is a chart placeholder
+            if (
+                hasattr(placeholder, "placeholder_format")
+                and placeholder.placeholder_format.type == PP_PLACEHOLDER.CHART
+            ):
+                # Try to create chart from content
+                if self._create_chart_from_content(placeholder, content):
+                    return  # Chart created successfully
+                # If chart creation fails, fall through to text insertion
+
+            if hasattr(placeholder, "text_frame"):
+                # Text placeholder - preserve original formatting
+                self._set_text_preserving_formatting(placeholder.text_frame, content)
+            elif hasattr(placeholder, "text"):
+                # Simple text placeholder
+                placeholder.text = content
+            else:
+                print(
+                    f"Warning: Unknown placeholder type for content: {content[:50]}..."
+                )
+        except Exception as e:
+            print(f"Error setting placeholder content: {e}")
+
+    def _insert_icon_into_placeholder(self, placeholder, icon_name: str) -> None:
+        """
+        Insert an icon into a picture placeholder by replacing
+        the placeholder
+
+        Args:
+            placeholder: PowerPoint picture placeholder object
+            icon_name: Name of the icon to insert
+        """
+        try:
+            # Prepare the icon (convert to PNG if needed)
+            icon_path = self.icon_manager.prepare_icon(icon_name, size=128)
+
+            if not icon_path or not os.path.exists(icon_path):
+                print(f"Warning: Icon '{icon_name}' not found or failed to prepare")
+                return
+
+            # Get placeholder properties before replacement
+            left = placeholder.left
+            top = placeholder.top
+            width = placeholder.width
+            height = placeholder.height
+            name = getattr(placeholder, "name", f"Icon_{icon_name}")
+
+            # Get the slide and shapes collection
+            slide = placeholder.part.slide
+            shapes = slide.shapes
+
+            # Remove the original placeholder
+            # First find the placeholder in the shapes collection
+            placeholder_idx = None
+            for i, shape in enumerate(shapes):
+                if shape == placeholder:
+                    placeholder_idx = i
+                    break
+
+            if placeholder_idx is not None:
+                # Delete the placeholder
+                shapes._spTree.remove(placeholder._element)
+
+                # Add the icon image in the same position and size
+                picture = shapes.add_picture(icon_path, left, top, width, height)
+
+                # Set the picture name
+                picture.name = f"{name}_icon"
+
+                print(f"✅ Inserted icon '{icon_name}' into picture placeholder")
+            else:
+                print("Warning: Could not find placeholder in shapes collection")
+
+        except Exception as e:
+            print(f"Error inserting icon '{icon_name}': {e}")
+            import traceback
+
+            traceback.print_exc()
 
     def _create_chart_from_content(self, placeholder, content: str) -> bool:
         """

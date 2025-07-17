@@ -14,7 +14,7 @@ quarto>=0.1.0
 requests>=2.28.0
 
 # SVG to PNG conversion
-CairoSVG>=2.7.0
+cairosvg>=2.5.0
 
 # Lucide Static Icons
 lucide-static>=0.1.0

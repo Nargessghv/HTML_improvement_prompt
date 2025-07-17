@@ -195,7 +195,8 @@ class LLMClient:
                     content_dict[field_name] = getattr(parsed_data, field_name, "")
 
                 print(
-                    f"  ✅ Dynamic model generated content for: {list(content_dict.keys())}"
+                    f"  ✅ Dynamic model generated content for: "
+                    f"{list(content_dict.keys())}"
                 )
 
                 return SlideContent(
@@ -300,7 +301,8 @@ class LLMClient:
         dynamic_model: Optional[Any] = None,
     ) -> Optional[SlideContent]:
         """
-        Generate content for a specific slide with contextual awareness using dynamic models
+        Generate content for a specific slide with contextual awareness
+        using dynamic models
 
         Args:
             layout_info: Information about the slide layout
@@ -771,6 +773,13 @@ CRITICAL FORMATTING REQUIREMENTS:
 FIELD NAME REQUIREMENT:
 - Use the EXACT field names as they appear in the response format
 - Do NOT shorten, abbreviate, or modify the field names in any way
+
+ICON PLACEHOLDER HANDLING:
+- For fields requesting icon selection, respond with ONLY the icon name
+- Choose from the provided list of valid icon names
+- DO NOT provide descriptive text like "Icon representing..." 
+- Examples: "users", "trending-up", "lightbulb" (NOT "Icon showing growth")
+- Select icons that match the slide content and context
 
 Content should be:
 - Clear and concise with proper markdown formatting

@@ -1,0 +1,16 @@
+{
+  "name": "powerpoint-slide-creator",
+  "version": "1.0.0",
+  "description": "An AI-powered PowerPoint presentation generator that automatically creates professional slides based on any topic you provide. Using OpenAI's GPT models, it intelligently selects appropriate slide layouts and generates engaging content.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "lucide-static": "^0.525.0"
+  }
+}
