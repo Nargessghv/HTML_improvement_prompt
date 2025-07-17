@@ -311,13 +311,23 @@ Available layouts:
 {layouts_text}
 
 Requirements:
-1. Use the right number of slides for comprehensive coverage, but do not exceed 10 slides
+1. Use the right number of slides for comprehensive coverage, but do not 
+   exceed 10 slides
 2. Create a logical flow from introduction to conclusion
 3. Select appropriate layouts for each slide's content type
 4. Ensure each slide has a clear purpose and advances the narrative
-5. Make the presentation engaging and informative
-6. Use icons as much as possible when conveying information
-7. Some slides are available in the template for branding (e.g Logo, why ekona etc..) add them to the presentation plan.
+5. IMPORTANT: You can and SHOULD use the same layout for multiple slides 
+   when it makes sense
+6. Make the presentation engaging and informative
+7. Use icons as much as possible when conveying information
+8. Some slides are available in the template for branding (e.g Logo, why 
+   ekona etc..) add them to the presentation plan.
+
+STRATEGIC LAYOUT REUSE GUIDELINES:
+- Don't feel obligated to use every layout - focus on what serves the content 
+  best
+- Quality content with repeated effective layouts is better than forced layout 
+  variety
 
 Consider the audience and the topic's complexity when planning the structure.
 """
