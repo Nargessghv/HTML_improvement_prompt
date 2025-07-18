@@ -30,6 +30,48 @@ An AI-powered slide generation system using **agent-based architecture** with **
 - **Chart Generation**: Data visualization with branded styling
 - **🆕 HTML Visualizations**: Intelligent detection and generation of custom visualizations
 
+## 🎯 Enhanced Detailed Purpose Specifications ✨ **NEW**
+
+During presentation planning, content generation, and HTML content generation, the system now uses **comprehensive detailed purpose specifications** to ensure crystal-clear alignment throughout the entire pipeline.
+
+### **Detailed Specification Framework**
+For every slide, the presentation planner generates:
+
+- **🎯 Basic Purpose**: Clear 1-2 sentence slide objective
+- **📋 Detailed Purpose**: Comprehensive 3-4 sentence explanation of what should be represented
+- **🏗️ Content Structure**: Specific organization requirements (e.g., "two-column comparison", "numbered list of 5 steps")
+- **🎨 Visual Elements**: Required visual components (e.g., "icons showing growth, timeline markers, comparison arrows")
+- **📝 Key Information**: 3-5 essential information points that must be included
+- **🖼️ HTML Requirements** *(for HTML slides)*: Specific visualization requirements (e.g., "horizontal timeline with 4 milestones, each with date, title, and description")
+
+### **Enhanced Pipeline Flow**
+```python
+# Presentation Planning → Detailed Specifications Generated
+slide_spec = SlideSpec(
+    layout_index=3,
+    slide_title="Project Timeline Overview",
+    slide_purpose="Present project phases and key milestones",
+    is_html=True,
+    detailed_purpose="Provide comprehensive project roadmap that demonstrates structured approach...",
+    content_structure="Title explaining timeline scope, horizontal timeline with clear phases",
+    html_requirements="Horizontal timeline with 5 major milestones spanning 6 months...",
+    visual_elements="Timeline markers, phase icons, progress indicators",
+    key_information=["Discovery & Planning (Month 1)", "Development Phase (Months 2-4)", ...]
+)
+
+# Content Generation → Uses All Specifications
+content_agent.generate_content(slide_spec)  # Considers all detailed specs
+
+# HTML Generation → Implements Exact Requirements  
+html_agent.generate_visualization(slide_spec)  # Follows HTML requirements precisely
+```
+
+### **Benefits of Detailed Specifications**
+- **🎯 Precise Content**: Content generation follows exact requirements rather than generic instructions
+- **🎨 Targeted HTML**: HTML visualizations implement specific layout and content requirements
+- **🔄 Perfect Alignment**: All agents work from the same detailed plan, ensuring consistency
+- **📊 Better Results**: More relevant, brand-aligned content that serves the presentation's purpose
+
 ## 🎨 HTML Content Generation Agent ✨ **NEW**
 
 The **HTML Content Generation Agent** automatically detects when slide content would benefit from visual representation and generates stunning HTML visualizations that are rendered as ultra-high-resolution images (2560x1440 with 2x scaling) and inserted into picture placeholders.
@@ -170,6 +212,33 @@ pip install weasyprint
 
 See `example_html_timeline.py` for complete working examples.
 
+## 📁 Project Structure
+
+```
+Powerpoint Slide Creator/
+├── src/                          # Core application code
+│   ├── agents.py                 # AI agent implementations
+│   ├── workflow.py               # LangGraph workflow orchestration
+│   ├── html_content_agent.py     # HTML visualization agent
+│   ├── llm_client.py            # OpenAI/LLM integration
+│   └── ...                      # Other core modules
+├── generated_presentations/      # Generated PPTX files (git-ignored)
+│   ├── agent_generated_*.pptx   # Auto-generated presentations
+│   └── tests/                   # Test outputs
+├── html_debug/                  # HTML debug files (git-ignored)
+├── icon_cache/                  # Cached icon assets
+├── ekona_slides_template_new.pptx # PowerPoint template (tracked)
+├── auto_slides.py              # Main CLI entry point
+├── .gitignore                  # Excludes generated files
+└── README.md                   # This file
+```
+
+**Key Folders:**
+- **`generated_presentations/`** - All output PPTX files (automatically created, git-ignored)
+- **`src/`** - Core application logic and AI agents
+- **`html_debug/`** - HTML visualization debug files (git-ignored)
+- **`icon_cache/`** - Lucide icon assets for presentations
+
 ## 🚀 Quick Start
 
 ### Using the Agent-Based Workflow (Recommended)
@@ -179,8 +248,10 @@ See `example_html_timeline.py` for complete working examples.
 python -m src.agent_main "Your Topic" --preview
 
 # Generate presentation with unified tracing
-python -m src.agent_main "Your Topic" --template template.pptx --output result.pptx
+python -m src.agent_main "Your Topic" --template template.pptx --output result
 ```
+
+**📁 Output Organization**: Generated presentations are automatically saved in the `generated_presentations/` folder, which is excluded from git tracking for clean repository management.
 
 ## 📈 Monitoring & Analytics
 

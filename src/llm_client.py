@@ -234,38 +234,141 @@ class LangchainLLMClient:
         self,
         layout_info: Dict[str, Any],
         topic: str,
-        slide_spec: Any,
+        slide_spec: Any,  # SlideSpec object
         slide_number: int,
         total_slides: int,
     ) -> str:
-        """Create a contextual prompt for slide content generation"""
-        placeholders = layout_info.get("placeholders", {})
+        """
+        Create contextual content generation prompt with HTML awareness
 
-        # Handle placeholders list vs dict format
+        Args:
+            layout_info: Information about the slide layout
+            topic: The overall presentation topic
+            slide_spec: Specification for this particular slide (includes is_html flag)
+            slide_number: Current slide number (1-indexed)
+            total_slides: Total number of slides in presentation
+
+        Returns:
+            Contextual prompt string with HTML guidance
+        """
+        # Get placeholder information
+        placeholders = layout_info.get("placeholders", [])
+
         if isinstance(placeholders, list):
-            placeholder_list = [
-                p.get("name", f"placeholder_{i}") if isinstance(p, dict) else str(p)
-                for i, p in enumerate(placeholders)
-            ]
-        elif isinstance(placeholders, dict):
-            placeholder_list = list(placeholders.keys())
+            placeholder_descriptions = []
+            for placeholder in placeholders:
+                if isinstance(placeholder, dict):
+                    name = placeholder.get("name", "Unknown")
+                    placeholder_type = placeholder.get("type", "text")
+                    instructions = placeholder.get("instructions", "")
+
+                    desc = f"- {name}"
+                    if placeholder_type != "text":
+                        desc += f" (type: {placeholder_type})"
+                    if instructions:
+                        desc += f" - {instructions}"
+                    placeholder_descriptions.append(desc)
+                else:
+                    placeholder_descriptions.append(f"- {str(placeholder)}")
+
+            placeholders_text = "\n".join(placeholder_descriptions)
         else:
-            placeholder_list = []
+            placeholders_text = "No specific placeholders defined"
+
+        # Check if this slide is marked for HTML visualization
+        is_html = getattr(slide_spec, "is_html", False)
+        html_guidance = ""
+
+        if is_html:
+            html_guidance = """
+🎨 HTML VISUALIZATION SLIDE:
+This slide is specifically designated for HTML visualization. Generate content that:
+- Describes visual elements, processes, timelines, or comparisons
+- Uses clear, structured information that can be visualized
+- Includes specific data points, steps, or sequences when relevant
+- Focuses on visual storytelling rather than just text blocks
+
+CONTENT APPROACH FOR HTML:
+- For timelines: Include dates, milestones, and sequential events
+- For processes: Break down into clear steps with descriptions
+- For comparisons: Present contrasting elements with specific metrics
+- For data viz: Include actual numbers, percentages, or measurable outcomes
+- Structure content to be visualization-friendly
+"""
+        else:
+            html_guidance = """
+📝 STANDARD CONTENT SLIDE:
+This slide uses traditional text content. Generate:
+- Clear, well-structured text content
+- Professional bullet points or paragraphs as appropriate
+- Content suitable for standard text placeholders
+- Focus on clarity and readability
+"""
+
+        # Build detailed specifications from enhanced SlideSpec
+        detailed_specs = []
+
+        # Add detailed purpose if available
+        if hasattr(slide_spec, "detailed_purpose") and slide_spec.detailed_purpose:
+            detailed_specs.append(f"Detailed Purpose: {slide_spec.detailed_purpose}")
+
+        # Add content structure if available
+        if hasattr(slide_spec, "content_structure") and slide_spec.content_structure:
+            detailed_specs.append(f"Content Structure: {slide_spec.content_structure}")
+
+        # Add visual elements if available
+        if hasattr(slide_spec, "visual_elements") and slide_spec.visual_elements:
+            detailed_specs.append(f"Visual Elements: {slide_spec.visual_elements}")
+
+        # Add HTML requirements if available and is HTML slide
+        if (
+            is_html
+            and hasattr(slide_spec, "html_requirements")
+            and slide_spec.html_requirements
+        ):
+            detailed_specs.append(f"HTML Requirements: {slide_spec.html_requirements}")
+
+        # Add key information if available
+        if hasattr(slide_spec, "key_information") and slide_spec.key_information:
+            key_info_text = ", ".join(slide_spec.key_information)
+            detailed_specs.append(f"Key Information: {key_info_text}")
+
+        detailed_specs_text = (
+            "\n- ".join(detailed_specs)
+            if detailed_specs
+            else "No additional specifications"
+        )
 
         return f"""
-Create compelling content for slide {slide_number} of {total_slides}:
+Generate compelling content for slide {slide_number} of {total_slides} in a 
+presentation about "{topic}".
 
-Topic: {topic}
-Slide Title: {getattr(slide_spec, 'slide_title', 'Slide Title')}
-Slide Purpose: {getattr(slide_spec, 'slide_purpose', 'Present information')}
+🎯 SLIDE CONTEXT:
+- Title: {slide_spec.slide_title}
+- Basic Purpose: {slide_spec.slide_purpose}
+- Layout: {layout_info.get('name', 'Unknown Layout')}
 
-Available placeholders: {', '.join(placeholder_list)}
+🎯 DETAILED SPECIFICATIONS:
+- {detailed_specs_text}
 
-Requirements:
-- Make content engaging and informative
-- Ensure content fits the slide's purpose in the overall presentation
-- Keep content appropriate for a professional presentation
-- Make content relevant to the specific slide context
+📋 AVAILABLE PLACEHOLDERS:
+{placeholders_text}
+
+{html_guidance}
+
+🎯 CONTENT REQUIREMENTS:
+- Professional, engaging tone suitable for business presentations
+- Content MUST align with ALL detailed specifications provided above
+- Follow the specified content structure and include all key information
+- Incorporate required visual elements in your content descriptions
+- Ensure content fits the available placeholders appropriately
+- Use Ekona branding context where relevant (professional services, innovation)
+- Make content specific and actionable rather than generic
+
+Generate content for each placeholder that supports the detailed specifications 
+and fits the designated content approach (HTML visualization vs. standard text).
+Use the detailed purpose, content structure, and key information to create 
+precisely targeted content that aligns with the presentation plan.
 """
 
     def _get_content_generation_system_prompt(self) -> str:
@@ -401,9 +504,50 @@ communicates key messages to the audience."""
                 else "  - No placeholders"
             )
 
+            # Build detailed specifications section
+            specifications = [f"Basic Purpose: {slide_spec.slide_purpose}"]
+
+            # Add detailed purpose if available
+            if hasattr(slide_spec, "detailed_purpose") and slide_spec.detailed_purpose:
+                specifications.append(
+                    f"Detailed Purpose: {slide_spec.detailed_purpose}"
+                )
+
+            # Add content structure if available
+            if (
+                hasattr(slide_spec, "content_structure")
+                and slide_spec.content_structure
+            ):
+                specifications.append(
+                    f"Content Structure: {slide_spec.content_structure}"
+                )
+
+            # Add visual elements if available
+            if hasattr(slide_spec, "visual_elements") and slide_spec.visual_elements:
+                specifications.append(f"Visual Elements: {slide_spec.visual_elements}")
+
+            # Add HTML requirements if available and is HTML slide
+            is_html = getattr(slide_spec, "is_html", False)
+            if (
+                is_html
+                and hasattr(slide_spec, "html_requirements")
+                and slide_spec.html_requirements
+            ):
+                specifications.append(
+                    f"HTML Requirements: {slide_spec.html_requirements}"
+                )
+
+            # Add key information if available
+            if hasattr(slide_spec, "key_information") and slide_spec.key_information:
+                key_info_text = ", ".join(slide_spec.key_information)
+                specifications.append(f"Key Information: {key_info_text}")
+
+            specifications_text = "\n".join(specifications)
+            html_indicator = " (HTML VISUALIZATION)" if is_html else ""
+
             detailed_slides += f"""
-Slide {i}: {slide_spec.slide_title}
-Purpose: {slide_spec.slide_purpose}
+Slide {i}: {slide_spec.slide_title}{html_indicator}
+{specifications_text}
 Layout: {layout_name}
 Placeholders:
 {placeholder_text}
@@ -419,19 +563,26 @@ DETAILED SLIDE SPECIFICATIONS:
 
 CRITICAL REQUIREMENTS:
 1. Generate content for ALL {len(presentation_plan)} slides in one unified response
-2. Ensure content flows logically from slide to slide
-3. Maintain consistent messaging and terminology throughout
-4. Each slide should build upon previous slides and prepare for upcoming ones
-5. Use the EXACT placeholder names as specified for each slide
-6. Create engaging, professional content appropriate for business audiences
-7. Ensure content coherence across the entire presentation narrative
+2. STRICTLY FOLLOW all detailed specifications provided for each slide
+3. Ensure content flows logically from slide to slide
+4. Maintain consistent messaging and terminology throughout
+5. Each slide should build upon previous slides and prepare for upcoming ones
+6. Use the EXACT placeholder names as specified for each slide
+7. Create engaging, professional content appropriate for business audiences
+8. Ensure content coherence across the entire presentation narrative
+9. For HTML slides, create content that supports the specified visualization 
+   requirements
+10. Include ALL key information points specified for each slide
 
 CONTENT STRATEGY:
+- Follow the detailed purpose and content structure for each slide
+- Incorporate all specified visual elements and key information
 - Introduction slides should set the stage for detailed content
 - Middle slides should develop key concepts with supporting details
 - Conclusion slides should synthesize and reinforce main messages
 - Use consistent examples and case studies throughout when appropriate
 - Maintain professional tone and clear, concise language
+- For HTML slides, structure content to support the specified visualizations
 
 Generate content that creates a unified, compelling presentation experience 
 where each slide contributes to a coherent whole."""
@@ -1124,7 +1275,7 @@ Your role is to create intelligent presentation plans that:
 - Ensure engaging and professional presentations with custom graphics
 
 CRITICAL: Always consider if content would benefit from Layout 3 HTML 
-visualizations (timelines, processes, workflows, comparisons). Prioritize 
+visualizations (timelines, processes, workflows). Prioritize 
 visual impact at the same level as textual content.
 
 Consider the topic's complexity, target audience, and educational value 

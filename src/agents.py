@@ -236,91 +236,48 @@ class PresentationPlanningAgent:
     def _create_presentation_planning_prompt(
         self, layouts_info: Dict[int, Dict[str, Any]], topic: str
     ) -> str:
-        """Create a detailed prompt for presentation planning"""
-        # Build layout descriptions
+        """Create enhanced prompt for strategic presentation planning with explicit HTML decisions"""
+        # Analyze layouts to identify HTML-capable ones
         layout_descriptions = []
+        html_capable_layouts = []
 
-        # Handle case where layouts_info might be a list
-        # (fix for data structure mismatch)
-        if isinstance(layouts_info, list):
-            for i, layout_info in enumerate(layouts_info):
-                layout_name = (
-                    layout_info.get("name", f"Layout {i}")
-                    if isinstance(layout_info, dict)
-                    else f"Layout {i}"
-                )
-                placeholders = (
-                    layout_info.get("placeholders", {})
-                    if isinstance(layout_info, dict)
-                    else {}
-                )
+        for layout_index, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", f"Layout {layout_index}")
+            placeholders = layout_info.get("placeholders", [])
 
-                if isinstance(placeholders, list) and placeholders:
-                    # Handle list of placeholder objects with descriptions
-                    placeholder_details = []
-                    for p in placeholders:
-                        if isinstance(p, dict):
-                            name = p.get("name", "Placeholder")
-                            instructions = p.get("instructions", "")
-                            if instructions:
-                                placeholder_details.append(f"{name} ({instructions})")
-                            else:
-                                placeholder_details.append(name)
-                        else:
-                            placeholder_details.append(str(p))
-                    placeholder_text = f"Placeholders: {'; '.join(placeholder_details)}"
-                elif isinstance(placeholders, dict) and placeholders:
-                    placeholder_text = f"Placeholders: {', '.join(placeholders.keys())}"
-                else:
-                    placeholder_text = "No placeholders"
+            # Build placeholder description
+            placeholder_text = "No placeholders"
+            if placeholders:
+                placeholder_names = []
+                has_picture_placeholder = False
 
-                layout_descriptions.append(
-                    f"Layout {i} - {layout_name}: {placeholder_text}"
-                )
-        else:
-            # Original dictionary handling
-            for layout_index, layout_info in layouts_info.items():
-                layout_name = layout_info.get("name", f"Layout {layout_index}")
-
-                # Check if layout_info has placeholders
-                if "placeholders" in layout_info:
-                    placeholders = layout_info.get("placeholders", {})
-                    if isinstance(placeholders, dict):
-                        placeholder_text = (
-                            f"Placeholders: {', '.join(placeholders.keys())}"
-                        )
-                    elif isinstance(placeholders, list):
-                        # Handle list of placeholder objects with descriptions
-                        placeholder_details = []
-                        for p in placeholders:
-                            if isinstance(p, dict):
-                                name = p.get("name", "Placeholder")
-                                instructions = p.get("instructions", "")
-                                if instructions:
-                                    placeholder_details.append(
-                                        f"{name} ({instructions})"
-                                    )
-                                else:
-                                    placeholder_details.append(name)
-                            else:
-                                placeholder_details.append(str(p))
-
-                        if placeholder_details:
-                            placeholder_text = (
-                                f"Placeholders: {'; '.join(placeholder_details)}"
-                            )
-                        else:
-                            placeholder_text = "No placeholders"
+                for placeholder in placeholders:
+                    if isinstance(placeholder, dict):
+                        name = placeholder.get("name", "Unknown")
+                        placeholder_names.append(name)
+                        # Check if this layout has picture placeholders for HTML
+                        html_keywords = ["picture", "image", "visual", "html"]
+                        if any(keyword in name.lower() for keyword in html_keywords):
+                            has_picture_placeholder = True
                     else:
-                        placeholder_text = "No placeholders"
-                else:
-                    placeholder_text = "No placeholders"
+                        placeholder_names.append(str(placeholder))
 
-                layout_descriptions.append(
-                    f"Layout {layout_index} - {layout_name}: {placeholder_text}"
-                )
+                placeholder_text = ", ".join(placeholder_names)
+
+                # Track HTML-capable layouts
+                if has_picture_placeholder:
+                    html_capable_layouts.append(layout_index)
+
+            layout_descriptions.append(
+                f"Layout {layout_index} - {layout_name}: {placeholder_text}"
+            )
 
         layouts_text = "\n".join(layout_descriptions)
+        html_layouts_text = (
+            ", ".join(map(str, html_capable_layouts))
+            if html_capable_layouts
+            else "None identified"
+        )
 
         return f"""
 Create a strategic presentation plan for the topic: "{topic}"
@@ -331,18 +288,36 @@ multiple slides when it makes sense.
 Here are the layouts:
 {layouts_text}
 
-🎯 CRITICAL LAYOUT SELECTION REQUIREMENTS:
-1. **DO NOT use layouts sequentially** (0,1,2,3,4,5,6,7,8,9)
-2. **CHOOSE layouts based on CONTENT TYPE**, not sequence
-3. **REUSE effective layouts** for similar content types
-4. **SKIP layouts** that don't fit your content strategy
+🎯 HTML-CAPABLE LAYOUTS: {html_layouts_text}
+These layouts have picture placeholders that can display rich HTML visualizations.
+
+🎯 CRITICAL DECISION REQUIREMENTS:
+1. **EXPLICITLY DECIDE** which slides should use HTML visualizations
+2. **DO NOT use layouts sequentially** (0,1,2,3,4,5,6,7,8,9)
+3. **CHOOSE layouts based on CONTENT TYPE**, not sequence
+4. **PRIORITIZE HTML** for visual content types
+5. **REUSE effective layouts** for similar content types
+
+🎨 WHEN TO USE HTML VISUALIZATIONS (set is_html: true):
+- **Timelines, roadmaps, chronological sequences** → Perfect for HTML
+- **Process flows, workflows, step-by-step procedures** → Ideal for HTML  
+- **Comparisons, before/after scenarios** → Great for HTML
+- **Data visualizations, metrics, statistics** → Excellent for HTML
+- **Complex diagrams, hierarchies, relationships** → Best with HTML
+- **Any content requiring custom graphics or visual flow** → Use HTML
+
+🚫 WHEN NOT TO USE HTML (set is_html: false):
+- **Simple text content** → Regular text placeholders
+- **Basic bullet points** → Standard text formatting  
+- **Icon-heavy content** → Use icon placeholders instead
+- **Chart data** → Use chart placeholders
+- **Simple titles and descriptions** → Regular text
 
 Strategic Guidelines:
 - **Title slides**: Use layouts with title placeholders (0, 1, 2, 3)  
-- **HTML Visualizations**: Use Layout 3 for timelines, processes, workflows, 
-  comparisons, and data visualizations
+- **HTML Visualizations**: Use HTML-capable layouts with is_html: true
 - **Content with icons**: Prefer layouts with multiple icon placeholders (7, 8)
-- **Charts/Data**: Use chart-specific layouts (5, 6)
+- **Charts/Data**: Use chart-specific layouts (5, 6) with is_html: false for simple data
 - **Images**: Use picture-focused layouts (2, 4)
 - **Conclusion**: Use conclusion-specific layouts (8, 9)
 
@@ -350,53 +325,146 @@ Content Planning Requirements:
 1. Use the right number of slides for comprehensive coverage, but do not 
    exceed 15 slides
 2. Create a logical flow from introduction to conclusion  
-3. Select appropriate layouts for each slide's content type
+3. **EXPLICITLY SET is_html flag** for each slide based on content type
 4. Ensure each slide has a clear purpose and advances the narrative
 5. IMPORTANT: You can and SHOULD use the same layout for multiple slides 
    when it makes sense
 6. Make the presentation engaging and informative
-7. Use icons as much as possible when conveying information
-8. Use HTML visualizations for complex data, timelines, processes, and workflows
-9. Some slides are available in the template for branding (e.g Logo, why 
+7. Use HTML visualizations strategically for maximum visual impact
+8. Some slides are available in the template for branding (e.g Logo, why 
    ekona etc..) add them to the presentation plan.
 
 🚫 AVOID THESE ANTI-PATTERNS:
 - Sequential layout usage (0,1,2,3,4,5,6,7,8,9)
 - Using every available layout regardless of content fit
 - Forcing layout variety over content quality
+- Setting is_html: true for simple text content
+- Missing HTML opportunities for visual content
 
 ✅ PREFERRED PATTERNS:
-- Content-driven selection: [0,1,3,7,7,7,2,8] 
-- Strategic reuse: [0,1,3,3,5,7,8]
-- Purpose-focused: [0,3,2,7,7,7,7,8]
-- HTML-focused: [0,3,3,7,3,8]
+- Content-driven selection: [0,1,3(HTML),7,7,7,2,8] 
+- Strategic HTML use: [0,1,3(HTML),3(HTML),5,7,8]
+- Purpose-focused: [0,3(HTML),2,7,7,7,7,8]
+- HTML-focused: [0,3(HTML),3(HTML),7,3(HTML),8]
+
+CRITICAL: For each slide in your plan, you MUST explicitly decide whether 
+is_html should be true or false based on the content type and visualization needs.
+
+🎯 DETAILED PURPOSE SPECIFICATIONS REQUIRED:
+For EVERY slide, provide:
+1. **slide_purpose**: Clear basic purpose (1-2 sentences)
+2. **detailed_purpose**: Comprehensive explanation of what should be 
+   represented (3-4 sentences)
+3. **content_structure**: Specific content organization requirements 
+   (e.g., "two-column comparison", "numbered list of 5 steps")
+4. **visual_elements**: Required visual elements 
+   (e.g., "icons showing growth, timeline markers, comparison arrows")
+5. **key_information**: List of 3-5 key information points that must be included
+
+🎨 FOR HTML SLIDES (when is_html: true), ALSO provide:
+6. **html_requirements**: Specific HTML visualization requirements:
+   - Timeline: "horizontal timeline with 4 milestones, each with date, title, 
+     and description"
+   - Process: "4-step process flow in 2x2 grid, each step with icon, title, 
+     and 2-3 bullet points"
+   - Comparison: "side-by-side comparison table with 3 categories and 
+     5 comparison points each"
+   - Data viz: "infographic with 3 key metrics, each with large number, icon, 
+     and trend indicator"
+
+📝 EXAMPLES OF DETAILED SPECIFICATIONS:
+
+Standard Slide Example:
+- slide_purpose: "Introduce the company and establish credibility"
+- detailed_purpose: "Present Ekona as a trusted partner with proven expertise 
+  in digital transformation. Build confidence through showcasing experience, 
+  client success stories, and key differentiators that make us the right choice."
+- content_structure: "Title with company tagline, 3-column layout with 
+  expertise areas, testimonial quote"
+- visual_elements: "Company logo, 3 icons representing key service areas, 
+  star rating or badge"
+- key_information: ["15+ years of experience", "200+ successful projects", 
+  "95% client satisfaction rate", "Award-winning innovation approach"]
+
+HTML Slide Example:
+- slide_purpose: "Show project timeline and key milestones"
+- detailed_purpose: "Present a comprehensive project roadmap that demonstrates 
+  structured approach, realistic timelines, and clear deliverables. Help client 
+  understand project phases and feel confident about the planned approach."
+- content_structure: "Title explaining timeline scope, horizontal timeline 
+  with clear phases"
+- html_requirements: "Horizontal timeline with 5 major milestones spanning 
+  6 months. Each milestone should include: month indicator, phase name, 
+  2-3 key deliverables, and icon representing the phase type. Use Ekona red 
+  for completed phases and grey for future phases."
+- visual_elements: "Timeline markers, phase icons (planning, development, 
+  testing, launch, support), progress indicators"
+- key_information: ["Discovery & Planning (Month 1)", 
+  "Development Phase (Months 2-4)", "Testing & QA (Month 5)", 
+  "Launch & Deployment (Month 6)", "Ongoing Support"]
 
 Consider the audience and the topic's complexity when planning the structure.
-Focus on telling a compelling story with the most appropriate layouts.
+Focus on telling a compelling story with strategic HTML visualizations that 
+enhance understanding and engagement.
 """
 
     def _get_planning_system_prompt(self) -> str:
         """Get the system prompt for presentation planning"""
         return """You are an expert presentation designer specialized in creating 
-engaging, data-rich presentations. Create strategic presentation plans that 
-maximize visual impact through:
+engaging, data-rich presentations with detailed purpose specifications and 
+strategic HTML visualization decisions.
 
-1. **HTML Visualizations**: Proactively identify content that would benefit from 
-   custom HTML visualizations (timelines, processes, comparisons, workflows)
-2. **Icon Integration**: Use icons extensively to enhance understanding
-3. **Visual Storytelling**: Create compelling narrative flow with appropriate 
-   visual elements
+🎯 PRIMARY MISSION: Create comprehensive presentation plans with detailed purpose 
+specifications that flow through the entire content generation pipeline.
 
-PRIORITIZE Layout 3 ("Title and Picture generated from HTML") for any content 
-involving:
-- Timelines, roadmaps, or chronological information
-- Process flows, workflows, or step-by-step procedures  
-- Comparisons, before/after scenarios
-- Complex data that needs visual representation
-- Interactive-style content that benefits from custom graphics
+CRITICAL RESPONSIBILITIES:
+1. **DETAILED PURPOSE SPECIFICATIONS**: For every slide, provide comprehensive 
+   specifications including detailed_purpose, content_structure, visual_elements, 
+   key_information, and html_requirements (for HTML slides)
+2. **HTML VISUALIZATION DECISIONS**: Explicitly decide which slides should use 
+   HTML visualizations and provide specific HTML requirements
+3. **Strategic Layout Selection**: Choose layouts based on content type, not sequence
+4. **Content Flow Planning**: Ensure each slide's purpose aligns with overall 
+   presentation narrative and provides clear guidance for content generation
 
-Focus on logical flow, audience engagement, and clear communication of key 
-messages through strategic visual choices."""
+DETAILED SPECIFICATION REQUIREMENTS:
+✅ ALWAYS PROVIDE for every slide:
+- slide_purpose: Clear, concise purpose statement
+- detailed_purpose: 3-4 sentence comprehensive explanation
+- content_structure: Specific organization requirements
+- visual_elements: Required visual components
+- key_information: 3-5 essential information points
+
+✅ ADDITIONALLY PROVIDE for HTML slides (is_html: true):
+- html_requirements: Detailed HTML visualization specifications
+
+HTML DECISION FRAMEWORK:
+✅ SET is_html: true FOR:
+- Timelines, roadmaps, chronological sequences
+- Process flows, workflows, step-by-step procedures  
+- Comparisons, before/after scenarios, competitive analysis
+- Data visualizations, metrics dashboards, statistics
+- Complex diagrams, hierarchies, organizational charts
+- Any content requiring custom graphics or interactive-style visuals
+
+❌ SET is_html: false FOR:
+- Simple text content, bullet points
+- Basic titles and descriptions
+- Icon-heavy content (use icon placeholders instead)
+- Standard chart data (use chart placeholders)
+- Introductory or concluding slides with minimal visuals
+
+STRATEGIC PRINCIPLES:
+- **Purpose-Driven Design**: Every specification must serve the slide's purpose
+- **Content Generation Guidance**: Specifications must provide clear guidance 
+  for content and HTML generation agents
+- **Audience Engagement**: Prioritize visual elements that enhance understanding
+- **Presentation Coherence**: Ensure all slides work together as a unified story
+- **Implementation Clarity**: Specifications must be detailed enough for 
+  accurate implementation
+
+Focus on creating presentations with crystal-clear specifications that enable 
+precise content generation and compelling visual storytelling."""
 
     def _create_default_plan(
         self, layouts_info: Dict[int, Dict[str, Any]]
@@ -496,26 +564,27 @@ class ContentGenerationAgent:
     ) -> List[SlideContent]:
         """
         Generate content for all slides with full presentation context using
-        unified generation for better coherence
+        unified generation for better coherence, with HTML-awareness
 
         Args:
             topic: Presentation topic
-            presentation_plan: Complete presentation plan
+            presentation_plan: Complete presentation plan with HTML flags
             layouts_info: Layout information for all slides
             dynamic_models: Dynamic models for content generation
 
         Returns:
-            List of generated slide content with full contextual awareness
+            List of generated slide content with HTML-awareness
         """
         print("  📋 Presentation Outline:")
         for i, slide_spec in enumerate(presentation_plan, 1):
-            print(f"    {i}. {slide_spec.slide_title}")
+            html_indicator = " (HTML)" if slide_spec.is_html else ""
+            print(f"    {i}. {slide_spec.slide_title}{html_indicator}")
 
         print(
-            f"  🔄 Generating ALL {len(presentation_plan)} slides in one unified call..."
+            f"  🔄 Generating ALL {len(presentation_plan)} slides with HTML-awareness..."
         )
 
-        # Use unified generation for better context and coherence
+        # Use unified generation for better context and coherence with HTML flags
         slide_contents = self.llm_client.generate_unified_presentation_content(
             topic=topic,
             presentation_plan=presentation_plan,
@@ -738,7 +807,7 @@ class IconValidationAgent:
         Returns:
             Updated state with corrected icon names
         """
-        print(f"🔍 {self.name}: Validating and correcting icon names...")
+        print(f"�� {self.name}: Validating and correcting icon names...")
 
         try:
             # Check if we have icon errors to process

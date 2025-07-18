@@ -1312,21 +1312,33 @@ class SlideGenerator:
     def _ensure_output_path(self, output_path: str) -> str:
         """
         Ensure the output path has the correct extension and directory exists
+        Uses centralized generated_presentations folder for organization
 
         Args:
             output_path: Requested output path
 
         Returns:
-            Full output path with proper extension
+            Full output path with proper extension in generated_presentations folder
         """
+        # Use default output directory for generated presentations
+        output_dir = os.getenv("OUTPUT_DIRECTORY", "generated_presentations")
+
+        # If output_path is relative and doesn't include the output directory,
+        # prepend it
+        is_relative = not os.path.isabs(output_path)
+        missing_output_dir = not output_path.startswith(output_dir)
+        if is_relative and missing_output_dir:
+            output_path = os.path.join(output_dir, output_path)
+
         # Ensure .pptx extension
         if not output_path.lower().endswith(".pptx"):
             output_path += ".pptx"
 
         # Ensure directory exists
-        output_dir = os.path.dirname(output_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        output_dir_path = os.path.dirname(output_path)
+        if output_dir_path and not os.path.exists(output_dir_path):
+            os.makedirs(output_dir_path, exist_ok=True)
+            print(f"📁 Created output directory: {output_dir_path}")
 
         return output_path
 

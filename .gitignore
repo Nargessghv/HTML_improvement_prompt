@@ -55,6 +55,8 @@ yarn-error.log*
 package-lock.json
 
 # Generated presentations (keep template.pptx)
+generated_presentations/
+dist/
 *.pptx
 !ekona_slides_template_new.pptx
 

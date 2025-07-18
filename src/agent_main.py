@@ -121,6 +121,7 @@ Examples:
             ).rstrip()
             safe_topic = safe_topic.replace(" ", "_")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Note: SlideGenerator will automatically place in generated_presentations/
             args.output = f"agent_generated_{safe_topic}_{timestamp}"
 
         # Create the presentation using agents

@@ -270,7 +270,7 @@ def main():
     presentation_content = generate_content_for_layout(args.topic, layout_definition)
 
     # 3. Create presentation
-    output_dir = Path("dist")
+    output_dir = Path("generated_presentations")
     output_dir.mkdir(exist_ok=True)
     create_presentation_from_layout(
         layout_definition,

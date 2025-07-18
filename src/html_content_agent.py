@@ -10,7 +10,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from langchain_core.runnables import RunnableConfig
 
@@ -55,31 +55,33 @@ class HTMLContentGenerationAgent:
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
         """
-        Process slide contents to detect and generate HTML visualizations
+        Process slide contents to generate HTML visualizations for pre-planned HTML slides
 
         Args:
-            state: Current workflow state with generated slide contents
+            state: Current workflow state with generated slide contents and presentation plan
             config: Langchain configuration with callbacks
 
         Returns:
             Updated state with HTML visualizations processed
         """
-        print(f"🎨 {self.name}: Processing content for HTML visualizations...")
+        print(f"🎨 {self.name}: Processing pre-planned HTML slides...")
 
         try:
             # Check prerequisites
             slide_contents = state.get("slide_contents")
-            if not slide_contents:
-                print(f"⚠️ {self.name}: No slide contents to process")
+            presentation_plan = state.get("presentation_plan")
+
+            if not slide_contents or not presentation_plan:
+                print(f"⚠️ {self.name}: Missing slide contents or presentation plan")
                 return state
 
             if not self.html_available:
                 print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
                 return state
 
-            # Process each slide for HTML visualization opportunities
-            processed_slides = self._process_slides_for_html_content(
-                slide_contents, state.get("topic", ""), config
+            # Process slides using the presentation plan's HTML flags
+            processed_slides = self._process_planned_html_slides(
+                slide_contents, presentation_plan, state.get("topic", ""), config
             )
 
             # Update state with processed content
@@ -195,13 +197,163 @@ class HTMLContentGenerationAgent:
             if should_generate:
                 print(f"        🎨 Generating HTML for '{placeholder_name}'")
 
-                # Generate enhanced HTML content
+                # Generate enhanced HTML content (without detailed specifications)
                 html_content = self._generate_html_visualization_content(
                     placeholder_name=placeholder_name,
                     original_content=content_text,
                     topic=topic,
                     slide_number=slide_number,
                     total_slides=total_slides,
+                    slide_spec=None,
+                    config=config,
+                )
+
+                if html_content:
+                    enhanced_content[placeholder_name] = html_content
+                    html_generated_this_slide = True
+                    print(f"        ✅ Generated HTML for '{placeholder_name}'")
+                else:
+                    # Keep original content if HTML generation fails
+                    enhanced_content[placeholder_name] = content_text
+                    print("        ⚠️  HTML generation failed, keeping original")
+            else:
+                # Keep original content for non-HTML placeholders
+                enhanced_content[placeholder_name] = content_text
+                print(f"        ⚪ Keeping original content for '{placeholder_name}'")
+
+        if not html_generated_this_slide:
+            print("        💡 No HTML content generated for this slide")
+            print("           Consider using visualization keywords in content")
+            print("           (timeline, process, workflow, steps, comparison, etc.)")
+
+        return SlideContent(
+            layout_index=slide_content.layout_index, content=enhanced_content
+        )
+
+    def _process_planned_html_slides(
+        self,
+        slide_contents: List[SlideContent],
+        presentation_plan: List[Any],  # List[SlideSpec]
+        topic: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> List[SlideContent]:
+        """
+        Process slides using the presentation plan's HTML flags instead of detection
+
+        Args:
+            slide_contents: List of slide content objects
+            presentation_plan: List of SlideSpec objects with is_html flags
+            topic: Presentation topic for context
+            config: Langchain configuration
+
+        Returns:
+            List of processed slide content with HTML visualizations where planned
+        """
+        processed_slides = []
+        html_generated_count = 0
+
+        print(
+            f"  🔍 Processing {len(slide_contents)} slides using presentation plan..."
+        )
+
+        for i, (slide_content, slide_spec) in enumerate(
+            zip(slide_contents, presentation_plan), 1
+        ):
+            is_html_planned = getattr(slide_spec, "is_html", False)
+            layout_info = f"Layout {slide_content.layout_index}"
+
+            if is_html_planned:
+                print(f"  📄 Processing HTML slide {i} ({layout_info})...")
+            else:
+                print(f"  📄 Skipping non-HTML slide {i} ({layout_info})...")
+
+            # Show what placeholders this slide has
+            placeholder_names = list(slide_content.content.keys())
+            print(f"      Placeholders: {placeholder_names}")
+
+            if is_html_planned:
+                # Generate HTML for slides planned as HTML
+                enhanced_content = self._enhance_planned_html_slide(
+                    slide_content, slide_spec, topic, i, len(slide_contents), config
+                )
+
+                # Check if HTML was actually generated for this slide
+                html_generated_for_slide = any(
+                    self._is_html_visualization(content)
+                    for content in enhanced_content.content.values()
+                )
+
+                if html_generated_for_slide:
+                    html_generated_count += 1
+                    print(f"      ✅ HTML visualization generated for slide {i}")
+                else:
+                    print(f"      ⚠️ HTML generation failed for planned HTML slide {i}")
+
+                processed_slides.append(enhanced_content)
+            else:
+                # Keep non-HTML slides as-is
+                processed_slides.append(slide_content)
+                print(f"      ⚪ Kept standard content for slide {i}")
+
+        print("  📊 HTML Generation Summary:")
+        print(f"      Total slides: {len(slide_contents)}")
+        html_planned = sum(
+            1 for spec in presentation_plan if getattr(spec, "is_html", False)
+        )
+        print(f"      HTML planned: {html_planned}")
+        print(f"      HTML generated: {html_generated_count}")
+        print(
+            f"      Success rate: {html_generated_count}/{html_planned} planned HTML slides"
+        )
+
+        return processed_slides
+
+    def _enhance_planned_html_slide(
+        self,
+        slide_content: SlideContent,
+        slide_spec: Any,  # SlideSpec
+        topic: str,
+        slide_number: int,
+        total_slides: int,
+        config: Optional[RunnableConfig] = None,
+    ) -> SlideContent:
+        """
+        Enhance a single slide that is planned to be HTML with HTML visualizations
+
+        Args:
+            slide_content: Original slide content
+            slide_spec: The SlideSpec object for this slide
+            topic: Presentation topic
+            slide_number: Current slide number
+            total_slides: Total slides in presentation
+            config: Langchain configuration
+
+        Returns:
+            Enhanced slide content with HTML visualizations
+        """
+        enhanced_content = {}
+        html_generated_this_slide = False
+
+        for placeholder_name, content_text in slide_content.content.items():
+            print(f"        📝 Checking '{placeholder_name}'...")
+            print(f"           Content preview: {content_text[:100]}...")
+
+            # Check if this placeholder should have HTML visualization
+            should_generate = self._should_generate_html_visualization(
+                placeholder_name, content_text
+            )
+
+            if should_generate:
+                print(f"        🎨 Generating HTML for '{placeholder_name}'")
+
+                # Generate enhanced HTML content with detailed specifications
+                html_content = self._generate_html_visualization_content(
+                    placeholder_name=placeholder_name,
+                    original_content=content_text,
+                    topic=topic,
+                    slide_number=slide_number,
+                    total_slides=total_slides,
+                    slide_spec=slide_spec,
                     config=config,
                 )
 
@@ -385,6 +537,7 @@ class HTMLContentGenerationAgent:
         topic: str,
         slide_number: int,
         total_slides: int,
+        slide_spec: Optional[Any] = None,
         config: Optional[RunnableConfig] = None,
     ) -> Optional[str]:
         """
@@ -402,7 +555,12 @@ class HTMLContentGenerationAgent:
         """
         try:
             prompt = self._create_html_generation_prompt(
-                placeholder_name, original_content, topic, slide_number, total_slides
+                placeholder_name,
+                original_content,
+                topic,
+                slide_number,
+                total_slides,
+                slide_spec,
             )
 
             # Generate HTML content
@@ -541,8 +699,53 @@ class HTMLContentGenerationAgent:
         topic: str,
         slide_number: int,
         total_slides: int,
+        slide_spec: Optional[Any] = None,
     ) -> str:
-        """Create prompt for HTML visualization generation"""
+        """Create prompt for HTML visualization generation with detailed specifications"""
+
+        # Build detailed specifications if slide_spec is provided
+        detailed_specs = ""
+        if slide_spec:
+            specs = []
+
+            # Add detailed purpose if available
+            if hasattr(slide_spec, "detailed_purpose") and slide_spec.detailed_purpose:
+                specs.append(f"- Detailed Purpose: {slide_spec.detailed_purpose}")
+
+            # Add content structure if available
+            if (
+                hasattr(slide_spec, "content_structure")
+                and slide_spec.content_structure
+            ):
+                specs.append(f"- Content Structure: {slide_spec.content_structure}")
+
+            # Add HTML requirements if available
+            if (
+                hasattr(slide_spec, "html_requirements")
+                and slide_spec.html_requirements
+            ):
+                specs.append(f"- HTML Requirements: {slide_spec.html_requirements}")
+
+            # Add visual elements if available
+            if hasattr(slide_spec, "visual_elements") and slide_spec.visual_elements:
+                specs.append(f"- Visual Elements: {slide_spec.visual_elements}")
+
+            # Add key information if available
+            if hasattr(slide_spec, "key_information") and slide_spec.key_information:
+                key_info = ", ".join(slide_spec.key_information)
+                specs.append(f"- Key Information: {key_info}")
+
+            if specs:
+                detailed_specs = f"""
+
+🎯 DETAILED SLIDE SPECIFICATIONS:
+{chr(10).join(specs)}
+
+CRITICAL: Your HTML visualization MUST implement these specifications exactly.
+Follow the detailed purpose, content structure, HTML requirements, and include
+all key information points specified above.
+"""
+
         return f"""
 Generate an HTML visualization for a PowerPoint slide placeholder.
 
@@ -550,7 +753,7 @@ CONTEXT:
 - Presentation Topic: {topic}
 - Slide: {slide_number} of {total_slides}
 - Placeholder: {placeholder_name}
-- Original Content: {original_content}
+- Original Content: {original_content}{detailed_specs}
 
 TASK:
 Create a complete, self-contained HTML document that visualizes the 

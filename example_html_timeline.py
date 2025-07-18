@@ -84,7 +84,11 @@ Ongoing Support"""
     presentation = slide_generator._create_powerpoint_presentation(slide_contents)
 
     # Save the presentation
-    output_path = "html_timeline_demo.pptx"
+    import os
+
+    output_dir = "generated_presentations"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "html_timeline_demo.pptx")
     presentation.save(output_path)
     print(f"✅ Saved presentation: {output_path}")
 
@@ -185,7 +189,11 @@ def create_custom_html_slide():
 
     presentation = slide_generator._create_powerpoint_presentation([slide_content])
 
-    output_path = "custom_html_demo.pptx"
+    import os
+
+    output_dir = "generated_presentations"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "custom_html_demo.pptx")
     presentation.save(output_path)
     print(f"✅ Saved custom HTML presentation: {output_path}")
 
