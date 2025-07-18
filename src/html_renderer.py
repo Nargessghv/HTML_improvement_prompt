@@ -45,7 +45,7 @@ except ImportError:
 class HTMLRenderer:
     """
     Converts HTML content to images for PowerPoint slide insertion
-    with enhanced quality and Ekona branding
+    with enhanced quality, Ekona branding, and Lucide icon support
     """
 
     def __init__(self, preferred_method: str = "auto"):
@@ -59,8 +59,69 @@ class HTMLRenderer:
         self.preferred_method = preferred_method
         self.available_methods = self._check_available_methods()
         self.active_method = self._select_method()
+        self.lucide_sprite_content = self._load_lucide_sprite()
 
         print(f"HTML Renderer initialized with method: {self.active_method}")
+        if self.lucide_sprite_content:
+            print("✅ Lucide icon sprite loaded successfully")
+        else:
+            print("⚠️ Lucide icon sprite not found - icons may not display")
+
+    def _load_lucide_sprite(self) -> str:
+        """Load the Lucide sprite SVG content for icon support"""
+        sprite_path = os.path.join(os.path.dirname(__file__), "lucide-sprite.svg")
+        try:
+            with open(sprite_path, encoding="utf-8") as f:
+                content = f.read()
+                # Extract just the symbol definitions from the sprite
+                # Find the <defs> section and extract symbols
+                start_marker = "<defs>"
+                end_marker = "</defs>"
+
+                start_idx = content.find(start_marker)
+                end_idx = content.find(end_marker) + len(end_marker)
+
+                if start_idx != -1 and end_idx != -1:
+                    return content[start_idx:end_idx]
+                # Fallback: return symbols directly
+                return content
+        except (OSError, FileNotFoundError) as e:
+            print(f"Warning: Could not load Lucide sprite: {e}")
+            return ""
+
+    def _inject_lucide_sprite(self, html_content: str) -> str:
+        """
+        Inject Lucide sprite definitions into HTML content for icon support
+
+        Args:
+            html_content: Original HTML content
+
+        Returns:
+            HTML content with embedded Lucide sprite definitions
+        """
+        if not self.lucide_sprite_content:
+            return html_content
+
+        # Find the end of the <body> tag opening and inject sprite
+        body_start = html_content.find("<body")
+        if body_start == -1:
+            return html_content
+
+        # Find the end of the opening <body> tag
+        body_tag_end = html_content.find(">", body_start) + 1
+
+        # Create the sprite SVG container (hidden)
+        sprite_container = f"""
+    <!-- Lucide Icons Sprite -->
+    <svg width="0" height="0" style="position: absolute; visibility: hidden;">
+        {self.lucide_sprite_content}
+    </svg>
+"""
+
+        # Inject the sprite right after the opening <body> tag
+        return (
+            html_content[:body_tag_end] + sprite_container + html_content[body_tag_end:]
+        )
 
     def _check_available_methods(self) -> Dict[str, bool]:
         """Check which rendering methods are available"""
@@ -110,6 +171,9 @@ class HTMLRenderer:
             True if rendering was successful, False otherwise
         """
         try:
+            # Inject Lucide sprite if available
+            html_content = self._inject_lucide_sprite(html_content)
+
             # Try rendering with the active method
             if self.active_method == "playwright":
                 return self._render_with_playwright(

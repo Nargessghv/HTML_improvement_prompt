@@ -405,35 +405,42 @@ class HTMLContentGenerationAgent:
                 placeholder_name, original_content, topic, slide_number, total_slides
             )
 
-            system_prompt = self._get_html_generation_system_prompt()
-
-            # Generate HTML content using LLM
-            html_content = self.llm_client.generate_content(
-                system_prompt=system_prompt, user_prompt=prompt, config=config
+            # Generate HTML content
+            generated_html = self.llm_client.generate_content(
+                system_prompt=self._get_html_generation_system_prompt(),
+                user_prompt=prompt,
+                config=config,
             )
 
-            # Clean the LLM response to remove markdown formatting
-            html_content = self._clean_llm_response(html_content)
+            if not generated_html:
+                print("        ⚠️ No HTML content generated")
+                return original_content
+
+            # Clean the response
+            cleaned_html = self._clean_llm_response(generated_html)
+
+            # Validate and correct Lucide icon names in HTML
+            validated_html = self._validate_and_correct_html_icons(cleaned_html, topic)
 
             # Debug: Show what was generated (summary)
-            if html_content:
-                print(f"    🔍 Generated {len(html_content)} chars of content")
+            if validated_html:
+                print(f"    🔍 Generated {len(validated_html)} chars of content")
 
-            if html_content and self._validate_html_content(html_content):
+            if validated_html and self._validate_html_content(validated_html):
                 # Save HTML to debug folder if enabled
-                if self.debug_enabled and html_content:
+                if self.debug_enabled and validated_html:
                     self._save_html_debug_file(
-                        html_content,
+                        validated_html,
                         placeholder_name,
                         topic,
                         slide_number,
                         original_content,
                     )
 
-                return html_content
+                return validated_html
 
             # Fallback: Try to create basic HTML wrapper if content looks like HTML
-            if html_content and ("<" in html_content and ">" in html_content):
+            if cleaned_html and ("<" in cleaned_html and ">" in cleaned_html):
                 print(f"    🔧 Wrapping partial HTML content for '{placeholder_name}'")
                 wrapped_html = f"""<!DOCTYPE html>
 <html>
@@ -444,7 +451,7 @@ class HTMLContentGenerationAgent:
     </style>
 </head>
 <body>
-    {html_content}
+    {cleaned_html}
 </body>
 </html>"""
                 if self._validate_html_content(wrapped_html):
@@ -461,7 +468,7 @@ class HTMLContentGenerationAgent:
                     return wrapped_html
 
             # Final fallback: Convert text content to basic HTML timeline
-            if html_content and len(html_content) > 10:
+            if cleaned_html and len(cleaned_html) > 10:
                 print(
                     f"    🔧 Converting text to basic HTML timeline for '{placeholder_name}'"
                 )
@@ -480,8 +487,8 @@ class HTMLContentGenerationAgent:
                     return basic_html
 
             print(f"    ⚠️ Generated content not valid HTML for '{placeholder_name}'")
-            if html_content:
-                print(f"    🔍 Generated content was: {html_content[:500]}...")
+            if cleaned_html:
+                print(f"    🔍 Generated content was: {cleaned_html[:500]}...")
             return None
 
         except Exception as e:
@@ -577,6 +584,75 @@ VISUALIZATION TYPES TO CONSIDER:
 - NO external dependencies (no external CSS/JS files)
 - NO interactive elements (this will be converted to static image)
 
+🎯 LUCIDE ICON INTEGRATION (HIGHLY RECOMMENDED):
+- You have access to 1000+ professional Lucide icons
+- Icons enhance visual appeal and information hierarchy
+- Use icons for: processes, features, categories, steps, highlights
+
+ICON USAGE PATTERN:
+```html
+<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
+     stroke-width="2">
+  <use href="#activity"></use>
+</svg>
+```
+
+POPULAR BUSINESS ICONS TO USE:
+- activity, trending-up, trending-down, chart-bar, chart-line, chart-pie
+- users, user-check, team, briefcase, target, rocket
+- clock, calendar, timer, bell, alert-circle, circle-check
+- shield, lock, key, settings, cog, database, server
+- mail, message-circle, phone, globe, wifi, smartphone
+- heart, star, thumbs-up, award, crown, medal
+- arrow-right, arrow-up, arrow-down, chevron-right
+- plus, minus, x, check, search, eye, pen, pencil
+- folder, file, download, upload, share, link
+- shopping-cart, credit-card, dollar-sign, coins
+
+ICON STYLING GUIDELINES:
+- Size: 24px-48px for small icons, 64px-96px for feature icons
+- Color: Use stroke="currentColor" and set color via CSS
+- Stroke width: 2-3 for visibility at small sizes
+- Alignment: Center icons with their content
+- Spacing: 8-16px margin around icons
+
+ICON INTEGRATION EXAMPLES:
+
+Timeline Item:
+```html
+<div class="timeline-item">
+  <svg class="timeline-icon" viewBox="0 0 24 24" fill="none" 
+       stroke="#dc261e" stroke-width="2">
+    <use href="#calendar"></use>
+  </svg>
+  <div class="content">...</div>
+</div>
+```
+
+Process Step:
+```html
+<div class="process-step">
+  <div class="step-header">
+    <svg class="step-icon" viewBox="0 0 24 24" fill="none" 
+         stroke="#ffffff" stroke-width="2">
+      <use href="#rocket"></use>
+    </svg>
+    <h3>Launch Phase</h3>
+  </div>
+</div>
+```
+
+Feature Highlight:
+```html
+<div class="feature">
+  <svg class="feature-icon" viewBox="0 0 24 24" fill="none" 
+       stroke="#dc261e" stroke-width="2">
+    <use href="#shield"></use>
+  </svg>
+  <span>Security</span>
+</div>
+```
+
 📏 LAYOUT OPTIMIZATION RULES:
 1. Set body and html to exact dimensions: 1577x603px
 2. Use margin: 0; padding: 0; on body and html
@@ -602,9 +678,49 @@ VISUALIZATION TYPES TO CONSIDER:
 - Card backgrounds: subtle shadows with #ffffff
 - Border colors: #e2e8f0 for structure, #dc261e for emphasis
 
+🚀 ICON-ENHANCED VISUALIZATION EXAMPLES:
+
+1. **TIMELINE WITH ICONS:**
+```html
+<div class="timeline-event">
+  <svg class="event-icon" viewBox="0 0 24 24" fill="none" stroke="#dc261e" stroke-width="2">
+    <use href="#rocket"></use>
+  </svg>
+  <div class="event-content">
+    <h4>Product Launch</h4>
+    <p>2024 Q1</p>
+  </div>
+</div>
+```
+
+2. **PROCESS FLOW WITH ICONS:**
+```html
+<div class="process-grid">
+  <div class="process-item">
+    <svg class="process-icon" viewBox="0 0 24 24" fill="#ffffff" stroke="none">
+      <use href="#lightbulb"></use>
+    </svg>
+    <h4>Ideate</h4>
+  </div>
+</div>
+```
+
+3. **FEATURE COMPARISON WITH ICONS:**
+```html
+<div class="feature-comparison">
+  <div class="feature-item">
+    <svg class="feature-icon" viewBox="0 0 24 24" fill="none" 
+         stroke="#dc261e" stroke-width="3">
+      <use href="#circle-check"></use>
+    </svg>
+    <span>Advanced Security</span>
+  </div>
+</div>
+```
+
 OUTPUT:
-Return ONLY the complete HTML code with optimized 1577x603 layout, 
-no explanations or markdown formatting.
+Return ONLY the complete HTML code with optimized 1577x603 layout and 
+integrated Lucide icons, no explanations or markdown formatting.
 """
 
     def _get_html_generation_system_prompt(self) -> str:
@@ -837,56 +953,230 @@ space-optimized visual representations of the provided content."""
         suffix: str = "",
     ) -> None:
         """
-        Save HTML content to debug folder for inspection
+        Save HTML content to debug file for comparison and verification
 
         Args:
-            html_content: The generated HTML content
+            html_content: Generated HTML content
             placeholder_name: Name of the placeholder
             topic: Presentation topic
             slide_number: Slide number
             original_content: Original text content
             suffix: Optional suffix for filename
         """
+        if not self.debug_enabled:
+            return
+
         try:
-            timestamp = datetime.now().strftime("%H%M%S")
-            safe_topic = "".join(
-                c for c in topic if c.isalnum() or c in (" ", "-", "_")
-            ).rstrip()
-            safe_topic = safe_topic.replace(" ", "_")[:20]
-            safe_placeholder = "".join(
+            # Ensure debug directory exists
+            os.makedirs(self.debug_folder, exist_ok=True)
+
+            # Create filename with slide info and timestamp
+            slide_num = slide_number
+            clean_placeholder = "".join(
                 c for c in placeholder_name if c.isalnum() or c in ("-", "_")
             )[:30]
+            timestamp = datetime.now().strftime("%H%M%S")
 
-            filename = (
-                f"slide_{slide_number:02d}_{safe_placeholder}_{timestamp}{suffix}.html"
+            # Inject Lucide sprite into HTML for debug file so icons display correctly
+            if self.html_renderer and self.html_renderer.lucide_sprite_content:
+                html_content = self.html_renderer._inject_lucide_sprite(html_content)
+
+            base_filename = (
+                f"slide_{slide_num:02d}_{clean_placeholder}_{timestamp}{suffix}"
             )
-            filepath = self.debug_folder / filename
+            html_file = os.path.join(self.debug_folder, f"{base_filename}.html")
+            json_file = os.path.join(self.debug_folder, f"{base_filename}.json")
 
-            # Create metadata for the HTML file
+            # Save HTML file with sprite included
+            with open(html_file, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
+            # Save metadata JSON
             metadata = {
                 "timestamp": datetime.now().isoformat(),
                 "slide_number": slide_number,
                 "placeholder_name": placeholder_name,
                 "topic": topic,
-                "original_content": (
-                    original_content[:500] + "..."
-                    if len(original_content) > 500
-                    else original_content
+                "original_content_length": len(original_content),
+                "generated_html_length": len(html_content),
+                "lucide_sprite_included": bool(
+                    self.html_renderer
+                    and self.html_renderer.lucide_sprite_content
+                    and "Lucide Icons Sprite" in html_content
                 ),
-                "html_length": len(html_content),
-                "file_type": "html_visualization",
             }
 
-            # Save HTML file
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(html_content)
-
-            # Save metadata file
-            metadata_filepath = filepath.with_suffix(".json")
-            with open(metadata_filepath, "w", encoding="utf-8") as f:
+            with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
 
-            print(f"    💾 Saved HTML debug file: {filename}")
+            print(f"    💾 Saved HTML debug file: {base_filename}.html")
 
         except Exception as e:
-            print(f"    ⚠️ Failed to save HTML debug file: {e}")
+            print(f"    ⚠️ Failed to save debug file: {e}")
+
+    def _validate_and_correct_html_icons(self, html_content: str, topic: str) -> str:
+        """
+        Validate and correct Lucide icon names in HTML content
+
+        Args:
+            html_content: HTML content containing Lucide icon references
+            topic: Presentation topic for context in corrections
+
+        Returns:
+            HTML content with corrected icon names
+        """
+        try:
+            # Extract icon names from HTML
+            import re
+
+            icon_pattern = r'<use href="#([^"]+)"></use>'
+            icon_matches = re.findall(icon_pattern, html_content)
+
+            if not icon_matches:
+                return html_content
+
+            print(
+                f"    🔍 Found {len(icon_matches)} Lucide icons in HTML: {icon_matches}"
+            )
+
+            # Get valid Lucide icon names from sprite
+            valid_icons = self._get_valid_lucide_icons()
+
+            # Find invalid icons
+            invalid_icons = []
+            for icon_name in icon_matches:
+                if icon_name not in valid_icons:
+                    invalid_icons.append(icon_name)
+
+            if not invalid_icons:
+                print("    ✅ All Lucide icons are valid")
+                return html_content
+
+            print(f"    ⚠️ Invalid Lucide icons: {invalid_icons}")
+
+            # Get corrections from LLM
+            corrections = self._get_lucide_icon_corrections(
+                invalid_icons, topic, valid_icons
+            )
+
+            if not corrections:
+                print("    ⚠️ No corrections generated")
+                return html_content
+
+            print(f"    ✅ Generated corrections: {corrections}")
+
+            # Apply corrections to HTML
+            corrected_html = html_content
+            for invalid_icon, valid_icon in corrections.items():
+                old_ref = f'<use href="#{invalid_icon}"></use>'
+                new_ref = f'<use href="#{valid_icon}"></use>'
+                corrected_html = corrected_html.replace(old_ref, new_ref)
+                print(f"    📝 Corrected '{invalid_icon}' → '{valid_icon}' in HTML")
+
+            return corrected_html
+
+        except Exception as e:
+            print(f"    ⚠️ Error validating HTML icons: {e}")
+            return html_content
+
+    def _get_valid_lucide_icons(self) -> list:
+        """Get list of valid Lucide icon names from the sprite"""
+        try:
+            if not self.html_renderer or not self.html_renderer.lucide_sprite_content:
+                return []
+
+            # Extract icon IDs from sprite content
+            import re
+
+            id_pattern = r'id="([^"]+)"'
+            valid_icons = re.findall(
+                id_pattern, self.html_renderer.lucide_sprite_content
+            )
+            return valid_icons
+
+        except Exception as e:
+            print(f"Warning: Could not extract Lucide icons: {e}")
+            return []
+
+    def _get_lucide_icon_corrections(
+        self, invalid_icons: list, topic: str, valid_icons: list
+    ) -> dict:
+        """
+        Get corrections for invalid Lucide icon names using LLM
+
+        Args:
+            invalid_icons: List of invalid icon names
+            topic: Presentation topic for context
+            valid_icons: List of all valid Lucide icon names
+
+        Returns:
+            Dictionary mapping invalid icons to corrected icons
+        """
+        try:
+            # Sample valid icons for prompt (first 100 alphabetically)
+            sample_valid_icons = sorted(valid_icons)[:100]
+
+            prompt = (
+                f"""
+The following Lucide icon names are INVALID and need correction:
+{', '.join(invalid_icons)}
+
+Presentation topic: {topic}
+
+AVAILABLE LUCIDE ICONS (sample of {len(sample_valid_icons)} """
+                + f"""from {len(valid_icons)} total):
+{', '.join(sample_valid_icons)}
+
+For each invalid icon, suggest the closest valid Lucide icon name that:
+1. ✅ EXISTS in the Lucide library (from the list above)
+2. 🎯 Has similar meaning/purpose to the invalid icon
+3. 📝 Fits the presentation topic: "{topic}"
+4. 🔤 Uses exact Lucide naming (hyphen-separated, lowercase)
+
+Common corrections:
+- check-circle → circle-check
+- edit → pen or pencil
+- bar-chart → bar-chart-3
+- money → coins
+
+Please respond in this EXACT format:
+invalid_icon1 -> valid_icon1
+invalid_icon2 -> valid_icon2
+"""
+            )
+
+            system_prompt = """You are an expert Lucide icon validation specialist.
+Your task is to correct invalid Lucide icon names to valid alternatives.
+
+CRITICAL REQUIREMENTS:
+- ONLY suggest icon names from the provided valid icons list
+- Choose icons with similar semantic meaning
+- Use exact Lucide naming conventions (lowercase, hyphen-separated)
+- Consider the presentation context when choosing alternatives"""
+
+            # Use the LLM client to generate corrections
+            response = self.llm_client.generate_content(
+                system_prompt=system_prompt, user_prompt=prompt
+            )
+
+            if not response:
+                return {}
+
+            # Parse corrections from response
+            corrections = {}
+            lines = response.strip().split("\n")
+
+            for line in lines:
+                if "->" in line:
+                    parts = line.split("->")
+                    if len(parts) == 2:
+                        invalid = parts[0].strip()
+                        valid = parts[1].strip()
+                        if invalid in invalid_icons and valid in valid_icons:
+                            corrections[invalid] = valid
+
+            return corrections
+
+        except Exception as e:
+            print(f"Error getting Lucide icon corrections: {e}")
+            return {}
