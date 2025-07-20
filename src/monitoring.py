@@ -6,7 +6,6 @@ using Langfuse for LLM call tracking and agent workflow monitoring.
 """
 
 import functools
-import os
 import time
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Union
@@ -33,26 +32,27 @@ class SlideGenerationMonitor:
 
     def __init__(self):
         """Initialize Langfuse monitoring client and callback handler"""
-        self.langfuse = Langfuse(
-            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
-        )
+        self._langfuse = None
+        self._callback_handler = None
+        self._initialize()
 
-        # Initialize callback handler for LangGraph integration
-        self.callback_handler = None
-
-        # Verify connection
+    def _initialize(self):
+        """Eagerly initialize the Langfuse client."""
         try:
-            self.langfuse.auth_check()
-            self.callback_handler = CallbackHandler()
+            self._langfuse = Langfuse()
+            self._callback_handler = CallbackHandler()
             print(
                 "✅ Langfuse monitoring and callback handler initialized successfully"
             )
         except Exception as e:
             print(f"⚠️  Langfuse monitoring disabled: {e}")
-            self.langfuse = None
-            self.callback_handler = None
+            self._langfuse = None
+            self._callback_handler = None
+
+    @property
+    def langfuse(self):
+        """Public property to access the Langfuse client."""
+        return self._langfuse
 
     def get_callback_handler(self) -> Optional[CallbackHandler]:
         """
@@ -61,7 +61,7 @@ class SlideGenerationMonitor:
         Returns:
             CallbackHandler instance for unified tracing, or None if disabled
         """
-        return self.callback_handler
+        return self._callback_handler
 
     def get_monitored_openai_client(self):
         """
@@ -301,12 +301,12 @@ class SlideGenerationMonitor:
         )
 
     def flush(self):
-        """Flush monitoring data to Langfuse"""
+        """Flush any buffered data to Langfuse"""
         if self.langfuse:
             self.langfuse.flush()
 
 
-# Global monitor instance
+# Global instance of the monitor
 slide_monitor = SlideGenerationMonitor()
 
 

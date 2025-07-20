@@ -20,8 +20,8 @@ class LLMConfig:
     """Configuration for LLM settings"""
 
     model: str = "gpt-4o"
-    max_tokens: int = 2000
-    temperature: float = 0.7
+    max_tokens: int = 50000
+    temperature: float = 0.1
     api_key: Optional[str] = None
 
     def __post_init__(self):
@@ -183,8 +183,8 @@ def create_env_template():
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-4o
 OPENAI_MODEL_FAST=gpt-4o-mini
-OPENAI_MAX_TOKENS=2000
-OPENAI_TEMPERATURE=0.7
+OPENAI_MAX_TOKENS=10000
+OPENAI_TEMPERATURE=0.1
 
 # Langfuse Monitoring (Optional but recommended)
 LANGFUSE_PUBLIC_KEY=your_langfuse_public_key

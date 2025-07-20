@@ -67,6 +67,86 @@ class HTMLRenderer:
         else:
             print("⚠️ Lucide icon sprite not found - icons may not display")
 
+    def _prepare_html_for_rendering(self, html_content: str) -> str:
+        """
+        Prepare HTML for rendering by injecting Lucide sprite and Mermaid.js
+
+        Args:
+            html_content: Original HTML content
+
+        Returns:
+            HTML content ready for rendering
+        """
+        # 1. Inject Lucide icon sprite
+        if self.lucide_sprite_content:
+            body_start = html_content.find("<body")
+            if body_start != -1:
+                body_tag_end = html_content.find(">", body_start) + 1
+                sprite_container = f"""
+    <!-- Lucide Icons Sprite -->
+    <svg width="0" height="0" style="position: absolute; visibility: hidden;">
+        {self.lucide_sprite_content}
+    </svg>
+"""
+                html_content = (
+                    html_content[:body_tag_end]
+                    + sprite_container
+                    + html_content[body_tag_end:]
+                )
+
+        # 2. Check for and inject Mermaid.js if needed
+        if '<div class="mermaid">' in html_content:
+            print("🧜‍♀️ Mermaid diagram detected, injecting script...")
+            head_end = html_content.find("</head>")
+            if head_end != -1:
+                mermaid_script = """
+    <!-- Mermaid.js for diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {
+          'primaryColor': '#ffffff',
+          'primaryTextColor': '#000000',
+          'primaryBorderColor': '#2d3748',
+          'lineColor': '#2d3748',
+          'secondaryColor': '#f3f4f6',
+          'tertiaryColor': '#ffffff',
+          'fontFamily': '"Segoe UI", system-ui, sans-serif',
+          'fontSize': '16px',
+
+          'gitGraph:': {
+            'mainBranchName': 'main',
+            'mainBranchOrder': 0
+          },
+
+          'pieBkgColor': '#ffffff',
+          'pieBorderColor': '#2d3748',
+          'pieTextColor': '#000000',
+
+          'actorBkgColor': '#ffffff',
+          'actorBorderColor': '#dc261e',
+          'actorTextColor': '#000000',
+
+          'taskBkgColor': '#ffffff',
+          'taskBorderColor': '#dc261e',
+          'taskTextColor': '#000000',
+          
+          'nodeBorder': '#2d3748',
+
+          'messageTextColor': '#000000',
+          'messageLineColor': '#2d3748',
+        }
+      });
+    </script>
+"""
+                html_content = (
+                    html_content[:head_end] + mermaid_script + html_content[head_end:]
+                )
+
+        return html_content
+
     def _load_lucide_sprite(self) -> str:
         """Load the Lucide sprite SVG content for icon support"""
         sprite_path = os.path.join(os.path.dirname(__file__), "lucide-sprite.svg")
@@ -99,29 +179,9 @@ class HTMLRenderer:
         Returns:
             HTML content with embedded Lucide sprite definitions
         """
-        if not self.lucide_sprite_content:
-            return html_content
-
-        # Find the end of the <body> tag opening and inject sprite
-        body_start = html_content.find("<body")
-        if body_start == -1:
-            return html_content
-
-        # Find the end of the opening <body> tag
-        body_tag_end = html_content.find(">", body_start) + 1
-
-        # Create the sprite SVG container (hidden)
-        sprite_container = f"""
-    <!-- Lucide Icons Sprite -->
-    <svg width="0" height="0" style="position: absolute; visibility: hidden;">
-        {self.lucide_sprite_content}
-    </svg>
-"""
-
-        # Inject the sprite right after the opening <body> tag
-        return (
-            html_content[:body_tag_end] + sprite_container + html_content[body_tag_end:]
-        )
+        # This method is now part of _prepare_html_for_rendering
+        # but kept for compatibility or direct use if needed.
+        return self._prepare_html_for_rendering(html_content)
 
     def _check_available_methods(self) -> Dict[str, bool]:
         """Check which rendering methods are available"""
@@ -171,25 +231,25 @@ class HTMLRenderer:
             True if rendering was successful, False otherwise
         """
         try:
-            # Inject Lucide sprite if available
-            html_content = self._inject_lucide_sprite(html_content)
+            # Prepare HTML by injecting necessary scripts and sprites
+            prepared_html = self._prepare_html_for_rendering(html_content)
 
             # Try rendering with the active method
             if self.active_method == "playwright":
                 return self._render_with_playwright(
-                    html_content, output_path, width, height, **kwargs
+                    prepared_html, output_path, width, height, **kwargs
                 )
             if self.active_method == "selenium":
                 return self._render_with_selenium(
-                    html_content, output_path, width, height, **kwargs
+                    prepared_html, output_path, width, height, **kwargs
                 )
             if self.active_method == "weasyprint":
                 return self._render_with_weasyprint(
-                    html_content, output_path, width, height, **kwargs
+                    prepared_html, output_path, width, height, **kwargs
                 )
             if self.active_method == "imgkit":
                 return self._render_with_imgkit(
-                    html_content, output_path, width, height, **kwargs
+                    prepared_html, output_path, width, height, **kwargs
                 )
 
         except Exception as e:
@@ -324,7 +384,9 @@ class HTMLRenderer:
             html_doc = weasyprint.HTML(string=html_with_css)
 
             # Render to PNG with high resolution
-            html_doc.write_png(target=output_path, resolution=width // 8)  # High DPI
+            html_doc.write_png(  # type: ignore
+                target=output_path, resolution=width // 8
+            )  # High DPI
 
             return os.path.exists(output_path)
 
@@ -352,479 +414,3 @@ class HTMLRenderer:
         except Exception as e:
             print(f"imgkit rendering error: {e}")
             return False
-
-    def create_timeline_html(
-        self, events: list, title: str = "Timeline", theme: str = "ekona"
-    ) -> str:
-        """
-        Generate HTML for a timeline visualization optimized for 1577x603 space
-
-        Args:
-            events: List of event dictionaries with 'date', 'title', 'description'
-            title: Timeline title
-            theme: Color theme ('ekona', 'modern', 'minimal')
-
-        Returns:
-            HTML string for the timeline optimized for PowerPoint slide space
-        """
-        # Ekona brand colors optimized for space
-        if theme == "ekona":
-            primary_color = "#dc261e"  # Ekona red
-            secondary_color = "#404040"  # Ekona dark grey
-            background_color = "#ffffff"  # Pure white
-            text_color = "#2d3748"  # Dark text for readability
-            accent_color = "#f7fafc"  # Very light accent
-            gradient_bg = "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)"
-        elif theme == "modern":
-            primary_color = "#2563eb"
-            secondary_color = "#64748b"
-            background_color = "#ffffff"
-            text_color = "#1e293b"
-            accent_color = "#f8fafc"
-            gradient_bg = "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)"
-        else:  # minimal
-            primary_color = "#000000"
-            secondary_color = "#333333"
-            background_color = "#ffffff"
-            text_color = "#333333"
-            accent_color = "#f9f9f9"
-            gradient_bg = "#ffffff"
-
-        # Generate calendar/clock SVG icon
-        calendar_icon = f"""
-        <svg class="timeline-icon" viewBox="0 0 24 24" fill="none" stroke="{primary_color}" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-        </svg>
-        """
-
-        # Generate horizontal timeline events HTML for space optimization
-        events_html = ""
-        for i, event in enumerate(events):
-            # Add connecting line for all but last event
-            connector = (
-                "" if i == len(events) - 1 else '<div class="timeline-connector"></div>'
-            )
-
-            events_html += f"""
-            <div class="timeline-item">
-                <div class="timeline-content">
-                    <div class="timeline-marker">
-                        {calendar_icon}
-                    </div>
-                    <div class="event-details">
-                        <div class="date">{event.get('date', '')}</div>
-                        <h3>{event.get('title', '')}</h3>
-                        <p>{event.get('description', '')}</p>
-                    </div>
-                </div>
-                {connector}
-            </div>
-            """
-
-        html_template = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{title}</title>
-            <style>
-                html, body {{
-                    margin: 0;
-                    padding: 0;
-                    width: 1577px;
-                    height: 603px;
-                    overflow: hidden;
-                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-                    background: {gradient_bg};
-                    color: {text_color};
-                    box-sizing: border-box;
-                }}
-                
-                .timeline-container {{
-                    width: 100%;
-                    height: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    padding: 25px 40px;
-                    box-sizing: border-box;
-                }}
-                
-                .timeline-title {{
-                    text-align: center;
-                    font-size: 36px;
-                    font-weight: 700;
-                    margin: 0 0 30px 0;
-                    color: {primary_color};
-                    line-height: 1.2;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                }}
-                
-                .timeline {{
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    flex: 1;
-                    position: relative;
-                    padding: 0 20px;
-                }}
-                
-                .timeline::before {{
-                    content: '';
-                    position: absolute;
-                    left: 20px;
-                    right: 20px;
-                    top: 50%;
-                    height: 4px;
-                    background: linear-gradient(90deg, {primary_color} 0%, {secondary_color} 50%, {primary_color} 100%);
-                    border-radius: 2px;
-                    z-index: 1;
-                }}
-                
-                .timeline-item {{
-                    position: relative;
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    z-index: 3;
-                    max-width: calc(100% / {len(events) if events else 1});
-                }}
-                
-                .timeline-content {{
-                    background: {background_color};
-                    border-radius: 16px;
-                    padding: 25px 20px;
-                    box-shadow: 0 8px 25px rgba(220, 38, 30, 0.15);
-                    border: 2px solid {accent_color};
-                    border-top: 6px solid {primary_color};
-                    text-align: center;
-                    width: 100%;
-                    box-sizing: border-box;
-                    min-height: 220px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    position: relative;
-                    transform: translateY(-20px);
-                }}
-                
-                .timeline-marker {{
-                    width: 60px;
-                    height: 60px;
-                    background: {primary_color};
-                    border: 6px solid {background_color};
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    box-shadow: 0 4px 12px rgba(220, 38, 30, 0.3);
-                    position: absolute;
-                    bottom: -50px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    z-index: 4;
-                }}
-                
-                .timeline-icon {{
-                    width: 28px;
-                    height: 28px;
-                    stroke: {background_color};
-                    stroke-width: 2.5;
-                }}
-                
-                .date {{
-                    font-size: 16px;
-                    color: {primary_color};
-                    font-weight: 700;
-                    margin-bottom: 12px;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                }}
-                
-                .event-details h3 {{
-                    margin: 0 0 15px 0;
-                    font-size: 20px;
-                    color: {secondary_color};
-                    font-weight: 600;
-                    line-height: 1.3;
-                    min-height: 50px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }}
-                
-                .event-details p {{
-                    margin: 0;
-                    font-size: 15px;
-                    color: {text_color};
-                    line-height: 1.5;
-                    text-align: center;
-                    opacity: 0.85;
-                }}
-                
-                .timeline-connector {{
-                    position: absolute;
-                    right: -15px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 30px;
-                    height: 6px;
-                    background: linear-gradient(90deg, transparent 0%, {primary_color} 50%, transparent 100%);
-                    z-index: 2;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="timeline-container">
-                <div class="timeline-title">{title}</div>
-                <div class="timeline">
-                    {events_html}
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-        return html_template
-
-    def create_process_flow_html(
-        self, steps: list, title: str = "Process Flow", theme: str = "ekona"
-    ) -> str:
-        """
-        Generate HTML for a process flow visualization optimized for 1577x603 space
-
-        Args:
-            steps: List of step dictionaries with 'title', 'description', 'icon'
-            title: Flow title
-            theme: Color theme
-
-        Returns:
-            HTML string for the process flow optimized for PowerPoint slide space
-        """
-        if theme == "ekona":
-            primary_color = "#dc261e"
-            secondary_color = "#404040"
-            background_color = "#ffffff"
-            text_color = "#2d3748"
-            accent_color = "#f7fafc"
-            gradient_bg = "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)"
-        else:
-            primary_color = "#2563eb"
-            secondary_color = "#64748b"
-            background_color = "#ffffff"
-            text_color = "#1e293b"
-            accent_color = "#f8fafc"
-            gradient_bg = "linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)"
-
-        # Calculate optimal grid layout based on number of steps
-        num_steps = len(steps) if steps else 1
-        if num_steps <= 3:
-            columns = num_steps
-            rows = 1
-        elif num_steps <= 6:
-            columns = 3
-            rows = 2
-        elif num_steps <= 8:
-            columns = 4
-            rows = 2
-        else:
-            columns = 4
-            rows = 3
-
-        # Generate step icons (customizable SVG)
-        def get_step_icon(step_num):
-            return f"""
-            <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="{background_color}" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12,6 12,12 16,14"></polyline>
-            </svg>
-            """
-
-        steps_html = ""
-        for i, step in enumerate(steps):
-            # Add arrow connector for all but last step
-            arrow = (
-                ""
-                if i == len(steps) - 1
-                else f"""
-            <div class="step-arrow">
-                <svg viewBox="0 0 24 24" fill="none" stroke="{primary_color}" stroke-width="3">
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                    <polyline points="12,5 19,12 12,19"></polyline>
-                </svg>
-            </div>
-            """
-            )
-
-            steps_html += f"""
-            <div class="process-step">
-                <div class="step-header">
-                    <div class="step-number">
-                        <span>{i + 1}</span>
-                        {get_step_icon(i + 1)}
-                    </div>
-                    <h3>{step.get('title', f'Step {i + 1}')}</h3>
-                </div>
-                <div class="step-content">
-                    <p>{step.get('description', '')}</p>
-                </div>
-                {arrow}
-            </div>
-            """
-
-        html_template = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{title}</title>
-            <style>
-                html, body {{
-                    margin: 0;
-                    padding: 0;
-                    width: 1577px;
-                    height: 603px;
-                    overflow: hidden;
-                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-                    background: {gradient_bg};
-                    color: {text_color};
-                    box-sizing: border-box;
-                }}
-                
-                .process-container {{
-                    width: 100%;
-                    height: 100%;
-                    display: flex;
-                    flex-direction: column;
-                    padding: 25px 40px;
-                    box-sizing: border-box;
-                }}
-                
-                .process-title {{
-                    text-align: center;
-                    font-size: 36px;
-                    font-weight: 700;
-                    margin: 0 0 35px 0;
-                    color: {primary_color};
-                    line-height: 1.2;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                }}
-                
-                .process-flow {{
-                    display: grid;
-                    grid-template-columns: repeat({columns}, 1fr);
-                    grid-template-rows: repeat({rows}, 1fr);
-                    gap: 25px;
-                    flex: 1;
-                    align-items: center;
-                }}
-                
-                .process-step {{
-                    background: {background_color};
-                    border-radius: 20px;
-                    padding: 30px 25px;
-                    box-shadow: 0 10px 30px rgba(220, 38, 30, 0.15);
-                    border: 2px solid {accent_color};
-                    border-top: 6px solid {primary_color};
-                    text-align: center;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    align-items: center;
-                    position: relative;
-                    transition: transform 0.3s ease, box-shadow 0.3s ease;
-                    min-height: 180px;
-                }}
-                
-                .step-header {{
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    margin-bottom: 20px;
-                }}
-                
-                .step-number {{
-                    width: 70px;
-                    height: 70px;
-                    background: {primary_color};
-                    color: {background_color};
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 24px;
-                    font-weight: 700;
-                    margin-bottom: 15px;
-                    box-shadow: 0 6px 20px rgba(220, 38, 30, 0.3);
-                    position: relative;
-                }}
-                
-                .step-number span {{
-                    position: absolute;
-                    z-index: 2;
-                }}
-                
-                .step-icon {{
-                    width: 35px;
-                    height: 35px;
-                    opacity: 0.2;
-                    position: absolute;
-                }}
-                
-                .step-header h3 {{
-                    margin: 0;
-                    color: {secondary_color};
-                    font-size: 20px;
-                    font-weight: 600;
-                    line-height: 1.3;
-                    text-align: center;
-                    min-height: 45px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }}
-                
-                .step-content p {{
-                    margin: 0;
-                    color: {text_color};
-                    font-size: 15px;
-                    line-height: 1.5;
-                    text-align: center;
-                    opacity: 0.85;
-                }}
-                
-                .step-arrow {{
-                    position: absolute;
-                    right: -35px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    width: 30px;
-                    height: 30px;
-                    z-index: 10;
-                }}
-                
-                .step-arrow svg {{
-                    width: 100%;
-                    height: 100%;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="process-container">
-                <div class="process-title">{title}</div>
-                <div class="process-flow">
-                    {steps_html}
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-        return html_template

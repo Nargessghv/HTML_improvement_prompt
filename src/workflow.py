@@ -12,6 +12,7 @@ from langgraph.graph import END, StateGraph
 
 from .agents import (
     ContentGenerationAgent,
+    HTMLRefinementAgent,
     IconValidationAgent,
     LayoutAnalysisAgent,
     PresentationPlanningAgent,
@@ -37,6 +38,7 @@ class SlideGenerationWorkflow:
         self.planning_agent = PresentationPlanningAgent()
         self.content_agent = ContentGenerationAgent()
         self.html_content_agent = HTMLContentGenerationAgent()  # Add HTML agent
+        self.refinement_agent = HTMLRefinementAgent()  # Add Refinement agent
         self.assembly_agent = SlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
         self.icon_validator = IconValidationAgent()
@@ -61,6 +63,7 @@ class SlideGenerationWorkflow:
         workflow.add_node(
             "html_content_generation", self._html_content_generation_node
         )  # Add HTML node
+        workflow.add_node("html_refinement", self._html_refinement_node)
         workflow.add_node("quality_review", self._quality_review_node)
         workflow.add_node("slide_assembly", self._slide_assembly_node)
         workflow.add_node("icon_validation", self._icon_validation_node)
@@ -91,8 +94,15 @@ class SlideGenerationWorkflow:
             {"success": "html_content_generation", "error": "error_handler"},
         )
 
-        # HTML content generation -> Quality review (always proceed)
-        workflow.add_edge("html_content_generation", "quality_review")
+        # HTML content generation -> HTML Refinement
+        workflow.add_edge("html_content_generation", "html_refinement")
+
+        # HTML refinement -> Quality review or loop
+        workflow.add_conditional_edges(
+            "html_refinement",
+            self._check_html_refinement_status,
+            {"continue": "quality_review", "refine": "html_refinement"},
+        )
 
         # Quality review -> Assembly (always proceed, as quality is optional)
         workflow.add_edge("quality_review", "slide_assembly")
@@ -166,6 +176,8 @@ class SlideGenerationWorkflow:
             "current_step": "starting",
             "error_message": None,
             "retry_count": 0,
+            "html_refinement_iteration": 0,
+            "refinement_id": None,
             "layouts_info": None,
             "dynamic_models": None,
             "presentation_plan": None,
@@ -314,6 +326,12 @@ class SlideGenerationWorkflow:
         """HTML content generation agent node"""
         return self.html_content_agent.execute(state, config)
 
+    def _html_refinement_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """HTML refinement agent node"""
+        return self.refinement_agent.execute(state, config)
+
     def _quality_review_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
@@ -456,6 +474,16 @@ class SlideGenerationWorkflow:
         if state.get("current_step") == "content_generation_complete":
             return "success"
         return "error"
+
+    def _check_html_refinement_status(self, state: SlideGenerationState) -> str:
+        """Check if HTML refinement should continue"""
+        if state.get("current_step") == "html_refinement_complete":
+            return "continue"
+
+        iteration = state.get("html_refinement_iteration", 0)
+        if iteration < 3:
+            return "refine"
+        return "continue"
 
     def _check_assembly_success(self, state: SlideGenerationState) -> str:
         """Check if slide assembly was successful"""

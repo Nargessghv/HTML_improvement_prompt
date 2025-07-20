@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 from pptx import Presentation
 from pptx.util import Inches
 
+# Load environment variables at the very top
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -241,7 +244,6 @@ def main():
     """
     Main function to orchestrate the presentation generation.
     """
-    load_dotenv()
 
     parser = argparse.ArgumentParser(
         description="Generate a PowerPoint from a layout file."

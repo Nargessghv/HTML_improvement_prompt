@@ -15,6 +15,9 @@ langchain-openai>=0.1.0  # OpenAI integration for Langchain
 # LLM Monitoring and Observability
 langfuse>=2.20.0,<3.0.0  # For LLM call monitoring and analytics (SDK v2)
 
+# Cloud Storage for Media
+azure-storage-blob>=12.26.0  # For Azure Blob Storage integration
+
 # HTML Rendering for Visualizations (install at least one)
 # Choose one based on your system and preferences:
 playwright>=1.40.0  # Recommended: Most reliable, best quality

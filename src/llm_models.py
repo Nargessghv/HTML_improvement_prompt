@@ -7,7 +7,7 @@ This ensures reliable, type-safe parsing of LLM responses.
 
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SlideSpec(BaseModel):
@@ -121,3 +121,15 @@ class PresentationContent(BaseModel):
     slide_contents: List[SlideContentData]
     presentation_summary: str
     key_points: List[str]
+
+
+class RefinedHTML(BaseModel):
+    """A model to hold the refined HTML code."""
+
+    html_code: str = Field(..., description="The full, corrected HTML code block.")
+    reasoning: str = Field(
+        ..., description="The reasoning behind the changes made to the HTML."
+    )
+    changes_applied: List[str] = Field(
+        ..., description="A list of the specific changes applied to the HTML."
+    )

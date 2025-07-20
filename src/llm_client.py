@@ -37,22 +37,30 @@ class LangchainLLMClient:
     to provide unified tracing across the entire workflow.
     """
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(
+        self, model: Optional[str] = None, chat_client: Optional[ChatOpenAI] = None
+    ):
         """
         Initialize the Langchain LLM client
 
         Args:
             model: OpenAI model to use (defaults to OPENAI_MODEL env var)
+            chat_client: An optional pre-configured ChatOpenAI instance.
         """
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
-        self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+        if chat_client:
+            self.chat_client = chat_client
+            self.model = chat_client.model_name
+        else:
+            self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
+            self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+            self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
 
-        # Initialize Langchain ChatOpenAI
-        self.chat_client = ChatOpenAI(
-            model=self.model,
-            max_completion_tokens=self.max_tokens,
-            temperature=0.7,
-        )
+            # Initialize Langchain ChatOpenAI
+            self.chat_client = ChatOpenAI(
+                model=self.model,
+                max_completion_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
 
     def generate_structured_content(
         self,
@@ -89,6 +97,45 @@ class LangchainLLMClient:
 
         except Exception as e:
             print(f"❌ Error generating structured content: {e}")
+            raise
+
+    def generate_structured_vision_content(
+        self,
+        system_prompt: str,
+        user_prompt: List[Dict[str, Any]],
+        response_model: Any,
+        config: Optional[RunnableConfig] = None,
+    ) -> Any:
+        """
+        Generate structured content from multimodal input (text + image)
+        using Langchain with callback support.
+
+        Args:
+            system_prompt: System instructions for the vision model.
+            user_prompt: A list of dictionaries representing the multimodal
+                         content (e.g., text and image URLs).
+            response_model: Pydantic model for structured output.
+            config: Langchain configuration with callbacks.
+
+        Returns:
+            Generated content in the specified Pydantic model format.
+        """
+        try:
+            # Create a structured chat client with the specified response model
+            structured_client = self.chat_client.with_structured_output(response_model)
+
+            # Create messages with multimodal content
+            messages = [
+                ("system", system_prompt),
+                ("human", user_prompt),
+            ]
+
+            # Invoke the client with the messages and configuration
+            response = structured_client.invoke(messages, config=config)
+            return response
+
+        except Exception as e:
+            print(f"❌ Error generating structured vision content: {e}")
             raise
 
     def generate_content(
@@ -627,26 +674,13 @@ individually."""
 
 
 class LLMClient:
-    """Client for OpenAI API communication (legacy direct API)"""
+    """LLM client for OpenAI API"""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        """
-        Initialize the LLM client
-
-        Args:
-            api_key: OpenAI API key (if None, will try to get from environment)
-            model: OpenAI model to use (defaults to OPENAI_MODEL env var)
-        """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
-
-        if not self.api_key:
-            raise ValueError(
-                "OpenAI API key not found. "
-                "Set OPENAI_API_KEY in .env file or pass as parameter"
-            )
-
+        self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
         self.client = OpenAI(api_key=self.api_key)
 
     def analyze_layouts_for_topic(
@@ -675,7 +709,7 @@ class LLMClient:
                     ],
                     response_format=LayoutSelection,
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 # Extract layout indices from structured response
@@ -702,7 +736,7 @@ class LLMClient:
                         {"role": "user", "content": json_prompt},
                     ],
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 content = response.choices[0].message.content
@@ -973,7 +1007,7 @@ class LLMClient:
                     ],
                     response_format=SlideContentData,
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 if response.choices[0].message.parsed:
@@ -1006,7 +1040,7 @@ class LLMClient:
                         {"role": "user", "content": json_prompt},
                     ],
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 # Parse JSON response
@@ -1114,7 +1148,7 @@ narrative."""
                     ],
                     response_format=PresentationPlan,
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 if response.choices[0].message.parsed:
@@ -1149,7 +1183,7 @@ narrative."""
                         {"role": "user", "content": json_prompt},
                     ],
                     max_tokens=self.max_tokens,
-                    temperature=0.7,
+                    temperature=self.temperature,
                 )
 
                 # Parse JSON response

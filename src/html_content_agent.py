@@ -10,7 +10,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from langchain_core.runnables import RunnableConfig
 
@@ -55,10 +55,12 @@ class HTMLContentGenerationAgent:
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
         """
-        Process slide contents to generate HTML visualizations for pre-planned HTML slides
+        Process slide contents to generate HTML visualizations for pre-planned
+        HTML slides
 
         Args:
-            state: Current workflow state with generated slide contents and presentation plan
+            state: Current workflow state with generated slide contents and
+                   presentation plan
             config: Langchain configuration with callbacks
 
         Returns:
@@ -303,7 +305,8 @@ class HTMLContentGenerationAgent:
         print(f"      HTML planned: {html_planned}")
         print(f"      HTML generated: {html_generated_count}")
         print(
-            f"      Success rate: {html_generated_count}/{html_planned} planned HTML slides"
+            f"      Success rate: {html_generated_count}/{html_planned} "
+            "planned HTML slides"
         )
 
         return processed_slides
@@ -625,25 +628,6 @@ class HTMLContentGenerationAgent:
                         )
                     return wrapped_html
 
-            # Final fallback: Convert text content to basic HTML timeline
-            if cleaned_html and len(cleaned_html) > 10:
-                print(
-                    f"    🔧 Converting text to basic HTML timeline for '{placeholder_name}'"
-                )
-                basic_html = self._create_basic_html_timeline(original_content, topic)
-                if basic_html and self._validate_html_content(basic_html):
-                    # Save basic HTML to debug folder
-                    if self.debug_enabled:
-                        self._save_html_debug_file(
-                            basic_html,
-                            placeholder_name,
-                            topic,
-                            slide_number,
-                            original_content,
-                            suffix="_basic",
-                        )
-                    return basic_html
-
             print(f"    ⚠️ Generated content not valid HTML for '{placeholder_name}'")
             if cleaned_html:
                 print(f"    🔍 Generated content was: {cleaned_html[:500]}...")
@@ -701,294 +685,235 @@ class HTMLContentGenerationAgent:
         total_slides: int,
         slide_spec: Optional[Any] = None,
     ) -> str:
-        """Create prompt for HTML visualization generation with detailed specifications"""
+        """Create prompt for HTML visualization generation."""
 
-        # Build detailed specifications if slide_spec is provided
-        detailed_specs = ""
+        # Build context section
+        context_section = f"""
+CONTEXT:
+- Presentation Topic: {topic}
+- Slide you are working on from the full deck: {slide_number} of {total_slides}
+- Placeholder: {placeholder_name}
+- Original Content: {original_content}"""
+
+        # Add detailed specs if available
         if slide_spec:
             specs = []
-
-            # Add detailed purpose if available
             if hasattr(slide_spec, "detailed_purpose") and slide_spec.detailed_purpose:
                 specs.append(f"- Detailed Purpose: {slide_spec.detailed_purpose}")
-
-            # Add content structure if available
             if (
                 hasattr(slide_spec, "content_structure")
                 and slide_spec.content_structure
             ):
                 specs.append(f"- Content Structure: {slide_spec.content_structure}")
-
-            # Add HTML requirements if available
             if (
                 hasattr(slide_spec, "html_requirements")
                 and slide_spec.html_requirements
             ):
                 specs.append(f"- HTML Requirements: {slide_spec.html_requirements}")
-
-            # Add visual elements if available
             if hasattr(slide_spec, "visual_elements") and slide_spec.visual_elements:
                 specs.append(f"- Visual Elements: {slide_spec.visual_elements}")
-
-            # Add key information if available
             if hasattr(slide_spec, "key_information") and slide_spec.key_information:
                 key_info = ", ".join(slide_spec.key_information)
                 specs.append(f"- Key Information: {key_info}")
 
             if specs:
-                detailed_specs = f"""
+                context_section += "\n\nDETAILED SLIDE SPECIFICATIONS:\n"
+                context_section += "\n".join(specs)
+                context_section += (
+                    "\n\nCRITICAL: Your HTML visualization MUST implement "
+                    "these specifications exactly."
+                )
 
-🎯 DETAILED SLIDE SPECIFICATIONS:
-{chr(10).join(specs)}
+        # Static requirements section
+        requirements_section = """
+VIEWPORT REQUIREMENTS:
+1.  **Overall Container**: The `<body>` of the HTML MUST be exactly `1577x603` pixels. Use Tailwind classes `w-[1577px] h-[603px]`. The root element should be a flex container (`flex`, `w-full`, `h-full`) to manage layout.
 
-CRITICAL: Your HTML visualization MUST implement these specifications exactly.
-Follow the detailed purpose, content structure, HTML requirements, and include
-all key information points specified above.
+2.  **Diagram Sizing**: The `div` containing a Mermaid diagram should NOT fill the entire container if there is other content (like a title or descriptive text).
+    - Use flexbox or grid to allocate space. For example, a title can be in one `div` and the diagram in another `div` that takes the remaining space (`flex-grow`).
+    - The diagram's container should have padding (e.g., `p-8`) to ensure it doesn't touch the edges.
+    - Example Layout:
+      <body class="w-[1577px] h-[603px] flex flex-col p-8">
+        <h1 class="text-3xl font-bold mb-4">Diagram Title</h1>
+        <div class="mermaid flex-grow">
+          ... Mermaid diagram ...
+        </div>
+      </body>
+
+3.  **No Overflow**: All content, including text and the diagram, MUST fit within the `1577x603` viewport without any scrolling or content being cut off.
 """
 
-        return f"""
-Generate an HTML visualization for a PowerPoint slide placeholder.
+        # Visual design section
+        design_section = """
+VISUAL DESIGN (CRITICAL):
+- Color Palette:
+  - Primary/Accent: Swiss Red (#dc261e)
+  - Text (Headings): Dark Grey (#2d3748)
+  - Text (Body): Black (#000000)
+  - Background: White (#ffffff)
 
-CONTEXT:
-- Presentation Topic: {topic}
-- Slide: {slide_number} of {total_slides}
-- Placeholder: {placeholder_name}
-- Original Content: {original_content}{detailed_specs}
+- Typography:
+  - Font: 'Segoe UI', system-ui, sans-serif
+  - Base Size: 16px (text-base)
+  - Headers: 24px (text-2xl, font-bold)
 
-TASK:
-Create a complete, self-contained HTML document that visualizes the 
-original content in an engaging, professional way suitable for 
-business presentations.
+- Layout:
+  - Keep it clean, simple, and minimalist.
+  - Use ample white space.
+  - Ensure content is highly readable.
 
-VISUALIZATION TYPES TO CONSIDER:
-- Timeline: For chronological events, project phases, roadmaps
-- Process Flow: For step-by-step processes, workflows
-- Comparison Chart: For comparing options, before/after scenarios
-- Infographic: For statistics, metrics, key points
-- Diagram: For relationships, hierarchies, structures
+- Components:
+  - Use DaisyUI and Flowbite components for layout and elements.
+  - Use Mermaid.js for diagrams, molecular pathways, etc.
+  - Repurpose components creatively (e.g., an Event Schedule can be used for a sequence of steps).
+  - Use Tailwind CSS for custom styling and adjustments."""
 
-🎯 CRITICAL SPACE OPTIMIZATION REQUIREMENTS:
-- Exact dimensions: 1577x603 pixels (fixed container size)
-- MAXIMIZE content density - use every pixel effectively
-- NO white empty space or large margins
-- NO grey background colors (#f5f5f5, #eeeeee, #cccccc, etc.)
-- Compact, information-dense layouts
-- Full-width utilization of the 1577x603 space
+        # Example section
+        example_section = """
+COMPONENT EXAMPLES:
+Use these as a guide for building your visualization.
 
-🎨 VISUAL DESIGN REQUIREMENTS:
-- Complete HTML document with <!DOCTYPE html>, <head>, and <body>
-- Professional styling using CSS (embedded in <style> tags)
-- Container: width: 1577px; height: 603px; overflow: hidden;
-- Background: Pure white (#ffffff) or rich brand colors only
-- Primary color: #dc261e (Ekona red) for accents and highlights
-- Secondary color: #404040 (dark grey) for text and structure
-- Text color: #2d3748 for maximum readability
-- Use modern web fonts (Segoe UI, Inter, or system fonts)
-- NO external dependencies (no external CSS/JS files)
-- NO interactive elements (this will be converted to static image)
-
-🎯 LUCIDE ICON INTEGRATION (HIGHLY RECOMMENDED):
-- You have access to 1000+ professional Lucide icons
-- Icons enhance visual appeal and information hierarchy
-- Use icons for: processes, features, categories, steps, highlights
-
-ICON USAGE PATTERN:
-```html
-<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" 
-     stroke-width="2">
-  <use href="#activity"></use>
-</svg>
-```
-
-POPULAR BUSINESS ICONS TO USE:
-- activity, trending-up, trending-down, chart-bar, chart-line, chart-pie
-- users, user-check, team, briefcase, target, rocket
-- clock, calendar, timer, bell, alert-circle, circle-check
-- shield, lock, key, settings, cog, database, server
-- mail, message-circle, phone, globe, wifi, smartphone
-- heart, star, thumbs-up, award, crown, medal
-- arrow-right, arrow-up, arrow-down, chevron-right
-- plus, minus, x, check, search, eye, pen, pencil
-- folder, file, download, upload, share, link
-- shopping-cart, credit-card, dollar-sign, coins
-
-ICON STYLING GUIDELINES:
-- Size: 24px-48px for small icons, 64px-96px for feature icons
-- Color: Use stroke="currentColor" and set color via CSS
-- Stroke width: 2-3 for visibility at small sizes
-- Alignment: Center icons with their content
-- Spacing: 8-16px margin around icons
-
-ICON INTEGRATION EXAMPLES:
-
-Timeline Item:
-```html
-<div class="timeline-item">
-  <svg class="timeline-icon" viewBox="0 0 24 24" fill="none" 
-       stroke="#dc261e" stroke-width="2">
-    <use href="#calendar"></use>
-  </svg>
-  <div class="content">...</div>
-</div>
-```
-
-Process Step:
-```html
-<div class="process-step">
-  <div class="step-header">
-    <svg class="step-icon" viewBox="0 0 24 24" fill="none" 
-         stroke="#ffffff" stroke-width="2">
-      <use href="#rocket"></use>
-    </svg>
-    <h3>Launch Phase</h3>
+1. Stats:
+<div class="stats shadow">
+  <div class="stat">
+    <div class="stat-title">Total Page Views</div>
+    <div class="stat-value">89,400</div>
+    <div class="stat-desc">21% more than last month</div>
   </div>
 </div>
-```
 
-Feature Highlight:
-```html
-<div class="feature">
-  <svg class="feature-icon" viewBox="0 0 24 24" fill="none" 
-       stroke="#dc261e" stroke-width="2">
-    <use href="#shield"></use>
-  </svg>
-  <span>Security</span>
-</div>
-```
-
-📏 LAYOUT OPTIMIZATION RULES:
-1. Set body and html to exact dimensions: 1577x603px
-2. Use margin: 0; padding: 0; on body and html
-3. Create a main container with full dimensions
-4. Distribute content evenly across the full width and height
-5. Use CSS Grid or Flexbox for optimal space distribution
-6. Minimize whitespace between elements
-7. Scale fonts and elements to fit the space perfectly
-8. Use compact layouts with multiple columns when appropriate
-
-🎯 CONTENT DENSITY GUIDELINES:
-- For timelines: Use horizontal layouts to maximize width usage
-- For processes: Arrange in efficient grids (2x2, 3x2, etc.)
-- For comparisons: Use side-by-side layouts filling full width
-- For infographics: Create dense, information-rich displays
-- Add visual elements (icons, borders, gradients) to fill space
-- Use larger fonts and generous padding within constraints
-
-💡 COLOR SCHEME ENHANCEMENTS:
-- Primary backgrounds: #ffffff (pure white) or #dc261e (Ekona red)
-- Accent colors: #f7fafc (very light blue-grey), #e2e8f0 (light grey)
-- Gradient backgrounds are encouraged for visual interest
-- Card backgrounds: subtle shadows with #ffffff
-- Border colors: #e2e8f0 for structure, #dc261e for emphasis
-
-🚀 ICON-ENHANCED VISUALIZATION EXAMPLES:
-
-1. **TIMELINE WITH ICONS:**
-```html
-<div class="timeline-event">
-  <svg class="event-icon" viewBox="0 0 24 24" fill="none" stroke="#dc261e" stroke-width="2">
-    <use href="#rocket"></use>
-  </svg>
-  <div class="event-content">
-    <h4>Product Launch</h4>
-    <p>2024 Q1</p>
+2. Cards:
+<div class="card bg-base-100 w-96 shadow-sm">
+  <figure>
+    <img
+      src="https://img.daisyui.com/images/stock/photo-1606107557195-0e29a4b5b4aa.webp"
+      alt="Shoes" />
+  </figure>
+  <div class="card-body">
+    <h2 class="card-title">Card Title</h2>
+    <p>A card component has a body and action buttons.</p>
+    <div class="card-actions justify-end">
+      <button class="btn btn-primary">Buy Now</button>
+    </div>
   </div>
 </div>
-```
 
-2. **PROCESS FLOW WITH ICONS:**
-```html
-<div class="process-grid">
-  <div class="process-item">
-    <svg class="process-icon" viewBox="0 0 24 24" fill="#ffffff" stroke="none">
-      <use href="#lightbulb"></use>
-    </svg>
-    <h4>Ideate</h4>
-  </div>
-</div>
-```
+3. Timeline (from Flowbite):
+<ol class="relative border-s border-gray-200">
+  <li class="mb-10 ms-4">
+    <div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 
+                -start-1.5 border border-white"></div>
+    <time class="mb-1 text-sm font-normal leading-none text-gray-400">
+      Step 1
+    </time>
+    <h3 class="text-lg font-semibold text-gray-900">Analysis</h3>
+    <p class="mb-4 text-base font-normal text-gray-500">
+      Understand project requirements.
+    </p>
+  </li>
+  <li class="ms-4">
+    <div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 
+                -start-1.5 border border-white"></div>
+    <time class="mb-1 text-sm font-normal leading-none text-gray-400">
+      Step 2
+    </time>
+    <h3 class="text-lg font-semibold text-gray-900">Development</h3>
+    <p class="text-base font-normal text-gray-500">
+      Implement core features.
+    </p>
+  </li>
+</ol>"""
 
-3. **FEATURE COMPARISON WITH ICONS:**
-```html
-<div class="feature-comparison">
-  <div class="feature-item">
-    <svg class="feature-icon" viewBox="0 0 24 24" fill="none" 
-         stroke="#dc261e" stroke-width="3">
-      <use href="#circle-check"></use>
-    </svg>
-    <span>Advanced Security</span>
-  </div>
-</div>
-```
-
-OUTPUT:
-Return ONLY the complete HTML code with optimized 1577x603 layout and 
-integrated Lucide icons, no explanations or markdown formatting.
-"""
+        # Combine all sections
+        return "\\n\\n".join(
+            [
+                (
+                    "Generate an HTML visualization for a PowerPoint slide "
+                    "placeholder."
+                ),
+                context_section,
+                requirements_section,
+                design_section,
+                example_section,
+                (
+                    "OUTPUT:\\nReturn ONLY the complete HTML code. "
+                    "No explanations or markdown."
+                ),
+            ]
+        )
 
     def _get_html_generation_system_prompt(self) -> str:
         """Get system prompt for HTML generation"""
-        return """You are an expert web developer and data visualization specialist 
-specializing in creating high-density, space-optimized HTML visualizations 
-for PowerPoint presentations.
+        return """You are an expert web developer and data visualization specialist.
+Your mission is to create visually compelling, minimalist HTML content that
+perfectly fills a 1577x603px container for a business presentation.
 
-🎯 PRIMARY MISSION: Create visually compelling HTML that MAXIMIZES the 
-1577x603 pixel space with zero wasted area.
+**Core Principles:**
+1.  **Strict Component Usage**: Your ONLY tools for layout and components
+    are DaisyUI and Flowbite. You MUST NOT use any other library or write
+    custom components.
+2.  **Brand Consistency**: Strictly adhere to the specified color palette.
+    Use Tailwind CSS to override component styles if necessary to match the theme.
+    - Primary/Accent: Swiss Red (#dc261e)
+    - Text: Dark Grey for headers (#2d3748), Black for body (#000000)
+    - Background: White (#ffffff)
+3.  **Static & Non-Interactive**: The output is for a static image.
+    DO NOT include animations, hover effects, or any user interactivity.
+4.  **No Custom SVG**: You MUST NOT generate any inline SVG code. The ONLY
+    way to use icons is with the Lucide icon sprite system, like:
+    `<svg><use href="#icon-name"></use></svg>`.
 
-DESIGN PRINCIPLES:
-- **Space Efficiency First**: Every pixel serves a purpose
-- **Visual Density**: Pack maximum information in minimum space
-- **Professional Appearance**: Clean, modern, business-appropriate
-- **Brand Consistency**: Ekona colors and professional typography
-- **Zero Waste Policy**: No large margins, excessive padding, or empty areas
+**Layout and Sizing (CRITICAL):**
+- The **ENTIRE HTML `<body>`** is the `1577x603px` container.
+- If the content includes a diagram AND other elements (like a title), you MUST divide the space.
+- The Mermaid diagram `div` must be smaller than the body to leave room for titles, text, etc.
+- Use Flexbox or Grid to create a balanced layout. For example:
+  - A heading at the top.
+  - A `flex-grow` container below it for the diagram, with padding (`p-8`).
+- **NEVER** make the diagram's container `w-full h-full` if other content exists.
 
-CRITICAL TECHNICAL REQUIREMENTS:
-- Self-contained HTML (no external resources)
-- CSS embedded in <style> tags within <head>
-- Exact container dimensions: 1577px × 603px
-- No JavaScript or interactive elements
-- Valid HTML5 structure optimized for image conversion
+**Library Usage Guidelines:**
+1.  **DaisyUI & Flowbite**: Use for ALL components (cards, stats, timelines, etc.).
+    Stick to simple, clean components. For example, use DaisyUI Cards
+    or Flowbite's standard components.
 
-🚫 ABSOLUTE PROHIBITIONS:
-- Large empty spaces or excessive margins
-- Grey background colors (#f5f5f5, #eeeeee, #cccccc, etc.)
-- Wasted vertical or horizontal space
-- Default browser styling (always reset margins/padding)
-- Sparse layouts with poor space utilization
+2.  **Mermaid.js for Diagrams**: For ANY chart, graph, process flow,
+    timeline, or diagram, you MUST use Mermaid.js syntax.
+    - Place the Mermaid syntax inside a `<div class="mermaid">` element.
+    - The renderer will handle a theme matching the brand colors, so do not
+      add styling commands inside the mermaid code.
+    - **CRITICAL**: The diagram MUST be simple enough to fit comfortably
+      within the 1577x603px container without overflowing or scrolling.
+      Keep diagrams clear and concise.
+    - Example:
+      <div class="mermaid">
+        graph TD;
+            A[Start] --> B(Process);
+            B --> C{Decision};
+      </div>
 
-✅ MANDATORY OPTIMIZATIONS:
-1. **Container Setup**: 
-   - html, body { margin: 0; padding: 0; width: 1577px; height: 603px; }
-   - Main container: full dimensions with overflow: hidden
-   
-2. **Layout Strategy**:
-   - Use CSS Grid or Flexbox for perfect space distribution
-   - Multiple columns for horizontal content (2-4 columns optimal)
-   - Vertical stacking for timeline/process flows
-   - Compact card layouts with minimal gaps
-   
-3. **Typography Scaling**:
-   - Scale font sizes to fill space appropriately
-   - Titles: 28-36px for impact
-   - Subtitles: 20-24px for hierarchy
-   - Body text: 16-18px for readability
-   - Adjust based on content density
-   
-4. **Visual Enhancement**:
-   - Subtle gradients for background interest
-   - Strategic use of Ekona red (#dc261e) for highlights
-   - Box shadows for depth without consuming space
-   - Border accents for structure and visual appeal
+    **Mermaid.js Best Practices (Follow these STRICTLY to avoid errors):**
+    - **Semicolons are Mandatory**: End EVERY line with a semicolon (`;`).
+    - **One Link Per Line**: To create multiple links from one node, define each on a separate line.
+      - Correct: `A --> B; A --> C;`
+      - WRONG: `A --> B & C;`
+    - **Simple Node Text**: Do NOT embed HTML or complex styles in node labels. Use plain text.
+      - Correct: `A["Node with simple text"];`
+      - WRONG: `A["<div style='...'>Complex HTML</div>"];`
+    - **Quotes in Labels**: Use standard double quotes for labels. Do NOT escape quotes inside labels. If you need a quote, use single quotes inside the double-quoted string.
+      - Correct: `A["Label with 'a quote'"];`
+      - WRONG: `A["Label with \\"a quote\\""];`
+    - **Styling**: Do NOT use `linkStyle` or other inline styling. The theme is applied automatically.
+    - **Keep it Simple**: Focus on creating a clear, structurally correct diagram. Avoid overly complex or obscure Mermaid features.
 
-🎨 LAYOUT PATTERNS FOR DIFFERENT CONTENT:
-- **Timeline**: Horizontal flow using full width (1577px)
-- **Process Flow**: Grid layout (3×2 or 4×2) maximizing space
-- **Comparison**: Side-by-side columns with full height usage
-- **Infographic**: Multi-section layout with visual hierarchy
-- **Data Display**: Chart-like layouts with dense information
+3.  **Lucide Icons**: Use for all icons. You are provided with a sprite sheet.
+    Reference icons by name using the `<use>` tag.
+    - Correct: `<svg class="w-6 h-6"><use href="#zap"></use></svg>`
+    - WRONG: `<svg>...</svg>` (Do not generate full SVG tags)
 
-Generate complete, production-ready HTML that creates compelling, 
-space-optimized visual representations of the provided content."""
+Your HTML must be production-ready, clean, and strictly follow these rules
+for rendering in PowerPoint slides.
+"""
 
     def _validate_html_content(self, content: str) -> bool:
         """
@@ -1022,129 +947,6 @@ space-optimized visual representations of the provided content."""
     def _is_html_visualization(self, content: str) -> bool:
         """Check if content is an HTML visualization"""
         return self._validate_html_content(content)
-
-    def _create_basic_html_timeline(self, content: str, topic: str) -> str:
-        """Create a basic HTML timeline from text content"""
-        return f"""<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; padding: 20px; 
-                background: #f8f9fa; }}
-        .timeline {{ max-width: 1200px; margin: 0 auto; }}
-        .timeline-item {{ background: white; margin: 10px 0; padding: 15px; 
-                         border-left: 4px solid #dc261e; 
-                         box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        .timeline-title {{ color: #dc261e; font-weight: bold; font-size: 18px; margin-bottom: 8px; }}
-        .timeline-content {{ color: #404040; line-height: 1.6; }}
-        h1 {{ color: #dc261e; text-align: center; margin-bottom: 30px; }}
-    </style>
-</head>
-<body>
-    <div class="timeline">
-        <h1>{topic}</h1>
-        <div class="timeline-item">
-            <div class="timeline-title">Timeline Overview</div>
-            <div class="timeline-content">{content}</div>
-        </div>
-    </div>
-</body>
-</html>"""
-
-    def get_supported_visualization_types(self) -> List[str]:
-        """
-        Get list of supported visualization types
-
-        Returns:
-            List of supported visualization type names
-        """
-        return [
-            "timeline",
-            "process_flow",
-            "comparison_chart",
-            "infographic",
-            "diagram",
-            "metrics_dashboard",
-            "roadmap",
-            "workflow",
-            "hierarchy",
-            "before_after",
-        ]
-
-    def create_sample_visualizations(
-        self, output_dir: str = "html_samples"
-    ) -> Dict[str, str]:
-        """
-        Create sample HTML visualizations for testing
-
-        Args:
-            output_dir: Directory to save sample files
-
-        Returns:
-            Dictionary mapping visualization types to file paths
-        """
-        if not self.html_available:
-            print("HTML renderer not available for sample generation")
-            return {}
-
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-
-        samples = {}
-
-        # Timeline sample
-        timeline_html = self.html_renderer.create_timeline_html(
-            events=[
-                {
-                    "date": "2024 Q1",
-                    "title": "Project Kickoff",
-                    "description": "Requirements gathering and team formation",
-                },
-                {
-                    "date": "2024 Q2",
-                    "title": "Development Phase",
-                    "description": "Core feature implementation",
-                },
-                {
-                    "date": "2024 Q3",
-                    "title": "Testing & QA",
-                    "description": "Quality assurance and bug fixes",
-                },
-                {
-                    "date": "2024 Q4",
-                    "title": "Launch",
-                    "description": "Product release and go-to-market",
-                },
-            ],
-            title="Product Development Timeline",
-            theme="ekona",
-        )
-
-        timeline_path = os.path.join(output_dir, "timeline_sample.html")
-        with open(timeline_path, "w", encoding="utf-8") as f:
-            f.write(timeline_html)
-        samples["timeline"] = timeline_path
-
-        # Process flow sample
-        process_html = self.html_renderer.create_process_flow_html(
-            steps=[
-                {"title": "Analyze", "description": "Understand requirements"},
-                {"title": "Design", "description": "Create solution architecture"},
-                {"title": "Develop", "description": "Implement features"},
-                {"title": "Test", "description": "Quality assurance"},
-                {"title": "Deploy", "description": "Release to production"},
-            ],
-            title="Development Process",
-            theme="ekona",
-        )
-
-        process_path = os.path.join(output_dir, "process_sample.html")
-        with open(process_path, "w", encoding="utf-8") as f:
-            f.write(process_html)
-        samples["process_flow"] = process_path
-
-        print(f"✅ Created {len(samples)} sample visualizations in {output_dir}")
-        return samples
 
     def _save_html_debug_file(
         self,
@@ -1337,10 +1139,10 @@ For each invalid icon, suggest the closest valid Lucide icon name that:
 4. 🔤 Uses exact Lucide naming (hyphen-separated, lowercase)
 
 Common corrections:
-- check-circle → circle-check
-- edit → pen or pencil
-- bar-chart → bar-chart-3
-- money → coins
+- check-circle -> circle-check
+- edit -> pen or pencil
+- bar-chart -> bar-chart-3
+- money -> coins
 
 Please respond in this EXACT format:
 invalid_icon1 -> valid_icon1
