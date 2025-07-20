@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from openai import OpenAI
 
 from .llm_models import LayoutSelection, PresentationPlan, SlideSpec
@@ -32,9 +32,7 @@ class SlideContent:
 class LangchainLLMClient:
     """
     Langchain-compatible LLM client for unified tracing with Langfuse
-
-    This client uses Langchain's ChatOpenAI and works with callback handlers
-    to provide unified tracing across the entire workflow.
+    Supports both OpenAI and Azure OpenAI endpoints via environment variables.
     """
 
     def __init__(
@@ -47,19 +45,37 @@ class LangchainLLMClient:
             model: OpenAI model to use (defaults to OPENAI_MODEL env var)
             chat_client: An optional pre-configured ChatOpenAI instance.
         """
-        if chat_client:
-            self.chat_client = chat_client
-            self.model = chat_client.model_name
-        else:
-            self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        if provider == "azure":
+            # Azure OpenAI configuration using the dedicated AzureChatOpenAI class
+            azure_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            azure_api_version = os.getenv(
+                "AZURE_OPENAI_API_VERSION", "2024-02-15-preview"
+            )
+            self.model = model or os.getenv("AZURE_OPENAI_MODEL") or azure_deployment
             self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
             self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
 
-            # Initialize Langchain ChatOpenAI
+            # Use the dedicated AzureChatOpenAI class for robust Azure support
+            # It automatically uses AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY from env
+            self.chat_client = AzureChatOpenAI(
+                azure_deployment=azure_deployment,
+                api_version=azure_api_version,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+        elif chat_client:
+            self.chat_client = chat_client
+            self.model = chat_client.model_name
+        else:
+            # Standard OpenAI configuration
+            self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
+            self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+            self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
             self.chat_client = ChatOpenAI(
                 model=self.model,
-                max_completion_tokens=self.max_tokens,
                 temperature=self.temperature,
+                max_completion_tokens=self.max_tokens,
             )
 
     def generate_structured_content(
@@ -697,14 +713,37 @@ individually."""
 
 
 class LLMClient:
-    """LLM client for OpenAI API"""
+    """LLM client for OpenAI or Azure OpenAI API"""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
-        self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
-        self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
-        self.client = OpenAI(api_key=self.api_key)
+        provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        if provider == "azure":
+            self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
+            self.model = model or os.getenv("AZURE_OPENAI_MODEL", "gpt-35-turbo")
+            self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+            self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+            self.endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            self.api_version = os.getenv(
+                "AZURE_OPENAI_API_VERSION", "2024-02-15-preview"
+            )
+            if not self.endpoint:
+                raise ValueError(
+                    "AZURE_OPENAI_ENDPOINT must be set for Azure OpenAI usage."
+                )
+            from openai import AzureOpenAI
+
+            self.client = AzureOpenAI(
+                api_key=self.api_key,
+                api_version=self.api_version,
+                azure_endpoint=self.endpoint,
+            )
+        else:
+            self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+            self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
+            self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+            self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+            self.client = OpenAI(api_key=self.api_key)
 
     def analyze_layouts_for_topic(
         self, layouts_info: Dict[int, Dict[str, Any]], topic: str

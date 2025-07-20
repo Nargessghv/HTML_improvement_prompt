@@ -9,7 +9,7 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 
@@ -358,13 +358,27 @@ FOR EVERY SLIDE, PROVIDE:
 5. **key_information**: Essential info points (3-5 items)
 
 FOR HTML SLIDES, ALSO ADD:
-6. **html_requirements**: Specific visualization specs using these options:
-   • Mermaid timeline: "Timeline with 4-6 milestones, dates and descriptions"
-   • Mermaid flowchart: "Left-to-right process with 3-5 steps and decision points"  
-   • DaisyUI cards: "Side-by-side comparison cards with features"
-   • DaisyUI stats: "Key metrics with numbers, descriptions, and trend icons"
-   • Mermaid hierarchy: "Top-to-bottom organizational structure"
-   • **Component + Diagram combos**: "Cards containing Mermaid diagrams, stats with visual context"
+6. **html_requirements**: Specific visualization specs. CHOOSE THE BEST TOOL FOR THE JOB.
+   • **Use D3.js for**: MANDATORY for ALL timelines and roadmaps. Required for custom, data-driven, or highly polished visualizations where branding and unique presentation are key.
+     - *Example (Timeline - MANDATORY)*: "D3.js timeline: A polished, horizontal timeline with detailed descriptions and brand colors."
+     - *Example (Custom Chart)*: "D3.js custom chart: A bar chart with specific annotations and non-standard styling."
+     - *Example (Roadmap)*: "D3.js roadmap: Multi-phase project roadmap with detailed milestone markers."
+   • **Use Mermaid.js for**: Standard, structured diagrams (EXCEPT timelines/roadmaps). It's fast and clean for flowcharts, hierarchies.
+     - *Example (Flowchart)*: "Mermaid flowchart: Left-to-right process with 3-5 steps and decision points."
+     - *Example (Gantt Chart)*: "Mermaid Gantt chart: A 3-month project plan with key phases and milestones."
+     - *Example (Sequence Diagram)*: "Mermaid sequence diagram: Illustrate the interaction between a User, a Web Server, and a Database for a login process."
+     - ⚠️ CRITICAL: NEVER use Mermaid timeline syntax - use D3.js for ALL timelines and roadmaps
+   • **Use DaisyUI/Flowbite for**: Layout and components to wrap visualizations with creative storytelling patterns.
+     - *Hero Journeys*: "Hero component with problem statement, radial progress indicator, and solution badges"
+     - *Transformation Stories*: "Three-card layout with breadcrumbs navigation showing Before → During → After transformation"
+     - *Process Excellence*: "Steps component with progress indicators, dividers, and detailed phase cards"
+     - *Metrics Dashboard*: "Hero layout with stats, indicators, and achievement badges for impact visualization"
+     - *Comparison Framework*: "Table with tooltips, progress bars, and badges for feature comparison"
+     - *Progress Tracking*: "Menu lists with embedded progress bars and status badges"
+   • **Creative Component Combinations**: 
+     - "Hero with embedded Mermaid diagram + Steps navigation + Stats dashboard"
+     - "Cards containing Mermaid flowcharts with action badges and progress indicators"
+     - "Tables with progress bars, tooltips, and badges for comprehensive comparisons"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -391,15 +405,35 @@ STANDARD SLIDE:
 HTML SLIDE (Timeline):
 - slide_purpose: "Show project timeline and phases"  
 - detailed_purpose: "Present comprehensive 6-month project roadmap with clear phases and deliverables. Help audience understand structured approach and feel confident about realistic timelines."
-- html_requirements: "Mermaid timeline: Discovery (Month 1), Development (Months 2-3), Testing (Month 4), Launch (Month 5), Support (Month 6)"
+- html_requirements: "D3.js timeline: A polished, horizontal timeline for Discovery (Month 1), Development (Months 2-3), Testing (Month 4), Launch (Month 5), Support (Month 6)."
 - visual_elements: "Timeline with phase markers and key deliverables"
 
-HTML SLIDE (Comparison + Diagrams):
-- slide_purpose: "Compare development approaches with workflows"
-- html_requirements: "Two DaisyUI cards side-by-side: 'Traditional' vs 'Agile'. Each card contains title, description, and top-to-bottom Mermaid flowchart (3-4 steps)"
-- visual_elements: "Comparison cards with embedded process diagrams"
+HTML SLIDE (Hero Journey Pattern):
+- slide_purpose: "Present transformation journey from problem to solution"
+- html_requirements: "Hero component with problem statement, radial progress showing current state (25%), and critical issue badge. Follow with solution hero containing steps navigation and embedded Mermaid workflow diagram."
+- visual_elements: "Hero layout, radial progress indicator, steps component, Mermaid flowchart"
 
-Focus on creating compelling narrative with strategic HTML visualizations that enhance understanding."""
+HTML SLIDE (Transformation Story):
+- slide_purpose: "Show before/during/after business transformation"
+- html_requirements: "Three-card layout with breadcrumbs navigation. Before card with stats showing current metrics, During card with radial progress and checklist, After card with improved stats. Use badges and progress indicators throughout."
+- visual_elements: "Breadcrumbs, three-column grid, stats components, radial progress, badges"
+
+HTML SLIDE (Process Excellence):
+- slide_purpose: "Detail implementation roadmap with phase tracking"
+- html_requirements: "Steps component showing project phases, divider with descriptive text, detailed cards with avatar placeholders, progress bars, and completion badges for each phase."
+- visual_elements: "Steps navigation, dividers, avatar placeholders, progress bars, status badges"
+
+HTML SLIDE (Metrics Dashboard):
+- slide_purpose: "Display impact results with compelling data visualization"
+- html_requirements: "Hero layout with indicators showing achievement level, stats grid with icons and trend data, badges highlighting key successes. Use radial progress for key KPI."
+- visual_elements: "Hero component, indicators, stats grid, Lucide icons, badges, radial progress"
+
+HTML SLIDE (Comparison Framework):
+- slide_purpose: "Compare traditional vs modern approaches with detailed features"
+- html_requirements: "Table with zebra styling, progress bars showing performance metrics, tooltips with additional context, badges for categorization. Include visual performance indicators."
+- visual_elements: "Table layout, progress bars, tooltips, badges, performance indicators"
+
+Focus on creating compelling narrative with strategic HTML visualizations that enhance understanding and tell powerful business stories."""
 
     def _get_planning_system_prompt(self) -> str:
         """Get the optimized system prompt for presentation planning"""
@@ -423,15 +457,26 @@ For EVERY slide, provide ALL of these fields:
 • **key_information**: Essential content points (3-5 items)
 
 For HTML slides (is_html: true), ALSO add:
-• **html_requirements**: Detailed visualization specs using Mermaid + DaisyUI/Flowbite
+• **html_requirements**: Detailed visualization specs using creative DaisyUI storytelling patterns
 
-🎨 HTML DECISION FRAMEWORK:
+🎨 HTML DECISION FRAMEWORK & STORYTELLING PATTERNS:
 
 SET is_html: true FOR visual content requiring:
-✅ Timelines, processes, workflows, comparisons
-✅ Data visualizations, metrics dashboards  
-✅ Hierarchies, relationships, complex diagrams
-✅ Any content needing custom visual flow
+✅ **Hero Journeys**: Problem statements, challenges, solution presentations
+✅ **Transformation Stories**: Before/during/after scenarios, business evolution
+✅ **Process Excellence**: Implementation roadmaps, step-by-step procedures
+✅ **Metrics Dashboards**: Impact results, KPIs, performance visualization
+✅ **Comparison Frameworks**: Feature comparisons, competitive analysis
+✅ **Progress Tracking**: Project phases, completion status, roadmap updates
+✅ Timelines, workflows, hierarchies, complex data relationships
+
+🎯 STORYTELLING PATTERN SELECTION GUIDE:
+• **Hero Journey**: Use for problem/solution slides, value propositions, transformation announcements
+• **Transformation Story**: Use for case studies, improvement showcases, evolution narratives  
+• **Process Excellence**: Use for methodology explanations, implementation guides, phase planning
+• **Metrics Dashboard**: Use for results presentations, success stories, impact demonstrations
+• **Comparison Framework**: Use for competitive analysis, feature comparisons, decision matrices
+• **Progress Tracking**: Use for project updates, roadmap status, milestone tracking
 
 SET is_html: false FOR simple content like:
 ❌ Basic text, bullet points, titles
@@ -1475,197 +1520,111 @@ class HTMLRefinementAgent:
         max_iterations: int = 3,
     ) -> Dict[int, Optional[str]]:
         """
-        Refine all slides with TRUE parallel processing across iterations.
-        Each iteration processes ALL slides simultaneously.
-
-        Args:
-            slide_data: List of slide data dictionaries
-            refinement_id: Unique ID for this refinement batch
-            config: Langchain configuration
-            max_iterations: Maximum number of refinement iterations
-
-        Returns:
-            Dictionary mapping slide_index to final refined HTML
+        Refine all slides with TRUE parallel processing. Each slide runs its full
+        refinement loop independently.
         """
         print(
-            f"  🔄 Processing {len(slide_data)} slides with TRUE parallel iterations..."
+            f"  🔄 Processing {len(slide_data)} slides with independent parallel refinement loops..."
         )
 
-        # Track current HTML for each slide
-        current_html = {}
-        slide_index_map = {}
-
-        # Initialize current HTML and create mapping
-        for i, data in enumerate(slide_data):
-            slide_index = data["slide_index"]
-            current_html[slide_index] = data["html_content"]
-            slide_index_map[slide_index] = data
-
-        # Process iterations with ALL slides in parallel
-        for iteration in range(1, max_iterations + 1):
-            print(
-                f"    🚀 Iteration {iteration}/{max_iterations} - Processing ALL {len(slide_data)} slides in parallel..."
+        tasks = []
+        for data in slide_data:
+            task = self._refine_one_slide_fully_async(
+                slide_index=data["slide_index"],
+                initial_html_content=data["html_content"],
+                slide_purpose=data["slide_purpose"],
+                refinement_id=refinement_id,
+                config=config,
+                max_iterations=max_iterations,
             )
+            tasks.append(task)
 
-            # Create parallel tasks for this iteration across ALL slides
-            iteration_tasks = []
-            task_slide_mapping = []
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for slide_index in current_html:
-                slide_number = slide_index + 1
-                html_content = current_html[slide_index]
-                slide_purpose = slide_index_map[slide_index]["slide_purpose"]
+        final_html_contents = {}
+        for i, result in enumerate(results):
+            slide_index = slide_data[i]["slide_index"]
+            if isinstance(result, BaseException):
+                print(f"      ❌ Error refining slide {slide_index + 1}: {result}")
+                # Return the original HTML on error to avoid losing content
+                final_html_contents[slide_index] = slide_data[i]["html_content"]
+            else:
+                final_html_contents[slide_index] = result
 
-                # Create task for single iteration of this slide
-                task = self._process_single_iteration_async(
-                    slide_index=slide_index,
-                    html_content=html_content,
-                    slide_purpose=slide_purpose,
-                    iteration=iteration,
-                    refinement_id=refinement_id,
-                    config=config,
-                )
-                iteration_tasks.append(task)
-                task_slide_mapping.append(slide_index)
+        print(
+            f"  ✅ All parallel refinement loops complete for {len(slide_data)} slides"
+        )
+        return final_html_contents
 
-            # Execute ALL slides for this iteration in parallel
-            print(
-                f"      ⚡ Executing {len(iteration_tasks)} parallel LLM calls for iteration {iteration}..."
-            )
-            iteration_results = await asyncio.gather(
-                *iteration_tasks, return_exceptions=True
-            )
-
-            # Process results and update HTML for next iteration
-            changes_made = 0
-            for i, result in enumerate(iteration_results):
-                slide_index = task_slide_mapping[i]
-                slide_number = slide_index + 1
-
-                if isinstance(result, BaseException):
-                    print(
-                        f"      ❌ Error in slide {slide_number} iteration {iteration}: {result}"
-                    )
-                    continue
-
-                success, updated_html = result
-                if (
-                    success
-                    and updated_html
-                    and updated_html != current_html[slide_index]
-                ):
-                    current_html[slide_index] = updated_html
-                    changes_made += 1
-                    print(
-                        f"      ✅ Slide {slide_number} iteration {iteration}: Changes applied"
-                    )
-                else:
-                    print(
-                        f"      ⚪ Slide {slide_number} iteration {iteration}: No changes needed"
-                    )
-
-            print(
-                f"    📊 Iteration {iteration} complete: {changes_made} slides updated"
-            )
-
-            # If no changes were made in this iteration, we can stop early
-            if changes_made == 0:
-                print(
-                    f"    🎯 Early termination: No changes needed in iteration {iteration}"
-                )
-                break
-
-        print(f"  ✅ All parallel iterations complete for {len(slide_data)} slides")
-        return current_html
-
-    async def _process_single_iteration_async(
+    async def _refine_one_slide_fully_async(
         self,
         slide_index: int,
-        html_content: str,
+        initial_html_content: str,
         slide_purpose: str,
-        iteration: int,
         refinement_id: str,
         config: Optional[RunnableConfig] = None,
-    ) -> Tuple[bool, Optional[str]]:
+        max_iterations: int = 3,
+    ) -> Optional[str]:
         """
-        Process a single iteration for one slide (used in parallel processing).
-
-        Args:
-            slide_index: Index of the slide
-            html_content: Current HTML content
-            slide_purpose: Purpose of the slide
-            iteration: Current iteration number
-            refinement_id: Unique refinement ID
-            config: Langchain configuration
-
-        Returns:
-            Tuple of (success, updated_html)
+        Processes the full refinement loop for a single slide asynchronously.
+        This allows each slide to complete its refinement independently.
         """
-        try:
-            slide_number = slide_index + 1
+        current_html = initial_html_content
+        slide_number = slide_index + 1
+        print(f"  🚀 Starting full refinement loop for slide {slide_number}...")
+
+        for iteration in range(1, max_iterations + 1):
+            print(
+                f"    - Slide {slide_number}, Iteration {iteration}/{max_iterations}..."
+            )
 
             # Create filenames for this specific iteration
             image_filename = (
                 f"{refinement_id}_slide_{slide_number:02d}_iter_{iteration}.png"
             )
             image_path = self.temp_dir / image_filename
-            html_filename = (
-                f"{refinement_id}_slide_{slide_number:02d}_iter_{iteration}.html"
-            )
-            html_path = self.temp_dir / html_filename
-
-            # Save HTML for debugging
-            try:
-                with open(html_path, "w", encoding="utf-8") as f:
-                    f.write(html_content)
-            except Exception as e:
-                print(
-                    f"      ⚠️ Failed to save HTML debug file for slide {slide_number}: {e}"
-                )
 
             # Render HTML to image (async)
             if not await self._render_html_to_image_async(
-                html_content, str(image_path)
+                current_html, str(image_path)
             ):
                 print(
-                    f"      ❌ Failed to render HTML for slide {slide_number} iteration {iteration}"
+                    f"      ❌ Failed to render HTML for slide {slide_number}, aborting refinement for this slide."
                 )
-                return False, None
+                return current_html  # Return last known good version
 
-            # Upload image to Azure Blob Storage
+            # Upload image
             image_url = self.uploader.upload_file(
                 str(image_path), blob_name=f"refinement/{image_filename}"
             )
             if not image_url:
                 print(
-                    f"      ❌ Failed to upload image for slide {slide_number} iteration {iteration}"
+                    f"      ❌ Failed to upload image for slide {slide_number}, aborting refinement."
                 )
-                return False, None
+                return current_html
 
-            # Get LLM correction (this is where the parallel magic happens!)
+            # Get LLM correction
             correction_response = await self._get_html_correction_async(
-                html_content, image_url, slide_purpose, config
+                current_html, image_url, slide_purpose, config
             )
 
             if (
                 correction_response
                 and correction_response.html_code.strip().lower() != "no changes"
-                and correction_response.html_code.strip() != html_content.strip()
+                and correction_response.html_code.strip() != current_html.strip()
             ):
                 print(
-                    f"      🔄 Slide {slide_number} iter {iteration}: LLM suggested changes"
+                    f"      🔄 Slide {slide_number}, Iteration {iteration}: LLM suggested changes. Continuing loop."
                 )
-                return True, correction_response.html_code
-            print(
-                f"      ⚪ Slide {slide_number} iter {iteration}: No changes from LLM"
-            )
-            return True, html_content
+                current_html = correction_response.html_code
+            else:
+                print(
+                    f"      ⚪ Slide {slide_number}, Iteration {iteration}: No changes from LLM. Refinement complete for this slide."
+                )
+                break  # Early exit if no changes are needed
 
-        except Exception as e:
-            print(
-                f"      ❌ Error processing slide {slide_index + 1} iteration {iteration}: {e}"
-            )
-            return False, None
+        print(f"  ✅ Finished refinement loop for slide {slide_number}.")
+        return current_html
 
     def _identify_html_slides(self, slide_contents: list[SlideContent]) -> list[int]:
         """Scans all slide contents and returns a list of indices for slides containing HTML."""
@@ -1910,31 +1869,38 @@ Your response MUST be a JSON object that strictly follows this format:
 Do NOT provide any other text, explanations, or markdown.
 
 **EVALUATION PROCESS:**
-1. **Purpose Assessment**: Does the HTML effectively communicate the slide's intended message?
-2. **Requirements Check**: Are all specified requirements met (content structure, visual elements, etc.)?
-3. **Visual Effectiveness**: Does the rendered result enhance understanding and engagement?
-4. **Technical Quality**: Is the HTML technically sound and properly structured?
+1. **Color Palette Validation**: Are ALL elements using the correct Ekona colors? Check every text element, background, accent, and component for brand compliance.
+2. **Purpose Assessment**: Does the HTML effectively communicate the slide's intended message?
+3. **Requirements Check**: Are all specified requirements met (content structure, visual elements, etc.)?
+4. **Visual Effectiveness**: Does the rendered result enhance understanding and engagement with correct branding?
+5. **Technical Quality**: Is the HTML technically sound and properly structured?
 
 **REFINEMENT PRIORITIES:**
-1. **Purpose Alignment**: Ensure the visualization directly supports the slide's objectives
-2. **Content Clarity**: Information should be easily understood and well-organized
-3. **Visual Hierarchy**: Important elements should be properly emphasized
-4. **Professional Quality**: Design should be polished and business-appropriate
-5. **Space Utilization**: Effective use of the 1577x603px viewport
+1. **Color Palette Enforcement**: MANDATORY enforcement of Ekona color palette - check every element for correct colors
+2. **Purpose Alignment**: Ensure the visualization directly supports the slide's objectives
+3. **Content Clarity**: Information should be easily understood and well-organized
+4. **Visual Hierarchy**: Important elements should be properly emphasized with correct brand colors
+5. **Professional Quality**: Design should be polished and business-appropriate with consistent branding
+6. **Space Utilization**: Effective use of the 1577x603px viewport
 
 **TECHNICAL REQUIREMENTS:**
 - **Viewport**: 1577x603 pixels exactly
 - **Frameworks**: TailwindCSS, Flowbite, and daisyUI components only
-- **Diagrams**: Mermaid.js for timelines, flowcharts, and visualizations
+- **Diagrams**: Mermaid.js or D3.js
 - **No Titles**: Remove `<h1>` tags (slide has its own title)
 - **Responsive**: Fixed pixel values for critical positioning
 - **Performance**: High z-index values (z-10+) for proper layering
 
-**DESIGN STANDARDS:**
-- **Colors**: Primary #dc261e (Ekona red), Secondary #2d3748 (Dark gray), Background #ffffff, Text #4b5563
-- **Typography**: Clear font hierarchy with multiple fallbacks
+**DESIGN STANDARDS (CRITICAL - MUST BE ENFORCED):**
+- **Colors (MANDATORY EKONA PALETTE)**: 
+  - Primary/Accent: Swiss Red (#dc261e) - MUST be used for ALL accent elements
+  - Text Headers: Dark Grey (#2d3748) - MUST be used for ALL headings  
+  - Text Body: Black (#000000) - MUST be used for ALL body text
+  - Background: White (#ffffff) - MUST be used for ALL backgrounds
+  - NEVER accept default component colors - ALWAYS override with inline styles
+- **Typography**: Clear font hierarchy with multiple fallbacks (Segoe UI, system-ui, sans-serif)
 - **Layout**: No overlapping elements, proper spacing, professional appearance
-- **Icons**: Properly sized and positioned, no visual conflicts
+- **Icons**: Properly sized and positioned, no visual conflicts, correct color palette
 - **Content**: All text visible and readable, appropriate sizing
 
 **MERMAID.JS SYNTAX RULES:**
@@ -1950,12 +1916,18 @@ Do NOT provide any other text, explanations, or markdown.
 - **Conservative Approach**: Preserve working elements while improving purpose alignment
 
 **QUALITY CHECKLIST:**
+✅ MANDATORY: Ekona color palette enforced on ALL elements (Swiss Red #dc261e, Dark Grey #2d3748, Black #000000, White #ffffff)
 ✅ Purpose clearly communicated through visualization
 ✅ All requirements from slide specifications met
-✅ Professional, polished visual presentation
+✅ Professional, polished visual presentation with consistent branding
 ✅ No overlapping or mispositioned elements
 ✅ Optimal use of available space
 ✅ Technically sound HTML structure
-✅ Proper color scheme and branding
+✅ Text colors explicitly set (no default colors accepted)
+
+**Mermaid-Specific Refinements:**
+- **Enforce Title Separation**: The main title of the visualization MUST be a standard HTML tag (e.g., `<h1>`) outside the Mermaid `<div>`. If you see a `title` inside the Mermaid syntax, you MUST refactor the HTML to separate it.
+- **Recommend Component Wrappers**: For plain, unstyled diagrams, you SHOULD wrap the Mermaid `<div>` in a DaisyUI `card` component (`<div class="card bg-base-100 shadow-xl"><div class="card-body">...</div></div>`) to improve framing and visual appeal.
+- **Check for Professionalism**: Even without seeing the final colors, evaluate if the layout, spacing, and font sizes are professional and aligned with a corporate brand identity. The final render will apply brand colors, but the structure must be sound.
 
 Focus on creating HTML that serves the slide's purpose effectively, not just fixing visual issues."""

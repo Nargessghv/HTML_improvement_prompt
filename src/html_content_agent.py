@@ -6,6 +6,8 @@ and generates appropriate HTML content for timelines, process flows,
 charts, and other custom visualizations.
 """
 
+import asyncio
+import concurrent.futures
 import json
 import os
 from datetime import datetime
@@ -85,9 +87,11 @@ class HTMLContentGenerationAgent:
                 print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
                 return state
 
-            # Process slides using the presentation plan's HTML flags
-            processed_slides = self._process_planned_html_slides(
-                slide_contents, presentation_plan, state.get("topic", ""), config
+            # Use async parallel HTML generation by default
+            processed_slides = asyncio.run(
+                self._process_planned_html_slides_parallel(
+                    slide_contents, presentation_plan, state.get("topic", ""), config
+                )
             )
 
             # Update state with processed content
@@ -760,187 +764,561 @@ VIEWPORT REQUIREMENTS:
 
         # Visual design section
         design_section = """
-VISUAL DESIGN (CRITICAL):
-- Color Palette:
-  - Primary/Accent: Swiss Red (#dc261e)
-  - Text (Headings): Dark Grey (#2d3748)
-  - Text (Body): Black (#000000)
-  - Background: White (#ffffff)
+VISUAL DESIGN (CRITICAL - MANDATORY COMPLIANCE):
+- Color Palette (EKONA BRAND COLORS - NO EXCEPTIONS):
+  - Primary/Accent: Swiss Red (#dc261e) - REQUIRED for ALL accent elements, links, buttons, highlights
+  - Text (Headings): Dark Grey (#2d3748) - REQUIRED for ALL headings and titles
+  - Text (Body): Black (#000000) - REQUIRED for ALL body text and descriptions
+  - Background: White (#ffffff) - REQUIRED for ALL backgrounds
+  - ⚠️ CRITICAL: Use inline style attributes to override component defaults
+  - ⚠️ CRITICAL: NEVER rely on Tailwind color classes alone - always specify exact hex values
+
+- Color Implementation Examples:
+  - Headers: style="color: #2d3748;" 
+  - Accent text: style="color: #dc261e;"
+  - Body text: style="color: #000000;"
+  - Backgrounds: style="background-color: #ffffff;"
 
 - Typography:
-  - Font: 'Segoe UI', system-ui, sans-serif
+  - Font: 'Segoe UI', system-ui, sans-serif (MANDATORY)
   - Base Size: 16px (text-base)
-  - Headers: 24px (text-2xl, font-bold)
+  - Headers: 24px (text-2xl, font-bold) with Dark Grey (#2d3748)
 
 - Layout:
-  - Keep it clean, simple, and minimalist.
-  - Use ample white space.
-  - Ensure content is highly readable.
+  - Keep it clean, simple, and minimalist
+  - Use ample white space with proper brand colors
+  - Ensure content is highly readable with correct color contrast
 
 - Components:
-  - Use DaisyUI and Flowbite components for layout and elements.
-  - Use Mermaid.js for diagrams, molecular pathways, etc.
-  - Repurpose components creatively (e.g., an Event Schedule can be used for a sequence of steps).
-  - Use Tailwind CSS for custom styling and adjustments."""
+  - Use DaisyUI and Flowbite components for layout and elements
+  - ALWAYS override component colors with Ekona brand colors using inline styles
+  - Use Mermaid.js for diagrams, but NEVER for timelines (use D3.js for timelines)
+  - Use Tailwind CSS for spacing and layout, but ALWAYS override colors with exact hex values"""
 
-        # Example section
+        # New Mermaid Styling Section
+        mermaid_styling_section = """
+MERMAID DIAGRAM STYLING (CRITICAL):
+- **Separate Title**: The main title of the visualization MUST be a standard HTML tag (e.g., `<h1 class="text-3xl font-bold ...">`) placed OUTSIDE the `<div class="mermaid">`. Do NOT use the Mermaid `title` syntax. This allows for better styling and layout control.
+- **Wrap in Components**: For a more polished look, wrap the Mermaid `div` inside a DaisyUI component like a `card` (`<div class="card bg-base-100 shadow-xl">`). This adds a professional frame.
+- **Styling is Automatic**: Remind yourself that the final rendering will automatically apply brand colors (Swiss Red, etc.) to the Mermaid diagram. You do not need to add manual styling inside the Mermaid syntax.
+- **Focus on Structure**: Your job is to provide clean, well-structured Mermaid syntax. The renderer handles the visual theme.
+
+**Best-in-Class Timeline Example (Separate Title + Card Wrapper):**
+<div class="w-full h-full flex flex-col p-8 bg-base-100">
+  <h1 class="text-3xl font-bold text-text-heading mb-6 text-center">A Timeline of Our Project</h1>
+  <div class="card bg-base-100 shadow-xl flex-grow">
+    <div class="card-body">
+      <div class="mermaid w-full h-full">
+        timeline
+            2024 Q1 : Discovery & Planning : In-depth analysis of project requirements and goals.
+            2024 Q2 : Core Development : Building the main features and infrastructure.
+            2024 Q3 : Testing & QA : Rigorous testing to ensure quality and stability.
+            2024 Q4 : Launch & Deployment : Official release and go-live.
+      </div>
+    </div>
+  </div>
+</div>
+"""
+
+        # New D3.js Timeline Section
+        d3_timeline_section = """
+ADVANCED VISUALIZATION (D3.js):
+- **MANDATORY FOR TIMELINES AND ROADMAPS**: D3.js is REQUIRED for ALL timeline and roadmap visualizations. It offers superior control over styling and layout, resulting in a more professional, on-brand visual that maintains strict color palette compliance.
+- **Use for Custom Visuals**: For any complex, data-driven, or highly polished visualization, D3.js is the PREFERRED method over Mermaid.js. Use it for sophisticated timelines, custom charts, or any diagram where Mermaid's standard syntax is too limiting.
+- **Container Element**: Your HTML structure MUST include a container element for the D3.js script to target, like `<div id="d3-container" class="w-full h-full"></div>`.
+- **Data in Script Tag**: Define the data for the visualization as a JSON array inside a `<script>` tag within the body. This separates the data from the visualization logic.
+- **Styling in D3**: All styling (colors, fonts, sizes) should be handled directly within the D3.js script. The example below is pre-configured with the correct brand colors and MUST be followed exactly.
+
+**MANDATORY D3.js Timeline Example (REQUIRED for all timelines and roadmaps):**
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            background-color: #ffffff;
+            color: #000000;
+        }
+    </style>
+</head>
+<body class="w-[1577px] h-[603px] bg-white flex items-center justify-center p-8">
+    <div class="card w-full h-full bg-base-100 shadow-xl">
+        <div class="card-body flex flex-col">
+            <h1 class="card-title text-3xl font-bold text-center mb-4 shrink-0" style="color: #2d3748;">Project Development Timeline</h1>
+            <div id="d3-container" class="flex-grow w-full h-full"></div>
+        </div>
+    </div>
+    <script>
+        const visualizationData = [
+            { point: "2024 Q1", event: "Discovery & Planning", description: "In-depth analysis of project requirements and goals." },
+            { point: "2024 Q2", event: "Core Development", description: "Building the main features and infrastructure." },
+            { point: "2024 Q3", event: "Testing & QA", description: "Rigorous testing to ensure quality and stability." },
+            { point: "2024 Q4", event: "Launch & Deployment", description: "Official release and go-live." }
+        ];
+
+        const container = d3.select("#d3-container");
+        const width = container.node().getBoundingClientRect().width;
+        const height = container.node().getBoundingClientRect().height;
+
+        const svg = container
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append("g");
+
+        // --- Timeline Axis ---
+        const lineY = height / 2;
+        svg.append("line")
+            .attr("x1", 0)
+            .attr("y1", lineY)
+            .attr("x2", width)
+            .attr("y2", lineY)
+            .attr("stroke", "#2d3748") // Dark Grey
+            .attr("stroke-width", 2);
+        
+        // Arrowhead
+        svg.append("defs").append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "-0 -5 10 10")
+            .attr("refX", 5)
+            .attr("refY", 0)
+            .attr("orient", "auto")
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .append("svg:path")
+            .attr("d", "M 0,-5 L 10,0 L 0,5")
+            .attr("fill", "#2d3748");
+
+        svg.select("line").attr("marker-end", "url(#arrowhead)");
+
+        // --- Data Points ---
+        const points = svg.selectAll("g.event")
+            .data(visualizationData)
+            .enter()
+            .append("g")
+            .attr("class", "event")
+            .attr("transform", (d, i) => `translate(${(i + 0.5) * (width / visualizationData.length)}, 0)`);
+
+        // Vertical lines
+        points.append("line")
+            .attr("y1", lineY - 10)
+            .attr("y2", lineY + 10)
+            .attr("stroke", "#2d3748")
+            .attr("stroke-width", 2);
+
+        // Point labels (e.g., Year)
+        points.append("text")
+            .attr("y", lineY - 30)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "18px")
+            .attr("font-weight", "bold")
+            .attr("fill", "#2d3748")
+            .text(d => d.point);
+            
+        // Event titles
+        points.append("text")
+            .attr("y", lineY + 40)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "16px")
+            .attr("font-weight", "bold")
+            .attr("fill", "#dc261e") // Swiss Red
+            .text(d => d.event);
+
+        // Event descriptions
+        points.append("text")
+            .attr("y", lineY + 65)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "14px")
+            .attr("fill", "#000000")
+            .each(function(d) {
+                const lines = d.description.split(' ');
+                const availableWidth = (width / visualizationData.length) - 20;
+                let tspan = d3.select(this).append("tspan").attr("x", 0);
+                let line = [];
+                for (let i = 0; i < lines.length; i++) {
+                    line.push(lines[i]);
+                    tspan.text(line.join(' '));
+                    if (tspan.node().getComputedTextLength() > availableWidth) {
+                        line.pop();
+                        tspan.text(line.join(' '));
+                        line = [lines[i]];
+                        tspan = d3.select(this).append("tspan").attr("x", 0).attr("dy", "1.2em").text(lines[i]);
+                    }
+                }
+            });
+    </script>
+</body>
+</html>
+"""
+
+        # DaisyUI Timeline Alternative Section
+        daisyui_timeline_section = """
+DAISYUI TIMELINE ALTERNATIVE:
+- **For Simple Timelines**: Use DaisyUI timeline components for basic chronological sequences
+- **CSS-Only Implementation**: Uses pure CSS for styling, maintains strict color palette
+- **Professional Layout**: Clean, corporate design suitable for business presentations
+
+**DaisyUI Timeline Example (for simple timelines):**
+<div class="w-[1577px] h-[603px] bg-white p-8">
+  <div class="timeline timeline-vertical">
+    <div class="timeline-item">
+      <div class="timeline-start text-end pr-4">
+        <time class="font-mono italic" style="color: #2d3748;">2024 Q1</time>
+        <div class="text-lg font-black" style="color: #dc261e;">Discovery & Planning</div>
+        <p style="color: #000000;">In-depth analysis of project requirements and goals.</p>
+      </div>
+      <div class="timeline-middle">
+        <svg class="w-5 h-5 text-primary"><use href="#calendar"></use></svg>
+      </div>
+      <hr class="bg-gray-300"/>
+    </div>
+    <div class="timeline-item">
+      <hr class="bg-gray-300"/>
+      <div class="timeline-start text-end pr-4">
+        <time class="font-mono italic" style="color: #2d3748;">2024 Q2</time>
+        <div class="text-lg font-black" style="color: #dc261e;">Core Development</div>
+        <p style="color: #000000;">Building the main features and infrastructure.</p>
+      </div>
+      <div class="timeline-middle">
+        <svg class="w-5 h-5 text-primary"><use href="#code"></use></svg>
+      </div>
+      <hr class="bg-gray-300"/>
+    </div>
+  </div>
+</div>
+"""
+
+        # Example section - Creative DaisyUI Storytelling Patterns
         example_section = """
-COMPONENT EXAMPLES:
-Use these proven patterns for building your visualization.
+🎯 CREATIVE DAISYUI STORYTELLING PATTERNS:
+Transform business narratives using innovative component combinations.
 
-1. DaisyUI Stats for Metrics:
-<div class="stats shadow">
-  <div class="stat">
-    <div class="stat-title">Customer Satisfaction</div>
-    <div class="stat-value text-primary">95%</div>
-    <div class="stat-desc">↗︎ 400 (22%)</div>
-  </div>
-  <div class="stat">
-    <div class="stat-title">Projects Completed</div>
-    <div class="stat-value text-primary">200+</div>
-    <div class="stat-desc">↗︎ 90 (14%)</div>
-  </div>
-</div>
+═══════════════════════════════════════════════════════════════════════════════
+📖 PATTERN 1: HERO JOURNEY (Problem → Solution → Success)
+═══════════════════════════════════════════════════════════════════════════════
 
-2. DaisyUI Cards for Comparisons:
-<div class="grid grid-cols-2 gap-4">
-  <div class="card bg-base-100 shadow-sm">
-    <div class="card-body">
-      <h2 class="card-title">Before</h2>
-      <p>Manual processes, 2-week deployment</p>
-    </div>
-  </div>
-  <div class="card bg-base-100 shadow-sm">
-    <div class="card-body">
-      <h2 class="card-title">After</h2>
-      <p>Automated pipeline, 2-hour deployment</p>
+1. Hero with Problem Statement + Progress Indicator:
+<div class="hero min-h-96" style="background-color: #ffffff;">
+  <div class="hero-content text-center">
+    <div class="max-w-md">
+      <h1 class="text-4xl font-bold" style="color: #2d3748;">The Challenge</h1>
+      <p class="py-6" style="color: #000000;">Traditional deployment takes 2 weeks with 40% failure rate</p>
+      
+      <div class="flex justify-center mb-4">
+        <div class="radial-progress" style="--value:25; --size:4rem; color: #dc261e;">25%</div>
+      </div>
+      
+      <div class="badge" style="background-color: #dc261e; color: #ffffff;">Critical Issue</div>
     </div>
   </div>
 </div>
 
-3. Mermaid Timeline:
-<div class="mermaid">
-timeline
-    title Project Phases
-    2024-01 : Discovery : Requirements
-    2024-02 : Development : Core Build
-    2024-03 : Testing : QA Process
-    2024-04 : Launch : Go Live
-</div>
-
-4. Mermaid Process Flow:
-<div class="mermaid">
-flowchart TD
-    A[Requirements] --> B[Design]
-    B --> C[Development]
-    C --> D{Testing}
-    D -->|Pass| E[Deploy]
-    D -->|Fail| C
-</div>
-
-5. Mermaid Graph with Subgraphs (CORRECT SYNTAX):
-<div class="mermaid">
-graph TD
-    subgraph "Phase 1"
-        A[Planning]
-        B[Requirements]
-    end
-    subgraph "Phase 2"
-        C[Development]
-        D[Testing]
-    end
-    A --> B
-    B --> C
-    C --> D
-</div>
-
-6. Mermaid Cycle Diagram (SAFE SYNTAX):
-<div class="mermaid">
-flowchart TD
-    A[Start Process] --> B[Action 1]
-    B --> C[Action 2]
-    C --> D[Action 3]
-    D --> E[End Result]
-    E --> B
-    style A fill:#f3f4f6
-    style E fill:#dc261e,color:#fff
-</div>
-
-7. Stats with Lucide Icons:
-<div class="stat">
-  <div class="stat-figure text-primary">
-    <svg class="w-8 h-8"><use href="#trending-up"></use></svg>
+2. Hero with Solution + Embedded Mermaid:
+<div class="hero min-h-96" style="background-color: #ffffff;">
+  <div class="hero-content flex-col lg:flex-row">
+    <div class="text-center lg:text-left">
+      <h1 class="text-3xl font-bold" style="color: #2d3748;">Our Solution</h1>
+      <p class="py-6" style="color: #000000;">Automated CI/CD pipeline reduces deployment to 2 hours</p>
+      
+      <ul class="steps steps-vertical lg:steps-horizontal w-full">
+        <li class="step" style="color: #dc261e;">Commit</li>
+        <li class="step" style="color: #dc261e;">Test</li>
+        <li class="step" style="color: #dc261e;">Deploy</li>
+        <li class="step" style="color: #2d3748;">Monitor</li>
+      </ul>
+    </div>
+    
+    <div class="hero-figure max-w-sm">
+      <div class="mermaid">
+      flowchart TD
+          A["Code Commit"] --> B["Automated Testing"]
+          B --> C["Auto Deploy"]
+          C --> D["Real-time Monitoring"]
+      </div>
+    </div>
   </div>
-  <div class="stat-title">Revenue Growth</div>
-  <div class="stat-value">31%</div>
 </div>
 
-8. Card with Mermaid Diagram:
-<div class="card bg-base-100 shadow-sm">
+═══════════════════════════════════════════════════════════════════════════════
+🔄 PATTERN 2: TRANSFORMATION JOURNEY (Before → During → After)
+═══════════════════════════════════════════════════════════════════════════════
+
+3. Three-Card Transformation with Progress Breadcrumbs:
+<div class="w-full p-8">
+  <div class="breadcrumbs text-sm mb-8">
+    <ul>
+      <li><span style="color: #dc261e;">Before</span></li>
+      <li><span style="color: #dc261e;">Transformation</span></li>
+      <li><span style="color: #2d3748;">After</span></li>
+    </ul>
+  </div>
+  
+  <div class="grid grid-cols-3 gap-6">
+    <div class="card bg-base-100 shadow-xl" style="background-color: #ffffff;">
+      <div class="card-body">
+        <h2 class="card-title" style="color: #2d3748;">Before</h2>
+        <div class="badge mb-4" style="background-color: #dc261e; color: #ffffff;">Pain Points</div>
+        
+        <div class="stats stats-vertical shadow">
+          <div class="stat">
+            <div class="stat-title" style="color: #2d3748;">Deployment Time</div>
+            <div class="stat-value" style="color: #dc261e;">2 weeks</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title" style="color: #2d3748;">Success Rate</div>
+            <div class="stat-value" style="color: #dc261e;">60%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card bg-base-100 shadow-xl" style="background-color: #ffffff;">
+      <div class="card-body">
+        <h2 class="card-title" style="color: #2d3748;">Transformation</h2>
+        <div class="badge mb-4" style="background-color: #dc261e; color: #ffffff;">In Progress</div>
+        
+        <div class="flex justify-center my-4">
+          <div class="radial-progress" style="--value:75; --size:5rem; color: #dc261e;">75%</div>
+        </div>
+        
+        <ul class="menu rounded-box" style="background-color: #ffffff;">
+          <li><span style="color: #000000;">✓ CI/CD Implementation</span></li>
+          <li><span style="color: #000000;">✓ Automated Testing</span></li>
+          <li><span style="color: #2d3748;">○ Monitoring Setup</span></li>
+        </ul>
+      </div>
+    </div>
+    
+    <div class="card bg-base-100 shadow-xl" style="background-color: #ffffff;">
+      <div class="card-body">
+        <h2 class="card-title" style="color: #2d3748;">After</h2>
+        <div class="badge mb-4" style="background-color: #dc261e; color: #ffffff;">Success</div>
+        
+        <div class="stats stats-vertical shadow">
+          <div class="stat">
+            <div class="stat-title" style="color: #2d3748;">Deployment Time</div>
+            <div class="stat-value" style="color: #dc261e;">2 hours</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title" style="color: #2d3748;">Success Rate</div>
+            <div class="stat-value" style="color: #dc261e;">98%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+═══════════════════════════════════════════════════════════════════════════════
+⚡ PATTERN 3: PROCESS EXCELLENCE (Step-by-Step Mastery)
+═══════════════════════════════════════════════════════════════════════════════
+
+4. Steps with Detailed Cards and Progress Indicators:
+<div class="w-full p-8">
+  <h1 class="text-3xl font-bold text-center mb-8" style="color: #2d3748;">Implementation Roadmap</h1>
+  
+  <ul class="steps w-full mb-8">
+    <li class="step" style="color: #dc261e;">Assess</li>
+    <li class="step" style="color: #dc261e;">Plan</li>
+    <li class="step" style="color: #dc261e;">Implement</li>
+    <li class="step" style="color: #2d3748;">Optimize</li>
+  </ul>
+  
+  <div class="divider" style="color: #2d3748;">Phase Details</div>
+  
+  <div class="card bg-base-100 shadow-lg" style="background-color: #ffffff;">
+    <div class="card-body">
+      <div class="flex items-center gap-4">
+        <div class="avatar placeholder">
+          <div class="rounded-full w-12" style="background-color: #dc261e;">
+            <span class="text-xl" style="color: #ffffff;">1</span>
+          </div>
+        </div>
+        <div class="flex-1">
+          <h3 class="card-title" style="color: #2d3748;">Assessment Phase</h3>
+          <p style="color: #000000;">Comprehensive analysis of current state and requirements</p>
+          
+          <progress class="progress w-56" style="color: #dc261e;" value="100" max="100"></progress>
+        </div>
+        <div class="badge" style="background-color: #dc261e; color: #ffffff;">Complete</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+═══════════════════════════════════════════════════════════════════════════════
+📊 PATTERN 4: METRICS & IMPACT (Data-Driven Story)
+═══════════════════════════════════════════════════════════════════════════════
+
+5. Hero Dashboard with Stats and Indicators:
+<div class="hero min-h-96" style="background-color: #ffffff;">
+  <div class="hero-content text-center">
+    <div class="max-w-4xl">
+      <h1 class="text-4xl font-bold" style="color: #2d3748;">Impact Results</h1>
+      
+      <div class="flex justify-center my-6">
+        <div class="indicator">
+          <span class="indicator-item badge" style="background-color: #dc261e; color: #ffffff;">New</span>
+          <div class="grid w-32 h-32 place-items-center rounded-full" style="background-color: #ffffff; border: 3px solid #dc261e;">
+            <span class="text-2xl font-bold" style="color: #dc261e;">98%</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="stats shadow">
+        <div class="stat">
+          <div class="stat-figure">
+            <svg class="w-8 h-8" style="color: #dc261e;"><use href="#trending-up"></use></svg>
+          </div>
+          <div class="stat-title" style="color: #2d3748;">Efficiency Gain</div>
+          <div class="stat-value" style="color: #dc261e;">85%</div>
+          <div class="stat-desc" style="color: #000000;">↗︎ 400 (22%)</div>
+        </div>
+        
+        <div class="stat">
+          <div class="stat-figure">
+            <svg class="w-8 h-8" style="color: #dc261e;"><use href="#users"></use></svg>
+          </div>
+          <div class="stat-title" style="color: #2d3748;">Team Satisfaction</div>
+          <div class="stat-value" style="color: #dc261e;">96%</div>
+          <div class="stat-desc" style="color: #000000;">↗︎ 86 (14%)</div>
+        </div>
+        
+        <div class="stat">
+          <div class="stat-figure">
+            <svg class="w-8 h-8" style="color: #dc261e;"><use href="#dollar-sign"></use></svg>
+          </div>
+          <div class="stat-title" style="color: #2d3748;">Cost Savings</div>
+          <div class="stat-value" style="color: #dc261e;">€2.4M</div>
+          <div class="stat-desc" style="color: #000000;">↗︎ 90 (14%)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+═══════════════════════════════════════════════════════════════════════════════
+⚖️ PATTERN 5: COMPARISON & CHOICE (Decision Framework)
+═══════════════════════════════════════════════════════════════════════════════
+
+6. Table-Based Feature Comparison with Tooltips and Badges:
+<div class="w-full p-8">
+  <h2 class="text-3xl font-bold text-center mb-8" style="color: #2d3748;">Solution Comparison</h2>
+  
+  <div class="overflow-x-auto">
+    <table class="table table-zebra w-full" style="background-color: #ffffff;">
+      <thead>
+        <tr style="background-color: #ffffff;">
+          <th style="color: #2d3748;">Feature</th>
+          <th style="color: #2d3748;">Traditional Approach</th>
+          <th style="color: #2d3748;">Our Solution</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color: #000000;"><strong>Deployment Speed</strong></td>
+          <td>
+            <div class="badge" style="background-color: #dc261e; color: #ffffff;">2 weeks</div>
+          </td>
+          <td>
+            <div class="badge" style="background-color: #dc261e; color: #ffffff;">2 hours</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="color: #000000;"><strong>Success Rate</strong></td>
+          <td>
+            <progress class="progress w-20" value="60" max="100" style="color: #dc261e;"></progress>
+            <span style="color: #000000;"> 60%</span>
+          </td>
+          <td>
+            <progress class="progress w-20" value="98" max="100" style="color: #dc261e;"></progress>
+            <span style="color: #000000;"> 98%</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="color: #000000;"><strong>Team Effort</strong></td>
+          <td>
+            <div class="tooltip" data-tip="High manual effort required">
+              <div class="badge" style="background-color: #dc261e; color: #ffffff;">High</div>
+            </div>
+          </td>
+          <td>
+            <div class="tooltip" data-tip="Fully automated process">
+              <div class="badge" style="background-color: #dc261e; color: #ffffff;">Minimal</div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+═══════════════════════════════════════════════════════════════════════════════
+🎨 ADDITIONAL CREATIVE PATTERNS
+═══════════════════════════════════════════════════════════════════════════════
+
+7. D3.js Timeline (MANDATORY for timelines):
+See the mandatory D3.js timeline example above - use this exact pattern for all timeline and roadmap visualizations.
+
+8. List Menu with Progress Tracking:
+<ul class="menu bg-base-200 w-full rounded-box" style="background-color: #ffffff;">
+  <li>
+    <div class="flex items-center justify-between w-full">
+      <span style="color: #000000;">Infrastructure Setup</span>
+      <div class="flex items-center gap-2">
+        <progress class="progress w-20" style="color: #dc261e;" value="100" max="100"></progress>
+        <div class="badge" style="background-color: #dc261e; color: #ffffff;">Done</div>
+      </div>
+    </div>
+  </li>
+  <li>
+    <div class="flex items-center justify-between w-full">
+      <span style="color: #000000;">Security Configuration</span>
+      <div class="flex items-center gap-2">
+        <progress class="progress w-20" style="color: #dc261e;" value="75" max="100"></progress>
+        <div class="badge" style="background-color: #dc261e; color: #ffffff;">In Progress</div>
+      </div>
+    </div>
+  </li>
+</ul>
+
+9. Card with Embedded Mermaid + Action Badges:
+<div class="card bg-base-100 shadow-xl" style="background-color: #ffffff;">
   <div class="card-body">
-    <h2 class="card-title">Development Process</h2>
+    <h2 class="card-title" style="color: #2d3748;">
+      <svg class="w-6 h-6" style="color: #dc261e;"><use href="#workflow"></use></svg>
+      Development Workflow
+    </h2>
     <div class="mermaid">
     flowchart TD
-        A[Requirements] --> B[Design]
-        B --> C[Code]
-        C --> D[Test]
+        A["Requirements"] --> B["Design"]
+        B --> C["Development"]
+        C --> D{Testing}
+        D -->|Pass| E["Deploy"]
+        D -->|Fail| C
+    </div>
+    <div class="card-actions justify-end">
+      <div class="badge" style="background-color: #dc261e; color: #ffffff;">Automated</div>
+      <div class="badge badge-outline" style="border-color: #dc261e; color: #dc261e;">99.5% Success</div>
     </div>
   </div>
 </div>
 
-9. Side-by-Side Comparison with Diagrams:
-<div class="grid grid-cols-2 gap-4">
-  <div class="card bg-base-100 shadow-sm">
-    <div class="card-body">
-      <h2 class="card-title">Before</h2>
-      <p>Manual deployment process</p>
-      <div class="mermaid">
-      flowchart TD
-          A[Code] --> B[Manual Test]
-          B --> C[Manual Deploy]
-      </div>
-    </div>
-  </div>
-  <div class="card bg-base-100 shadow-sm">
-    <div class="card-body">
-      <h2 class="card-title">After</h2>
-      <p>Automated CI/CD pipeline</p>
-      <div class="mermaid">
-      flowchart TD
-          A[Code] --> B[Auto Test]
-          B --> C[Auto Deploy]
-      </div>
-    </div>
-  </div>
-</div>
-
-10. Complex Layout with Multiple Components:
-<div class="w-full h-full p-8">
-  <h1 class="text-2xl font-bold mb-4">Project Overview</h1>
-  <div class="mermaid mb-6">
-  timeline
-      title Project Timeline
-      2024-01 : Planning : Requirements
-      2024-02 : Development : Core Features
-      2024-03 : Testing : QA Process
-  </div>
-  <div class="stats shadow w-full">
-    <div class="stat">
-      <div class="stat-figure text-primary">
-        <svg class="w-8 h-8"><use href="#users"></use></svg>
-      </div>
-      <div class="stat-title">Team Size</div>
-      <div class="stat-value">8</div>
-    </div>
-    <div class="stat">
-      <div class="stat-figure text-primary">
-        <svg class="w-8 h-8"><use href="#calendar"></use></svg>
-      </div>
-      <div class="stat-title">Duration</div>
-      <div class="stat-value">3 months</div>
-    </div>
-  </div>
-</div>"""
+⚡ CREATIVE REPURPOSING GUIDE:
+• Hero → Problem/Solution statements with visual impact
+• Breadcrumbs → Journey indicators, process navigation
+• Steps → Project phases, implementation stages, maturity levels
+• Indicators → Status markers, notifications, achievements
+• Badges → Categories, status labels, completion markers
+• Progress → Completion rates, performance metrics, goal tracking
+• Tooltips → Additional context without cluttering
+• Dividers → Section breaks with descriptive labels
+• Tables → Feature comparisons, specifications, before/after data
+• Radial Progress → KPIs, completion percentages, success rates"""
 
         # Combine all sections
         return "\n\n".join(
@@ -952,6 +1330,9 @@ flowchart TD
                 context_section,
                 requirements_section,
                 design_section,
+                d3_timeline_section,  # Add the new D3 section
+                mermaid_styling_section,
+                daisyui_timeline_section,  # Add the new DaisyUI timeline section
                 example_section,
                 (
                     "CONVERSION TASK:\n"
@@ -978,11 +1359,12 @@ visualizations that perfectly fill a 1577x603px container for business presentat
 2.  **Strict Component Usage**: Your ONLY tools for layout and components
     are DaisyUI and Flowbite. You MUST NOT use any other library or write
     custom components.
-3.  **Brand Consistency**: Strictly adhere to the specified color palette.
-    Use Tailwind CSS to override component styles if necessary to match the theme.
-    - Primary/Accent: Swiss Red (#dc261e)
+3.  **Brand Consistency (CRITICAL)**: MANDATORY adherence to Ekona color palette.
+    ALL colors MUST be explicitly specified using inline styles or Tailwind overrides.
+    - Primary/Accent: Swiss Red (#dc261e) - USE FOR ALL accent elements
     - Text: Dark Grey for headers (#2d3748), Black for body (#000000)
     - Background: White (#ffffff)
+    - NEVER rely on component defaults - ALWAYS override with exact Ekona colors
 4.  **Static & Non-Interactive**: The output is for a static image.
     DO NOT include animations, hover effects, or any user interactivity.
 5.  **No Custom SVG**: You MUST NOT generate any inline SVG code. The ONLY
@@ -1028,17 +1410,16 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     Available DaisyUI components: stats, card, badge, alert, timeline (CSS-only), progress
     Available Flowbite components: timeline, cards, tables, lists
     Stick to simple, clean components that work well in static images.
+    ⚠️ CRITICAL: For timeline components, prefer D3.js over DaisyUI for better branding control.
 
-2.  **Mermaid.js for ALL Diagrams**: For ANY chart, graph, process flow,
-    timeline, organizational chart, or diagram, you MUST use Mermaid.js syntax.
-    - Timeline: Use `timeline` syntax for chronological sequences
+2.  **Mermaid.js for Process Diagrams ONLY**: For process flows, organizational charts, and complex diagrams (EXCEPT timelines/roadmaps which MUST use D3.js), use Mermaid.js syntax.
     - Process: Use `flowchart TD` or `graph TD` for workflows  
     - Comparison: Use `graph LR` for side-by-side comparisons
     - Organizational: Use `graph TD` for hierarchies and structures
+    - ⚠️ CRITICAL: NEVER use Mermaid timeline syntax - use D3.js or DaisyUI for ALL timelines and roadmaps
     - Place ALL Mermaid syntax inside a `<div class="mermaid">` element
     - The renderer automatically applies Ekona brand colors, do not add styling
     - Keep diagrams simple enough to fit within 1577x603px container
-    - Follow the examples provided below for proven syntax patterns
     - **CRITICAL MERMAID SYNTAX RULES**:
       * Use simple text in nodes, avoid HTML tags like <b>, <br/>, <i>
       * Use quotes for node text: A["Simple Text Here"]
@@ -1541,3 +1922,125 @@ CRITICAL REQUIREMENTS:
     {html_content}
 </body>
 </html>"""
+
+    async def _process_planned_html_slides_parallel(
+        self,
+        slide_contents: List[SlideContent],
+        presentation_plan: List[Any],
+        topic: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> List[SlideContent]:
+        """
+        Async parallel version of _process_planned_html_slides
+        """
+        print(
+            f"  🚀 Running async parallel HTML generation for {len(slide_contents)} slides..."
+        )
+        tasks = []
+        for i, (slide_content, slide_spec) in enumerate(
+            zip(slide_contents, presentation_plan), 1
+        ):
+            is_html_planned = getattr(slide_spec, "is_html", False)
+            if is_html_planned:
+                tasks.append(
+                    self._enhance_planned_html_slide_async(
+                        slide_content, slide_spec, topic, i, len(slide_contents), config
+                    )
+                )
+            else:
+                # Non-HTML slides are returned as-is
+                tasks.append(self._return_slide_content_async(slide_content))
+        results = await asyncio.gather(*tasks)
+        print(
+            f"  ✅ Async parallel HTML generation complete for {len(results)} slides."
+        )
+        return results
+
+    async def _enhance_planned_html_slide_async(
+        self,
+        slide_content: SlideContent,
+        slide_spec: Any,
+        topic: str,
+        slide_number: int,
+        total_slides: int,
+        config: Optional[RunnableConfig] = None,
+    ) -> SlideContent:
+        """
+        Async version of _enhance_planned_html_slide for parallel processing
+        """
+        enhanced_content = {}
+        html_generated_this_slide = False
+        tasks = []
+        for placeholder_name, content_text in slide_content.content.items():
+            should_generate = self._should_generate_html_visualization(
+                placeholder_name, content_text
+            )
+            if should_generate:
+                tasks.append(
+                    self._generate_html_visualization_content_async(
+                        placeholder_name=placeholder_name,
+                        original_content=content_text,
+                        topic=topic,
+                        slide_number=slide_number,
+                        total_slides=total_slides,
+                        slide_spec=slide_spec,
+                        config=config,
+                    )
+                )
+            else:
+                # Non-HTML placeholders are returned as-is
+                tasks.append(
+                    self._return_placeholder_content_async(
+                        placeholder_name, content_text
+                    )
+                )
+        results = await asyncio.gather(*tasks)
+        for result in results:
+            placeholder_name, html_content = result
+            enhanced_content[placeholder_name] = html_content
+            if html_content != slide_content.content.get(placeholder_name):
+                html_generated_this_slide = True
+        if not html_generated_this_slide:
+            print("        💡 No HTML content generated for this slide")
+        return SlideContent(
+            layout_index=slide_content.layout_index, content=enhanced_content
+        )
+
+    async def _generate_html_visualization_content_async(
+        self,
+        placeholder_name: str,
+        original_content: str,
+        topic: str,
+        slide_number: int,
+        total_slides: int,
+        slide_spec: Optional[Any] = None,
+        config: Optional[RunnableConfig] = None,
+    ) -> tuple:
+        """
+        Async version of _generate_html_visualization_content for parallel LLM calls
+        Returns (placeholder_name, html_content)
+        """
+        loop = asyncio.get_running_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            html_content = await loop.run_in_executor(
+                executor,
+                self._generate_html_visualization_content,
+                placeholder_name,
+                original_content,
+                topic,
+                slide_number,
+                total_slides,
+                slide_spec,
+                config,
+            )
+        return (placeholder_name, html_content)
+
+    async def _return_slide_content_async(
+        self, slide_content: SlideContent
+    ) -> SlideContent:
+        return slide_content
+
+    async def _return_placeholder_content_async(
+        self, placeholder_name: str, content_text: str
+    ) -> tuple:
+        return (placeholder_name, content_text)

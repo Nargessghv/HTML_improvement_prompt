@@ -164,6 +164,19 @@ class HTMLRenderer:
                     html_content[:head_end] + mermaid_script + html_content[head_end:]
                 )
 
+        # 3. Check for and inject D3.js if needed
+        if "d3.select" in html_content or '<div id="d3-container">' in html_content:
+            print("📊 D3.js visualization detected, injecting script...")
+            head_end = html_content.find("</head>")
+            if head_end != -1:
+                d3_script = """
+    <!-- D3.js for advanced visualizations -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+"""
+                html_content = (
+                    html_content[:head_end] + d3_script + html_content[head_end:]
+                )
+
         return html_content
 
     def _load_lucide_sprite(self) -> str:
