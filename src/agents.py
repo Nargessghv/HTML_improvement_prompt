@@ -21,6 +21,15 @@ from .llm_client import LangchainLLMClient, SlideContent
 from .llm_models import RefinedHTML, SlideSpec
 from .monitoring import monitor_agent_execution, slide_monitor
 
+# Add PIL for image compression
+try:
+    from PIL import Image
+
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("⚠️ PIL not available - image compression disabled")
+
 
 class SlideGenerationState(TypedDict):
     """
@@ -1168,6 +1177,23 @@ class HTMLRefinementAgent:
         # Initialize the Azure Blob Uploader
         self.uploader = AzureBlobUploader()
 
+        # Image compression settings optimized for LLM vision models
+        self.compression_settings = {
+            "max_size_mb": 20,  # OpenAI GPT-4V max is 20MB, Claude is 32MB
+            "target_size_mb": 5,  # Target smaller size for faster processing
+            "min_quality": 30,  # Don't go below 30% JPEG quality
+            "resize_thresholds": [0.8, 0.6, 0.4],  # Progressive resize factors
+            "preserve_aspect_ratio": True,
+            "convert_to_jpeg": True,  # JPEG compression is more efficient than PNG
+            # Optimal dimensions for LLM vision models (reduces token usage dramatically)
+            "target_dimensions": {
+                "max_width": 768,  # Based on research: 512-768px width is sufficient
+                "max_height": 1024,  # Based on research: up to 1024px height works well
+                "min_width": 512,  # Minimum width to maintain detail
+                "min_height": 512,  # Minimum height to maintain detail
+            },
+        }
+
     def _cleanup_old_debug_files(self, keep_latest: int = 5):
         """
         Clean up old debug files to prevent accumulation
@@ -1206,6 +1232,260 @@ class HTMLRefinementAgent:
 
         except Exception as e:
             print(f"  - Warning: Failed to clean up debug files: {e}")
+
+    def _compress_image_for_llm(
+        self, image_path: str, max_size_mb: Optional[float] = None
+    ) -> bool:
+        """
+        Compress image for optimal LLM processing while maintaining quality
+
+        Args:
+            image_path: Path to the image file to compress
+            max_size_mb: Maximum file size in MB (uses configured setting if None)
+
+        Returns:
+            True if compression was successful or not needed, False if failed
+        """
+        if not PIL_AVAILABLE:
+            print("  - PIL not available, skipping image compression")
+            return True
+
+        # Use configured settings if max_size_mb not provided
+        if max_size_mb is None:
+            max_size_mb = self.compression_settings["max_size_mb"]
+
+        # Type assertion to help linter - max_size_mb is guaranteed to be float here
+        assert max_size_mb is not None
+        max_size: float = max_size_mb
+
+        try:
+            # Check if file exists
+            if not os.path.exists(image_path):
+                print(f"  - Image file not found for compression: {image_path}")
+                return False
+
+            # Get original file size
+            original_size = os.path.getsize(image_path)
+            original_size_mb = original_size / (1024 * 1024)
+
+            print(f"  - Original image size: {original_size_mb:.2f} MB")
+
+            # If already under limit, no compression needed
+            if original_size_mb <= max_size:
+                print(
+                    f"  - Image already under {max_size}MB limit, no compression needed"
+                )
+                return True
+
+            # Open and analyze image
+            with Image.open(image_path) as img:
+                # Get original dimensions
+                original_width, original_height = img.size
+                print(f"  - Original dimensions: {original_width}x{original_height}")
+
+                # Convert to RGB if needed (for JPEG compression)
+                if img.mode in ("RGBA", "LA", "P"):
+                    # Convert RGBA to RGB with white background
+                    background = Image.new("RGB", img.size, (255, 255, 255))
+                    if img.mode == "P":
+                        img = img.convert("RGBA")
+                    background.paste(
+                        img, mask=img.split()[-1] if img.mode == "RGBA" else None
+                    )
+                    img = background
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+
+                # STEP 1: Resize to optimal LLM vision dimensions first (most important for token reduction)
+                target_dims = self.compression_settings["target_dimensions"]
+                max_width = target_dims["max_width"]
+                max_height = target_dims["max_height"]
+                min_width = target_dims["min_width"]
+                min_height = target_dims["min_height"]
+
+                # Calculate optimal resize dimensions
+                if original_width > max_width or original_height > max_height:
+                    # Calculate scale factor to fit within max dimensions while preserving aspect ratio
+                    scale_factor = min(
+                        max_width / original_width, max_height / original_height
+                    )
+                    new_width = max(int(original_width * scale_factor), min_width)
+                    new_height = max(int(original_height * scale_factor), min_height)
+
+                    print(
+                        f"  - Resizing to optimal LLM dimensions: {new_width}x{new_height}"
+                    )
+                    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                    # Save with high quality first to check size
+                    temp_path = image_path.replace(".png", "_resized_temp.jpg")
+                    img.save(temp_path, format="JPEG", quality=90, optimize=True)
+
+                    # Check file size after optimal resize
+                    resized_size = os.path.getsize(temp_path)
+                    resized_size_mb = resized_size / (1024 * 1024)
+
+                    print(f"  - After optimal resize: {resized_size_mb:.2f} MB")
+
+                    if resized_size_mb <= max_size:
+                        # Great! Optimal resize was sufficient
+                        os.remove(image_path)
+                        os.rename(temp_path, image_path)
+
+                        dimension_reduction = (
+                            (
+                                (original_width * original_height)
+                                - (new_width * new_height)
+                            )
+                            / (original_width * original_height)
+                            * 100
+                        )
+                        size_reduction = (
+                            (original_size - resized_size) / original_size
+                        ) * 100
+
+                        print("  ✅ Optimal dimension resize successful!")
+                        print(
+                            f"     Original: {original_width}x{original_height} ({original_size_mb:.2f} MB)"
+                        )
+                        print(
+                            f"     Optimized: {new_width}x{new_height} ({resized_size_mb:.2f} MB)"
+                        )
+                        print(f"     Dimension reduction: {dimension_reduction:.1f}%")
+                        print(f"     Size reduction: {size_reduction:.1f}%")
+                        print(
+                            f"     Token cost savings: ~{dimension_reduction * 0.8:.0f}% (estimated)"
+                        )
+                        return True
+                    # Dimension resize wasn't enough, continue with quality compression
+                    print(
+                        f"  - Still {resized_size_mb:.2f} MB after resize, applying quality compression..."
+                    )
+                    compressed_path = temp_path
+                else:
+                    print(
+                        f"  - Image already within optimal dimensions ({original_width}x{original_height})"
+                    )
+                    compressed_path = image_path.replace(".png", "_compressed.jpg")
+
+                # STEP 2: Apply quality-based compression if needed
+                quality = 95
+
+                # Iteratively compress until under size limit
+                for attempt in range(5):  # Max 5 attempts
+                    # Try current quality level
+                    img.save(
+                        compressed_path, format="JPEG", quality=quality, optimize=True
+                    )
+
+                    # Check file size
+                    compressed_size = os.path.getsize(compressed_path)
+                    compressed_size_mb = compressed_size / (1024 * 1024)
+
+                    print(
+                        f"  - Quality attempt {attempt + 1}: {quality}%, Size: {compressed_size_mb:.2f} MB"
+                    )
+
+                    if compressed_size_mb <= max_size:
+                        # Success! Replace original with compressed version
+                        os.remove(image_path)
+                        os.rename(compressed_path, image_path)
+
+                        compression_ratio = (
+                            (original_size - compressed_size) / original_size
+                        ) * 100
+                        print("  ✅ Compression successful!")
+                        print(
+                            f"     Original: {original_size_mb:.2f} MB → Final: {compressed_size_mb:.2f} MB"
+                        )
+                        print(f"     Total reduction: {compression_ratio:.1f}%")
+                        print(f"     Final quality: {quality}%")
+                        return True
+
+                    # If still too large, reduce quality for next attempt
+                    if quality > 60:
+                        quality -= 15  # Reduce quality more aggressively
+                    else:
+                        quality -= 5  # Fine-tune at lower qualities
+
+                    if quality < self.compression_settings["min_quality"]:
+                        break
+
+                # STEP 3: If quality compression wasn't enough, try further dimension reduction
+                print(
+                    "  - Quality compression insufficient, trying further dimension reduction..."
+                )
+
+                # Use more aggressive resize factors
+                aggressive_scales = [0.7, 0.5, 0.3]
+
+                for scale in aggressive_scales:
+                    new_width = max(int(original_width * scale), min_width)
+                    new_height = max(int(original_height * scale), min_height)
+
+                    # Don't go below minimum dimensions
+                    if new_width < min_width or new_height < min_height:
+                        continue
+
+                    # Resize image
+                    resized_img = img.resize(
+                        (new_width, new_height), Image.Resampling.LANCZOS
+                    )
+
+                    # Save with good quality since we reduced size significantly
+                    resized_img.save(
+                        compressed_path, format="JPEG", quality=85, optimize=True
+                    )
+
+                    compressed_size = os.path.getsize(compressed_path)
+                    compressed_size_mb = compressed_size / (1024 * 1024)
+
+                    print(
+                        f"  - Aggressive resize: {new_width}x{new_height}, Size: {compressed_size_mb:.2f} MB"
+                    )
+
+                    if compressed_size_mb <= max_size:
+                        # Success with aggressive resize!
+                        os.remove(image_path)
+                        os.rename(compressed_path, image_path)
+
+                        compression_ratio = (
+                            (original_size - compressed_size) / original_size
+                        ) * 100
+                        dimension_reduction = (
+                            (
+                                (original_width * original_height)
+                                - (new_width * new_height)
+                            )
+                            / (original_width * original_height)
+                            * 100
+                        )
+
+                        print("  ✅ Aggressive dimension reduction successful!")
+                        print(
+                            f"     Original: {original_width}x{original_height} ({original_size_mb:.2f} MB)"
+                        )
+                        print(
+                            f"     Final: {new_width}x{new_height} ({compressed_size_mb:.2f} MB)"
+                        )
+                        print(f"     Total reduction: {compression_ratio:.1f}%")
+                        print(f"     Dimension reduction: {dimension_reduction:.1f}%")
+                        print(
+                            f"     Massive token savings: ~{dimension_reduction * 0.8:.0f}% (estimated)"
+                        )
+                        return True
+
+                # Clean up temporary file if all compression attempts failed
+                if os.path.exists(compressed_path):
+                    os.remove(compressed_path)
+
+                print(f"  ⚠️ Could not compress image under {max_size}MB limit")
+                print("     Final size may exceed limit but continuing processing")
+                return True  # Return True to continue processing
+
+        except Exception as e:
+            print(f"  ❌ Error during image compression: {e}")
+            return True  # Return True to continue processing even if compression fails
 
     @monitor_agent_execution("html_refinement_agent")
     def execute(
@@ -1341,6 +1621,11 @@ class HTMLRefinementAgent:
             state["needs_html_refinement"] = False  # Stop refinement on render failure
             state["current_step"] = "html_refinement_complete"
             return state
+
+        # Compress image for optimal LLM processing
+        print("  🗜️ Compressing image for LLM processing...")
+        if not self._compress_image_for_llm(str(image_path)):
+            print("  - Image compression failed, but continuing with original image")
 
         image_url = self.uploader.upload_file(
             str(image_path), blob_name=f"refinement/{image_filename}"
@@ -1592,6 +1877,13 @@ class HTMLRefinementAgent:
                     f"      ❌ Failed to render HTML for slide {slide_number}, aborting refinement for this slide."
                 )
                 return current_html  # Return last known good version
+
+            # Compress image for optimal LLM processing
+            print(f"      🗜️ Compressing image for slide {slide_number}...")
+            if not self._compress_image_for_llm(str(image_path)):
+                print(
+                    f"      - Image compression failed for slide {slide_number}, but continuing with original image"
+                )
 
             # Upload image
             image_url = self.uploader.upload_file(
@@ -1868,25 +2160,96 @@ Your response MUST be a JSON object that strictly follows this format:
 `{"html_code": "<FULL_HTML_CODE>", "reasoning": "...", "changes_applied": ["...", "..."]}`.
 Do NOT provide any other text, explanations, or markdown.
 
-**EVALUATION PROCESS:**
-1. **Color Palette Validation**: Are ALL elements using the correct Ekona colors? Check every text element, background, accent, and component for brand compliance.
-2. **Purpose Assessment**: Does the HTML effectively communicate the slide's intended message?
-3. **Requirements Check**: Are all specified requirements met (content structure, visual elements, etc.)?
-4. **Visual Effectiveness**: Does the rendered result enhance understanding and engagement with correct branding?
-5. **Technical Quality**: Is the HTML technically sound and properly structured?
+**CRITICAL EVALUATION PRIORITIES:**
+
+**1. VIEWPORT CONSTRAINT ANALYSIS (TOP PRIORITY):**
+- **Detect Content Cropping**: Is ANY content cut off or extending beyond the 1577x603px viewport?
+- **Check Overflow**: Are there scrollbars or content flowing outside the visible area?
+- **Validate Container Heights**: Are diagrams, cards, or text blocks exceeding the available space?
+- **Verify Complete Visibility**: Can you see ALL content elements in their entirety?
+- **IMMEDIATE FIX REQUIRED**: If content is cropped, this MUST be addressed first
+
+**2. MANDATORY DAISYUI CARD STRUCTURE:**
+- **Card Usage**: Is ALL content properly wrapped in DaisyUI card components?
+- **Card Organization**: Are cards used effectively for content structure and spacing?
+- **Visual Hierarchy**: Do cards provide proper visual separation and organization?
+- **REQUIREMENT**: Content should NEVER be placed directly in body - always use cards
+
+**3. Content Layout Assessment:**
+- **Space Distribution**: Is the 1577x603px space used efficiently without overflow?
+- **Content Scaling**: Are text sizes, diagrams, and elements appropriately sized?
+- **Grid/Flex Usage**: Is CSS Grid or Flexbox used effectively for layout?
+- **Safe Margins**: Are there appropriate margins (minimum 20px) on all sides?
+
+**4. Color Palette Validation:** 
+- Are ALL elements using the correct Ekona colors? Check every text element, background, accent, and component for brand compliance.
+
+**5. Purpose Assessment:** 
+- Does the HTML effectively communicate the slide's intended message?
+
+**6. Requirements Check:** 
+- Are all specified requirements met (content structure, visual elements, etc.)?
+
+**7. Visual Effectiveness:** 
+- Does the rendered result enhance understanding and engagement with correct branding?
+
+**8. Technical Quality:** 
+- Is the HTML technically sound and properly structured?
 
 **REFINEMENT PRIORITIES:**
-1. **Color Palette Enforcement**: MANDATORY enforcement of Ekona color palette - check every element for correct colors
-2. **Purpose Alignment**: Ensure the visualization directly supports the slide's objectives
-3. **Content Clarity**: Information should be easily understood and well-organized
-4. **Visual Hierarchy**: Important elements should be properly emphasized with correct brand colors
-5. **Professional Quality**: Design should be polished and business-appropriate with consistent branding
-6. **Space Utilization**: Effective use of the 1577x603px viewport
+1. **CRITICAL: Viewport Constraint Enforcement** - Fix any content cropping or overflow issues IMMEDIATELY
+2. **MANDATORY: DaisyUI Card Structure** - Ensure all content is properly contained in cards
+3. **Color Palette Enforcement**: MANDATORY enforcement of Ekona color palette - check every element for correct colors
+4. **Purpose Alignment**: Ensure the visualization directly supports the slide's objectives
+5. **Content Clarity**: Information should be easily understood and well-organized
+6. **Visual Hierarchy**: Important elements should be properly emphasized with correct brand colors
+7. **Professional Quality**: Design should be polished and business-appropriate with consistent branding
+8. **Space Utilization**: Effective use of the 1577x603px viewport
+
+**VIEWPORT CONSTRAINT SOLUTIONS:**
+- **Content Overflow**: Use `overflow: hidden` on containers, reduce content size, or reorganize layout
+- **Text Too Large**: Reduce font sizes from `text-3xl` to `text-xl` or `text-2xl`
+- **Diagram Too Tall**: Add `max-h-[400px]` to Mermaid containers, use horizontal layouts
+- **Too Many Elements**: Prioritize essential content, use compact layouts
+- **Card Overflow**: Reduce padding from `p-8` to `p-6` or `p-4`, use `flex-shrink`
+
+**MANDATORY CARD PATTERNS TO ENFORCE:**
+```html
+<!-- Single Card (for simple content) -->
+<body class="w-[1577px] h-[603px] p-8 overflow-hidden">
+    <div class="card bg-base-100 shadow-xl h-full">
+        <div class="card-body p-6">
+            <!-- All content here -->
+        </div>
+    </div>
+</body>
+
+<!-- Multi-Card Layout (for complex content) -->
+<body class="w-[1577px] h-[603px] p-8 overflow-hidden">
+    <div class="grid grid-cols-2 gap-6 h-full">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body p-6">
+                <!-- Left content -->
+            </div>
+        </div>
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body p-6 flex flex-col">
+                <h2 class="card-title text-xl mb-4">Title</h2>
+                <div class="flex-grow flex items-center justify-center">
+                    <div class="mermaid w-full max-h-[350px]">
+                        <!-- Diagram -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+```
 
 **TECHNICAL REQUIREMENTS:**
-- **Viewport**: 1577x603 pixels exactly
+- **Viewport**: 1577x603 pixels exactly with `overflow: hidden`
 - **Frameworks**: TailwindCSS, Flowbite, and daisyUI components only
-- **Diagrams**: Mermaid.js or D3.js
+- **Diagrams**: Mermaid.js or D3.js with height constraints (`max-h-[400px]`)
 - **No Titles**: Remove `<h1>` tags (slide has its own title)
 - **Responsive**: Fixed pixel values for critical positioning
 - **Performance**: High z-index values (z-10+) for proper layering
@@ -1908,26 +2271,33 @@ Do NOT provide any other text, explanations, or markdown.
 - **Nodes**: Use `nodeId["Display Text"]` format
 - **Subgraphs**: Use `subgraph "Title" ... end` structure
 - **Validation**: Double-check all syntax for correctness
+- **Height Constraint**: ALWAYS use `max-h-[400px]` or similar height limits
 
 **REFINEMENT DECISIONS:**
-- **No Changes Needed**: If HTML perfectly fulfills the purpose, return original code with empty reasoning/changes
+- **No Changes Needed**: If HTML perfectly fulfills the purpose AND fits viewport constraints, return original code with empty reasoning/changes
+- **Viewport Fixes**: HIGHEST priority - fix any content cropping or overflow issues immediately
+- **Card Structure**: Ensure proper DaisyUI card usage for all content organization
 - **Minor Improvements**: Focus on enhancing purpose fulfillment without major restructuring  
 - **Significant Changes**: When current approach doesn't effectively serve the slide's purpose
 - **Conservative Approach**: Preserve working elements while improving purpose alignment
 
 **QUALITY CHECKLIST:**
+✅ CRITICAL: ALL content fits within 1577x603px viewport (no cropping or overflow)
+✅ MANDATORY: All content wrapped in proper DaisyUI card structure
 ✅ MANDATORY: Ekona color palette enforced on ALL elements (Swiss Red #dc261e, Dark Grey #2d3748, Black #000000, White #ffffff)
 ✅ Purpose clearly communicated through visualization
 ✅ All requirements from slide specifications met
 ✅ Professional, polished visual presentation with consistent branding
 ✅ No overlapping or mispositioned elements
-✅ Optimal use of available space
+✅ Optimal use of available space without exceeding bounds
 ✅ Technically sound HTML structure
 ✅ Text colors explicitly set (no default colors accepted)
+✅ Mermaid diagrams have proper height constraints
 
 **Mermaid-Specific Refinements:**
-- **Enforce Title Separation**: The main title of the visualization MUST be a standard HTML tag (e.g., `<h1>`) outside the Mermaid `<div>`. If you see a `title` inside the Mermaid syntax, you MUST refactor the HTML to separate it.
+- **Enforce Title Separation**: The main title of the visualization MUST be a standard HTML tag (e.g., `<h2>`) outside the Mermaid `<div>`. If you see a `title` inside the Mermaid syntax, you MUST refactor the HTML to separate it.
 - **Recommend Component Wrappers**: For plain, unstyled diagrams, you SHOULD wrap the Mermaid `<div>` in a DaisyUI `card` component (`<div class="card bg-base-100 shadow-xl"><div class="card-body">...</div></div>`) to improve framing and visual appeal.
 - **Check for Professionalism**: Even without seeing the final colors, evaluate if the layout, spacing, and font sizes are professional and aligned with a corporate brand identity. The final render will apply brand colors, but the structure must be sound.
+- **Height Constraints**: ALWAYS ensure Mermaid containers have `max-h-[400px]` or similar constraints to prevent overflow.
 
-Focus on creating HTML that serves the slide's purpose effectively, not just fixing visual issues."""
+Focus on creating HTML that serves the slide's purpose effectively while ABSOLUTELY ensuring all content fits within the viewport constraints without any cropping or information loss."""

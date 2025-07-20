@@ -92,12 +92,17 @@ class HTMLRenderer:
         Returns:
             HTML content ready for rendering
         """
-        # Check if HTML already contains a sprite definition
-        if "<symbol id=" in html_content and self.lucide_sprite_content:
-            # HTML already has sprites, don't inject again
-            print("✅ HTML already contains SVG sprite definitions, skipping injection")
+        # Check if HTML contains Lucide icon references but no sprite definitions
+        has_icon_references = '<use href="#' in html_content
+        has_sprite_definitions = "<symbol id=" in html_content
+
         # 1. Inject Lucide icon sprite if needed
-        elif self.lucide_sprite_content:
+        if (
+            has_icon_references
+            and not has_sprite_definitions
+            and self.lucide_sprite_content
+        ):
+            print("🎯 Lucide icon references found, injecting sprite definitions...")
             body_start = html_content.find("<body")
             if body_start != -1:
                 body_tag_end = html_content.find(">", body_start) + 1
@@ -112,6 +117,13 @@ class HTMLRenderer:
                     + sprite_container
                     + html_content[body_tag_end:]
                 )
+                print("✅ Lucide sprite definitions injected successfully")
+        elif has_sprite_definitions:
+            print("✅ HTML already contains SVG sprite definitions, skipping injection")
+        elif not has_icon_references:
+            print("📝 No Lucide icon references found in HTML")
+        elif not self.lucide_sprite_content:
+            print("⚠️ Lucide sprite content not loaded - icons may not display")
 
         # 2. Check for and inject Mermaid.js if needed
         if '<div class="mermaid">' in html_content:
@@ -191,12 +203,15 @@ class HTMLRenderer:
                 end_marker = "</defs>"
 
                 start_idx = content.find(start_marker)
-                end_idx = content.find(end_marker) + len(end_marker)
+                end_idx = content.find(end_marker)
 
                 if start_idx != -1 and end_idx != -1:
-                    return content[start_idx:end_idx]
-                # Fallback: return symbols directly
-                return content
+                    # Extract the content between <defs> and </defs>
+                    defs_content = content[start_idx + len(start_marker) : end_idx]
+                    return defs_content.strip()
+
+                print("Warning: Could not find <defs> section in Lucide sprite")
+                return ""
         except (OSError, FileNotFoundError) as e:
             print(f"Warning: Could not load Lucide sprite: {e}")
             return ""

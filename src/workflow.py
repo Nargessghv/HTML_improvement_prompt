@@ -189,6 +189,8 @@ class SlideGenerationWorkflow:
             "error_message": None,
             "retry_count": 0,
             "html_refinement_iteration": 0,
+            "html_refinement_slide_index": None,
+            "html_slides_to_refine_queue": None,
             "refinement_id": None,
             "layouts_info": None,
             "dynamic_models": None,
@@ -198,6 +200,7 @@ class SlideGenerationWorkflow:
             "icon_errors": None,
             "icon_corrections": None,
             "needs_icon_retry": False,
+            "needs_html_refinement": False,
             "presentation_path": None,
             "success": False,
             "monitor_trace": None,
@@ -298,7 +301,7 @@ class SlideGenerationWorkflow:
                 return state
 
             # Run HTML content generation (if needed)
-            state = self.html_content_agent.execute(state, config)
+            state = await self.html_content_agent.execute_parallel(state, config)
             if state.get("error_message"):
                 return state
 
@@ -441,8 +444,37 @@ class SlideGenerationWorkflow:
     def _html_content_generation_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """HTML content generation agent node"""
-        return self.html_content_agent.execute(state, config)
+        """HTML content generation agent node with configurable parallel processing"""
+
+        # Check if parallel HTML content generation is enabled
+        use_parallel = os.getenv("USE_PARALLEL_HTML_CONTENT", "true").lower() == "true"
+
+        if not use_parallel:
+            print("🔄 Using sequential HTML content generation")
+            return self.html_content_agent.execute(state, config)
+
+        # Try to use parallel HTML content generation
+        try:
+            # Check if we're already in an async context
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we need to handle this differently
+                print(
+                    "⚠️ Running in async context, using sequential fallback for HTML content generation"
+                )
+                return self.html_content_agent.execute(state, config)
+            except RuntimeError:
+                # No running loop, we can safely use asyncio.run
+                print(
+                    "🚀 Using TRUE parallel HTML content generation for better performance"
+                )
+                return asyncio.run(
+                    self.html_content_agent.execute_parallel(state, config)
+                )
+        except Exception as e:
+            print(f"❌ Parallel HTML content generation failed: {e}")
+            print("🔄 Falling back to sequential HTML content generation")
+            return self.html_content_agent.execute(state, config)
 
     def _html_refinement_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None

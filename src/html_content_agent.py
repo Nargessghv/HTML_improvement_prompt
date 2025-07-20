@@ -7,7 +7,6 @@ charts, and other custom visualizations.
 """
 
 import asyncio
-import concurrent.futures
 import json
 import os
 from datetime import datetime
@@ -114,6 +113,88 @@ class HTMLContentGenerationAgent:
 
         except Exception as e:
             print(f"❌ {self.name}: Error during HTML content generation: {e}")
+            # Don't fail the workflow - HTML generation is optional
+            state["current_step"] = "html_content_generation_complete"
+            return state
+
+    @monitor_agent_execution("html_content_generator_parallel")
+    async def execute_parallel(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Convert descriptive content for HTML slides into actual HTML visualizations using TRUE parallel processing.
+
+        This async method provides genuine parallel LLM calls for significantly improved performance
+        when generating multiple HTML visualizations.
+
+        Args:
+            state: Current workflow state with generated slide contents and presentation plan
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Updated state with HTML visualizations processed
+        """
+        print(
+            f"🎨 {self.name}: Converting descriptive content to HTML visualizations with TRUE parallel processing..."
+        )
+
+        try:
+            # Check prerequisites
+            slide_contents = state.get("slide_contents")
+            presentation_plan = state.get("presentation_plan")
+
+            if not slide_contents or not presentation_plan:
+                print(f"⚠️ {self.name}: Missing slide contents or presentation plan")
+                return state
+
+            if not self.html_available:
+                print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
+                return state
+
+            # Count HTML slides for progress tracking
+            html_slide_count = sum(
+                1 for spec in presentation_plan if getattr(spec, "is_html", False)
+            )
+
+            if html_slide_count == 0:
+                print(
+                    f"📋 {self.name}: No HTML slides identified, skipping HTML generation"
+                )
+                state["current_step"] = "html_content_generation_complete"
+                return state
+
+            print(
+                f"🚀 {self.name}: TRUE parallel processing {html_slide_count} HTML slides..."
+            )
+
+            # Use truly parallel HTML generation
+            processed_slides = await self._process_planned_html_slides_parallel(
+                slide_contents, presentation_plan, state.get("topic", ""), config
+            )
+
+            # Update state with processed content
+            state["slide_contents"] = processed_slides
+            state["current_step"] = "html_content_generation_complete"
+
+            html_count = sum(
+                1
+                for slide in processed_slides
+                for content in slide.content.values()
+                if self._is_html_visualization(content)
+            )
+
+            print(f"🎉 {self.name}: TRUE parallel processing complete!")
+            print(f"✅ {self.name}: Processed {len(processed_slides)} slides")
+            print(
+                f"✅ {self.name}: Converted {html_count} descriptions to HTML visualizations"
+            )
+
+            return state
+
+        except Exception as e:
+            print(
+                f"❌ {self.name}: Error during TRUE parallel HTML content generation: {e}"
+            )
             # Don't fail the workflow - HTML generation is optional
             state["current_step"] = "html_content_generation_complete"
             return state
@@ -593,8 +674,13 @@ class HTMLContentGenerationAgent:
             # Clean the response
             cleaned_html = self._clean_llm_response(generated_html)
 
+            # Remove any accidental sprite definitions (CRITICAL)
+            sprite_free_html = self._remove_sprite_definitions(cleaned_html)
+
             # Validate and correct Lucide icon names in HTML
-            validated_html = self._validate_and_correct_html_icons(cleaned_html, topic)
+            validated_html = self._validate_and_correct_html_icons(
+                sprite_free_html, topic
+            )
 
             # Fix common Mermaid syntax issues
             fixed_html = self._fix_mermaid_syntax(validated_html)
@@ -694,6 +780,59 @@ class HTMLContentGenerationAgent:
             content = content[:-3]
 
         return content.strip()
+
+    def _remove_sprite_definitions(self, html_content: str) -> str:
+        """
+        Remove any accidental sprite definitions from generated HTML content
+
+        The HTML renderer handles all sprite injection, so any sprites in the
+        generated content create duplicates and visual problems.
+
+        Args:
+            html_content: HTML content that may contain unwanted sprite definitions
+
+        Returns:
+            HTML content with sprite definitions removed
+        """
+        import re
+
+        if not html_content:
+            return html_content
+
+        # Remove sprite SVG containers
+        # Pattern: <svg ...sprite... > ... </svg> (hidden/invisible sprite containers)
+        sprite_pattern = r'<svg[^>]*(?:style="[^"]*(?:display:\s*none|visibility:\s*hidden)[^"]*"|[^>]*class="[^"]*sprite[^"]*")[^>]*>.*?</svg>'
+        html_content = re.sub(
+            sprite_pattern, "", html_content, flags=re.DOTALL | re.IGNORECASE
+        )
+
+        # Remove symbol definitions
+        symbol_pattern = r"<symbol[^>]*>.*?</symbol>"
+        html_content = re.sub(
+            symbol_pattern, "", html_content, flags=re.DOTALL | re.IGNORECASE
+        )
+
+        # Remove defs sections containing symbols
+        defs_pattern = r"<defs[^>]*>.*?</defs>"
+        if "<symbol" in html_content:
+            html_content = re.sub(
+                defs_pattern, "", html_content, flags=re.DOTALL | re.IGNORECASE
+            )
+
+        # Remove comments about Lucide sprite injection
+        comment_pattern = r"<!--[^>]*[Ll]ucide[^>]*[Ss]prite[^>]*-->"
+        html_content = re.sub(comment_pattern, "", html_content, flags=re.DOTALL)
+
+        # Clean up any leftover empty SVG tags or extra whitespace
+        html_content = re.sub(r"<svg[^>]*>\s*</svg>", "", html_content)
+        html_content = re.sub(
+            r"\n\s*\n", "\n", html_content
+        )  # Remove extra blank lines
+
+        if "<symbol" in html_content or "lucide.*sprite" in html_content.lower():
+            print("    🧹 Removed sprite definitions from generated HTML")
+
+        return html_content.strip()
 
     def _create_html_generation_prompt(
         self,
@@ -846,6 +985,7 @@ ADVANCED VISUALIZATION (D3.js):
     </style>
 </head>
 <body class="w-[1577px] h-[603px] bg-white flex items-center justify-center p-8">
+    <!-- NEVER include Lucide sprite definitions here - the renderer handles all sprites -->
     <div class="card w-full h-full bg-base-100 shadow-xl">
         <div class="card-body flex flex-col">
             <h1 class="card-title text-3xl font-bold text-center mb-4 shrink-0" style="color: #2d3748;">Project Development Timeline</h1>
@@ -1354,6 +1494,18 @@ visualizations that perfectly fill a 1577x603px container for business presentat
 **Your Role:** You receive descriptive content about what should be visualized 
 (timelines, processes, comparisons, etc.) and convert it into functional HTML code.
 
+**CRITICAL VIEWPORT CONSTRAINT:** 
+- The **ENTIRE HTML `<body>`** is the `1577x603px` container (NO SCROLLING ALLOWED)
+- ALL content MUST fit within this fixed viewport without any overflow
+- ANY content extending beyond 603px height will be CROPPED and LOST
+- Use `overflow: hidden` on containers to prevent unwanted scrollbars
+
+**MANDATORY DAISYUI CARD STRUCTURE:**
+- **ALWAYS** wrap ALL content in DaisyUI card components for proper containment
+- **NEVER** put content directly in the body - use cards for organization
+- Cards provide proper padding, spacing, and visual hierarchy
+- Use card combinations like `card + card-body` for structured layouts
+
 **Core Principles:**
 1.  **Content Conversion**: Transform descriptions into actual visualizations
 2.  **Strict Component Usage**: Your ONLY tools for layout and components
@@ -1367,18 +1519,61 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     - NEVER rely on component defaults - ALWAYS override with exact Ekona colors
 4.  **Static & Non-Interactive**: The output is for a static image.
     DO NOT include animations, hover effects, or any user interactivity.
-5.  **No Custom SVG**: You MUST NOT generate any inline SVG code. The ONLY
-    way to use icons is with the Lucide icon sprite system, like:
-    `<svg><use href="#icon-name"></use></svg>`.
+5.  **CRITICAL - NO SPRITE GENERATION**: You MUST NEVER generate inline SVG sprite definitions, 
+    <symbol> tags, or <defs> sections. The ONLY way to use icons is with simple 
+    references: `<svg class="w-6 h-6"><use href="#icon-name"></use></svg>`. 
+    The HTML renderer will automatically inject all sprite definitions during rendering.
+6.  **No Custom SVG**: You MUST NOT generate any inline SVG code except for icon references.
 
-**Layout and Sizing (CRITICAL):**
-- The **ENTIRE HTML `<body>`** is the `1577x603px` container.
-- If the content includes a diagram AND other elements (like a title), you MUST divide the space.
-- The Mermaid diagram `div` must be smaller than the body to leave room for titles, text, etc.
-- Use Flexbox or Grid to create a balanced layout. For example:
-  - A heading at the top.
-  - A `flex-grow` container below it for the diagram, with padding (`p-8`).
-- **NEVER** make the diagram's container `w-full h-full` if other content exists.
+**VIEWPORT MANAGEMENT (CRITICAL):**
+- **Fixed Dimensions**: ALWAYS use the exact body dimensions: `class="w-[1577px] h-[603px]"`
+- **Content Distribution**: Use CSS Grid or Flexbox to distribute content within the viewport
+- **Responsive Scaling**: Content must scale to fit - NEVER exceed the viewport bounds
+- **Overflow Prevention**: Use `overflow: hidden` on any container that might overflow
+- **Safe Margins**: Leave minimum 20px margins on all sides for visual breathing room
+
+**MANDATORY CARD PATTERNS:**
+```html
+<!-- Single Content Card -->
+<div class="card bg-base-100 shadow-xl h-full">
+    <div class="card-body p-8">
+        <!-- Content here -->
+    </div>
+</div>
+
+<!-- Multi-Card Layout -->
+<div class="grid grid-cols-2 gap-6 h-full">
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <!-- Left content -->
+        </div>
+    </div>
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <!-- Right content -->
+        </div>
+    </div>
+</div>
+
+<!-- Card with Visualization -->
+<div class="card bg-base-100 shadow-xl h-full">
+    <div class="card-body p-6 flex flex-col">
+        <h2 class="card-title mb-4">Title</h2>
+        <div class="flex-grow flex items-center justify-center">
+            <div class="mermaid w-full h-full max-h-[400px]">
+                <!-- Mermaid diagram here -->
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+**CONTENT SIZING GUIDELINES:**
+- **Headers**: Use `text-xl` or `text-2xl` (NOT `text-3xl` or larger)
+- **Body Text**: Use `text-base` or `text-sm` for optimal space usage
+- **Diagrams**: Maximum height of 400px for Mermaid diagrams
+- **Timeline**: Maximum 5-6 items to fit comfortably
+- **Process Steps**: Maximum 4-5 steps horizontally
 
 **Rendering Optimization (CRITICAL):**
 - For visualizations, use fixed pixel values (px) instead of percentages for critical positioning
@@ -1397,13 +1592,14 @@ visualizations that perfectly fill a 1577x603px container for business presentat
 **Mermaid.js Best Practices (PREVENT FAILURES):**
 - NEVER use HTML tags like <b>, <i>, <br/> inside Mermaid node text
 - Always use quotes around node text: A["Simple Text"] not A[Simple Text]
-- For line breaks in node text, use \\n instead of <br/>
+- For line breaks in node text, use \\n
 - Keep node text simple and short (under 30 characters per line)
 - Use consistent arrow types: --> (solid), -.-> (dotted), ==> (thick)
 - Start diagrams with proper declarations: flowchart TD, graph TD, timeline
 - Avoid complex styling within Mermaid - let the renderer handle colors
 - Test syntax: each diagram must have valid start declaration and proper node connections
 - For subgraphs, use quotes: subgraph "Title" not subgraph Title
+- **CRITICAL**: Wrap Mermaid in height-constrained containers: `<div class="mermaid max-h-[400px] w-full">`
 
 **Library Usage Guidelines:**
 1.  **DaisyUI & Flowbite**: Use for ALL UI components (cards, stats, badges, buttons, etc.).
@@ -1417,13 +1613,13 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     - Comparison: Use `graph LR` for side-by-side comparisons
     - Organizational: Use `graph TD` for hierarchies and structures
     - ⚠️ CRITICAL: NEVER use Mermaid timeline syntax - use D3.js or DaisyUI for ALL timelines and roadmaps
-    - Place ALL Mermaid syntax inside a `<div class="mermaid">` element
+    - Place ALL Mermaid syntax inside a `<div class="mermaid max-h-[400px] w-full">` element
     - The renderer automatically applies Ekona brand colors, do not add styling
     - Keep diagrams simple enough to fit within 1577x603px container
     - **CRITICAL MERMAID SYNTAX RULES**:
       * Use simple text in nodes, avoid HTML tags like <b>, <br/>, <i>
       * Use quotes for node text: A["Simple Text Here"]
-      * For line breaks in text, use \\n instead of <br/>
+      * For line breaks in text, use \\n
       * Avoid complex styling - let the renderer handle colors
       * Test syntax: ensure proper flowchart/graph declarations
       * Use consistent arrow types: --> (solid), -.-> (dotted), ==> (thick)
@@ -1440,17 +1636,60 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     - Common available icons: trending-up, trending-down, users, clock, 
       dollar-sign, check, x, arrow-right, calendar, star, heart, etc.
     - DO NOT create custom icons or use icon libraries other than Lucide
-    - DO NOT generate inline SVG code - only use the sprite system
+    - CRITICAL: DO NOT generate sprite definitions, <symbol> tags, or <defs> sections
+    - The HTML renderer automatically injects all Lucide sprites during rendering
+    - Only use simple icon references - never create or embed sprite content
 
 5.  **NO Custom Graphics**: 
-    - Do not create custom SVG illustrations
+    - Do not create custom SVG illustrations or sprite definitions
     - Do not use external image URLs (they won't render)
     - Do not create complex custom graphics or animations
-    - Stick to text, Mermaid diagrams, DaisyUI components, and Lucide icons
+    - Stick to text, Mermaid diagrams, DaisyUI components, and Lucide icon references
+
+**EXAMPLE VIEWPORT-CONSTRAINED HTML:**
+```html
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 0; }
+    </style>
+</head>
+<body class="w-[1577px] h-[603px] p-8 overflow-hidden" style="background-color: #ffffff;">
+    <div class="grid grid-cols-2 gap-6 h-full">
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body p-6">
+                <h2 class="card-title text-xl mb-4" style="color: #2d3748;">
+                    <svg class="w-6 h-6"><use href="#cpu"></use></svg>
+                    Content Title
+                </h2>
+                <p class="text-base" style="color: #000000;">Content text...</p>
+            </div>
+        </div>
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body p-6 flex flex-col">
+                <h2 class="card-title text-xl mb-4" style="color: #2d3748;">Process Flow</h2>
+                <div class="flex-grow flex items-center justify-center">
+                    <div class="mermaid w-full max-h-[350px]">
+                        flowchart TD;
+                            A["Step 1"] --> B["Step 2"];
+                            B --> C["Step 3"];
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+```
 
 Your HTML must be production-ready, clean, and convert the provided descriptive 
-content into compelling visual presentations for PowerPoint slides.
-"""
+content into compelling visual presentations that FIT PERFECTLY within the viewport
+without any content being cropped or lost."""
 
     def _validate_html_content(self, content: str) -> bool:
         """
@@ -2017,23 +2256,74 @@ CRITICAL REQUIREMENTS:
         config: Optional[RunnableConfig] = None,
     ) -> tuple:
         """
-        Async version of _generate_html_visualization_content for parallel LLM calls
+        Async version of _generate_html_visualization_content for TRUE parallel LLM calls
         Returns (placeholder_name, html_content)
         """
-        loop = asyncio.get_running_loop()
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            html_content = await loop.run_in_executor(
-                executor,
-                self._generate_html_visualization_content,
+        try:
+            prompt = self._create_html_generation_prompt(
                 placeholder_name,
                 original_content,
                 topic,
                 slide_number,
                 total_slides,
                 slide_spec,
-                config,
             )
-        return (placeholder_name, html_content)
+
+            # Use async LLM client method for true parallelism
+            generated_html = await self.llm_client.generate_content_async(
+                system_prompt=self._get_html_generation_system_prompt(),
+                user_prompt=prompt,
+                config=config,
+            )
+
+            if not generated_html:
+                print(f"        ⚠️ No HTML content generated for {placeholder_name}")
+                return (placeholder_name, original_content)
+
+            # Clean the response
+            cleaned_html = self._clean_llm_response(generated_html)
+
+            # Remove any accidental sprite definitions (CRITICAL)
+            sprite_free_html = self._remove_sprite_definitions(cleaned_html)
+
+            # Validate and correct Lucide icon names in HTML
+            validated_html = self._validate_and_correct_html_icons(
+                sprite_free_html, topic
+            )
+
+            # Fix common Mermaid syntax issues
+            fixed_html = self._fix_mermaid_syntax(validated_html)
+
+            # Ensure proper HTML structure for script injection
+            complete_html = self._ensure_complete_html_structure(fixed_html)
+
+            # Debug: Show what was generated (summary)
+            if complete_html:
+                print(f"    🔍 Generated {len(complete_html)} chars of content")
+
+            if complete_html and self._validate_html_content(complete_html):
+                # Save HTML to debug folder if enabled
+                if self.debug_enabled and complete_html:
+                    self._save_html_debug_file(
+                        complete_html,
+                        placeholder_name,
+                        topic,
+                        slide_number,
+                        original_content,
+                    )
+
+                return (placeholder_name, complete_html)
+
+            print(
+                f"        ⚠️ Generated content not valid HTML for '{placeholder_name}'"
+            )
+            return (placeholder_name, original_content)
+
+        except Exception as e:
+            print(
+                f"        ❌ Error generating HTML content for {placeholder_name}: {e}"
+            )
+            return (placeholder_name, original_content)
 
     async def _return_slide_content_async(
         self, slide_content: SlideContent

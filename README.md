@@ -29,6 +29,36 @@ An AI-powered slide generation system using **agent-based architecture** with **
 - **Icon Integration**: Automatic icon insertion with visual elements
 - **Chart Generation**: Data visualization with branded styling
 - **🆕 HTML Visualizations**: Intelligent detection and generation of custom visualizations
+- **🔧 Clean Icon Handling**: HTML content agent generates only icon references, renderer injects sprites
+
+### **⚡ TRUE Parallel Processing** ✨ **NEW**
+- **🚀 Parallel HTML Generation**: Multiple HTML visualizations generated simultaneously with TRUE async LLM calls
+- **🔄 Parallel HTML Refinement**: All HTML slides refined in parallel for maximum performance  
+- **🎯 Async LLM Client**: Native async support for genuinely concurrent LLM operations
+- **⏱️ Performance Boost**: Significant time savings when generating multiple HTML visualizations
+- **🔧 Configurable**: Enable/disable parallel processing via environment variables
+- **🛡️ Graceful Fallback**: Automatic fallback to sequential processing if parallel fails
+
+### **🎯 Parallel Processing Benefits**
+- **HTML Content Generation**: When multiple slides need HTML visualizations, they are processed concurrently
+- **HTML Refinement**: Visual feedback processing for all HTML slides happens simultaneously  
+- **LLM Efficiency**: Maximizes LLM throughput by utilizing async capabilities
+- **Scalability**: Performance scales with the number of HTML slides in presentation
+
+### **📐 Viewport Constraint Enforcement** ✨ **NEW**
+- **🔒 Strict Content Containment**: All HTML content MUST fit within 1577x603px viewport without cropping
+- **📦 Mandatory DaisyUI Cards**: Every HTML visualization uses proper card structure for organization
+- **⚠️ Overflow Prevention**: Automatic `overflow: hidden` enforcement to prevent scrollbars
+- **📏 Height Constraints**: Mermaid diagrams limited to 400px max height for safe rendering
+- **🎨 Font Size Limits**: Headers capped at `text-2xl`, body text at `text-base` for optimal space usage
+- **✅ Refinement Validation**: HTML Refinement Agent specifically checks for and fixes content cropping
+
+### **🛡️ Content Protection Features**
+- **Anti-Cropping System**: Prevents information loss due to content overflow
+- **Smart Layout Distribution**: CSS Grid/Flexbox ensures optimal space utilization  
+- **Safe Margin Enforcement**: Minimum 20px margins on all sides for visual breathing room
+- **Responsive Scaling**: Content automatically scales to fit available space
+- **Visual Validation**: Refinement agent visually inspects rendered output for cropping issues
 
 ## 🎯 Enhanced Detailed Purpose Specifications ✨ **NEW**
 
@@ -88,6 +118,16 @@ The agent intelligently identifies content that should be visualized based on:
 - **📊 Comparison Charts**: Before/after, traditional vs modern
 - **📈 Infographics**: Metrics, statistics, key performance indicators
 - **🗺️ Diagrams**: Relationships, hierarchies, system architecture
+
+### **Clean Icon Handling** 🔧
+The HTML Content Generation Agent now uses a **clean separation** approach for Lucide icons:
+
+- **Content Agent**: Generates only clean icon references like `<svg><use href="#database"></use></svg>`
+- **HTML Renderer**: Automatically injects Lucide sprite definitions during rendering
+- **No Duplicates**: Prevents visual problems from duplicate sprite definitions
+- **Automatic Cleanup**: Built-in sprite removal to ensure clean HTML output
+
+This approach ensures optimal visual quality and eliminates icon display issues.
 
 ### **Agent Integration**
 ```python
@@ -249,6 +289,64 @@ python -m src.agent_main "Your Topic" --preview
 
 # Generate presentation with unified tracing
 python -m src.agent_main "Your Topic" --template template.pptx --output result
+```
+
+### Using TRUE Parallel Processing ✨ **NEW**
+
+```bash
+# Standard workflow (uses parallel processing by default)
+python -m src.agent_main "Digital Transformation Timeline" --output my_presentation
+
+# Force sequential processing (if needed)
+USE_PARALLEL_HTML_CONTENT=false USE_PARALLEL_HTML_REFINEMENT=false python -m src.agent_main "Your Topic"
+```
+
+### Programmatic Usage with Parallel Processing
+
+```python
+import asyncio
+from src.workflow import SlideGenerationWorkflow
+
+# For maximum performance with HTML visualizations
+async def generate_with_parallel_processing():
+    workflow = SlideGenerationWorkflow(use_parallel_html_refinement=True)
+    
+    # Uses both parallel HTML generation AND parallel refinement
+    result = await workflow.run_with_parallel_refinement(
+        topic="Product Development Roadmap with Timeline",
+        template_path="ekona_slides_template_new.pptx",
+        output_path="parallel_presentation"
+    )
+    
+    return result
+
+# Run the async workflow
+result = asyncio.run(generate_with_parallel_processing())
+```
+
+### Performance Comparison
+
+```python
+# Sequential Processing (slower)
+workflow = SlideGenerationWorkflow(use_parallel_html_refinement=False)
+result = workflow.run(topic="Your Topic", ...)
+
+# Parallel Processing (faster) ✨
+workflow = SlideGenerationWorkflow(use_parallel_html_refinement=True) 
+result = await workflow.run_with_parallel_refinement(topic="Your Topic", ...)
+```
+
+### Environment Configuration
+
+```env
+# Enable/disable parallel processing (default: true)
+USE_PARALLEL_HTML_CONTENT=true
+USE_PARALLEL_HTML_REFINEMENT=true
+
+# LLM Configuration
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o
+OPENAI_MODEL_FAST=gpt-4o-mini  # Used for fast operations like icon validation
 ```
 
 **📁 Output Organization**: Generated presentations are automatically saved in the `generated_presentations/` folder, which is excluded from git tracking for clean repository management.

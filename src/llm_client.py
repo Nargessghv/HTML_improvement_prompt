@@ -190,6 +190,45 @@ class LangchainLLMClient:
             print(f"❌ Error generating content: {e}")
             raise
 
+    async def generate_content_async(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> str:
+        """
+        Generate text content asynchronously using Langchain with callback support
+
+        This method enables true parallel LLM calls for improved performance
+        when generating multiple pieces of content simultaneously.
+
+        Args:
+            system_prompt: System instructions
+            user_prompt: User input
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Generated text content
+        """
+        try:
+            # Create messages
+            messages = [
+                ("system", system_prompt),
+                ("human", user_prompt),
+            ]
+
+            # Generate with async callback support
+            response = await self.chat_client.ainvoke(messages, config=config)
+
+            # Ensure we return a string
+            if hasattr(response, "content"):
+                return str(response.content)
+            return str(response)
+
+        except Exception as e:
+            print(f"❌ Error generating async content: {e}")
+            raise
+
     def generate_contextual_slide_content(
         self,
         layout_info: Dict[str, Any],
