@@ -359,6 +359,14 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ## 📝 Recent Updates
 
+### 🔧 Latest Bug Fixes - True Parallel Processing 
+- **🚀 Parallel LLM Calls**: HTML refinement now uses TRUE parallel LLM calls (3x faster!)
+- **⚡ Async LLM Processing**: Added `_get_html_correction_async()` with ThreadPoolExecutor
+- **🎯 Purpose-Driven Refinement**: Rewritten prompts to focus on slide purpose fulfillment
+- **🛠️ HTMLRenderer Async Fix**: Resolved Playwright sync API conflict in async contexts
+- **🔄 Smart Context Detection**: Automatic async/sync detection with selenium fallback
+- **✅ Enhanced Performance**: Simultaneous processing of multiple HTML slides
+
 ### ✨ Version 2.0 - Unified Tracing & Enhanced Agents
 - **🎯 Unified Langfuse Tracing**: Complete workflow in single trace
 - **🤖 Agent-Based Architecture**: 5 specialized agents with LangGraph

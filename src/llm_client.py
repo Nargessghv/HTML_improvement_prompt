@@ -329,18 +329,27 @@ class LangchainLLMClient:
         if is_html:
             html_guidance = """
 🎨 HTML VISUALIZATION SLIDE:
-This slide is specifically designated for HTML visualization. Generate content that:
-- Describes visual elements, processes, timelines, or comparisons
-- Uses clear, structured information that can be visualized
-- Includes specific data points, steps, or sequences when relevant
-- Focuses on visual storytelling rather than just text blocks
+This slide is specifically designated for HTML visualization. Generate DESCRIPTIVE content that:
+- Describes what should be visualized (timeline, process, comparison, diagram)
+- Provides structured data and information that can be turned into HTML
+- Includes specific data points, steps, sequences, or comparative elements
+- Focuses on the INFORMATION to be visualized, not the HTML code itself
 
-CONTENT APPROACH FOR HTML:
-- For timelines: Include dates, milestones, and sequential events
-- For processes: Break down into clear steps with descriptions
-- For comparisons: Present contrasting elements with specific metrics
+IMPORTANT: Do NOT generate HTML code. Generate descriptions and structured information 
+that the HTML generation agent will use to create actual visualizations.
+
+CONTENT APPROACH FOR HTML SLIDES:
+- For timelines: Provide dates, milestones, and sequential events with descriptions
+- For processes: List clear steps with detailed descriptions and relationships
+- For comparisons: Present contrasting elements with specific metrics and details
 - For data viz: Include actual numbers, percentages, or measurable outcomes
-- Structure content to be visualization-friendly
+- Structure content as information to be visualized, not as final HTML
+
+EXAMPLES:
+❌ WRONG: Generate HTML like "<div class='timeline'>..."
+✅ CORRECT: "Timeline showing 4 key phases: Phase 1 (Jan 2024): Discovery and planning with stakeholder interviews..."
+
+The HTML generation agent will convert your descriptive content into actual HTML visualizations.
 """
         else:
             html_guidance = """
@@ -651,6 +660,19 @@ CRITICAL FORMATTING REQUIREMENTS:
 - Use 1. 2. 3. for numbered lists
 - Structure content with proper headings and lists for visual appeal
 
+HTML VISUALIZATION SLIDES:
+For slides marked as "HTML VISUALIZATION", generate DESCRIPTIVE content that:
+- Describes what should be visualized (timeline, process, comparison, diagram)
+- Provides structured data and information that can be turned into HTML
+- Includes specific data points, steps, sequences, or comparative elements
+- Focuses on the INFORMATION to be visualized, not HTML code itself
+
+🚫 DO NOT generate HTML code for HTML slides - generate descriptions instead
+✅ Example: "Timeline showing 4 key phases: Phase 1 (Jan 2024): Discovery..."
+❌ Wrong: "<div class='timeline'>..." or any actual HTML
+
+The HTML generation agent will convert your descriptive content into actual visualizations.
+
 UNIFIED CONTENT STRATEGY:
 - Consider the ENTIRE presentation narrative when creating each slide
 - Ensure smooth transitions between slides
@@ -658,6 +680,7 @@ UNIFIED CONTENT STRATEGY:
 - Build arguments progressively across slides
 - Create compelling opening, strong development, and memorable conclusion
 - Maintain professional, engaging tone throughout
+- For HTML slides, structure information to support effective visualization
 
 ICON PLACEHOLDER HANDLING:
 - For icon fields, provide ONLY the icon name 

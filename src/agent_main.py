@@ -8,7 +8,10 @@ for PowerPoint slide generation with enhanced orchestration and observability.
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -126,6 +129,9 @@ Examples:
 
         # Create the presentation using agents
         print(f"🤖 Creating presentation with AI agents: '{args.topic}'")
+
+        # Create workflow with parallel HTML refinement enabled by default
+        workflow = SlideGenerationWorkflow(use_parallel_html_refinement=True)
 
         results = workflow.run(
             topic=args.topic,
@@ -264,6 +270,110 @@ def preview_workflow_plan(
     print("   Remove --preview flag to start generation.")
 
 
+async def generate_presentation_with_parallel_refinement(
+    topic: str,
+    template_path: Optional[str] = None,
+    output_path: Optional[str] = None,
+    layout_indices: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a presentation with parallel HTML refinement for better performance
+
+    This function uses the async version of HTML refinement to process all
+    HTML slides in parallel, which can significantly improve performance
+    for presentations with multiple HTML visualizations.
+
+    Args:
+        topic: Presentation topic
+        template_path: Path to PowerPoint template (defaults to standard template)
+        output_path: Path to save generated presentation (defaults to generated_presentations/)
+        layout_indices: Optional specific layouts to use
+
+    Returns:
+        Dictionary with workflow results and metadata
+    """
+    print("🚀 Starting slide generation with parallel HTML refinement...")
+    print(f"📋 Topic: {topic}")
+
+    # Use default template if not specified
+    if not template_path:
+        template_path = "ekona_slides_template_new.pptx"  # Default template
+    print(f"📁 Template: {template_path}")
+
+    # Generate output path if not specified
+    if not output_path:
+        # Create timestamped filename in the generated_presentations folder
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        safe_topic = "".join(c if c.isalnum() else "_" for c in topic[:30])
+        output_dir = Path("generated_presentations")
+        output_dir.mkdir(exist_ok=True)
+        output_path = str(output_dir / f"{safe_topic}_{timestamp}.pptx")
+    print(f"💾 Output: {output_path}")
+
+    # Initialize workflow
+    workflow = SlideGenerationWorkflow()
+
+    # Execute workflow with parallel HTML refinement
+    start_time = time.time()
+    try:
+        result = await workflow.run_with_parallel_refinement(
+            topic=topic,
+            template_path=template_path,
+            output_path=output_path,
+        )
+
+        # Process results
+        duration = time.time() - start_time
+        print(f"✅ Presentation generated in {duration:.1f} seconds")
+
+        # Convert SlideGenerationState to Dict
+        result_dict = {
+            "success": result.get("success", False),
+            "presentation_path": result.get("presentation_path"),
+            "execution_time": duration,
+        }
+
+        if result_dict["success"]:
+            print(f"📊 Presentation saved to: {result_dict['presentation_path']}")
+        else:
+            print(
+                f"❌ Generation failed: {result.get('error_message', 'Unknown error')}"
+            )
+
+        return result_dict
+
+    except Exception as e:
+        duration = time.time() - start_time
+        print(f"❌ Error during generation: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "presentation_path": None,
+            "execution_time": duration,
+        }
+
+
+async def main_async():
+    """
+    Async entry point for parallel HTML refinement demo
+    """
+    import sys
+
+    if len(sys.argv) < 2:
+        print("Usage: python -m src.agent_main parallel_demo 'Your presentation topic'")
+        return
+
+    topic = sys.argv[2] if len(sys.argv) > 2 else "AI-powered Presentation Generation"
+    result = await generate_presentation_with_parallel_refinement(topic)
+
+    if result["success"]:
+        print("\n✅ Parallel HTML refinement demo completed successfully!")
+    else:
+        print(
+            f"\n❌ Parallel HTML refinement demo failed: {result.get('error', 'Unknown error')}"
+        )
+
+
 def show_agent_help():
     """Show detailed help for agent-based slide generation"""
     help_text = """
@@ -298,6 +408,7 @@ OPTIONS:
   --preview/-p    : Preview workflow without creating slides
   --analyze/-a    : Analyze template layouts
   --debug         : Enable debug mode
+  --parallel      : Use parallel HTML refinement (experimental)
 
 EXAMPLES:
   # Basic usage with agents
@@ -311,6 +422,9 @@ EXAMPLES:
   
   # Custom output and specific layouts
   python -m src.agent_main "Business Strategy" --output strategy --layouts 0,1,2
+  
+  # Use parallel HTML refinement
+  python -m src.agent_main parallel_demo "AI Technologies"
 
 MONITORING:
 With Langfuse configured, you get:
@@ -326,6 +440,10 @@ Visit your Langfuse dashboard to see detailed analytics!
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "parallel_demo":
+        import asyncio
+
+        asyncio.run(main_async())
     # Check for help flags
     if len(sys.argv) == 1 or "--help" in sys.argv or "-h" in sys.argv:
         if "--help" in sys.argv or "-h" in sys.argv:

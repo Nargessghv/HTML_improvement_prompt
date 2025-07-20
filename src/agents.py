@@ -5,10 +5,11 @@ Langgraph agent implementations for the slide generation workflow.
 Each agent handles a specific step in the presentation creation process.
 """
 
+import asyncio
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 
@@ -39,6 +40,8 @@ class SlideGenerationState(TypedDict):
     error_message: Optional[str]
     retry_count: int
     html_refinement_iteration: int
+    html_refinement_slide_index: Optional[int]
+    html_slides_to_refine_queue: Optional[list[int]]
     refinement_id: Optional[str]  # Add this line
 
     # Analysis results
@@ -246,8 +249,8 @@ class PresentationPlanningAgent:
         topic: str,
     ) -> str:
         """
-        Create enhanced prompt for strategic presentation planning
-        with explicit HTML decisions.
+        Create optimized prompt for strategic presentation planning
+        with clear HTML decisions and actionable guidance.
         """
         # Analyze layouts to identify HTML-capable ones
         layout_descriptions = []
@@ -294,231 +297,155 @@ class PresentationPlanningAgent:
             else "None identified"
         )
 
-        # Break down the prompt into separate parts
-        intro = f"""Create a strategic presentation plan for the topic: "{topic}"
+        return f"""📋 CREATE STRATEGIC PRESENTATION PLAN
 
-Available layouts for you to choose from, you can use the same layout for
-multiple slides when it makes sense.
+TOPIC: "{topic}"
 
-Here are the layouts:
+🎯 AVAILABLE LAYOUTS:
 {layouts_text}
 
-🎯 HTML-CAPABLE LAYOUTS: {html_layouts_text}
-These layouts have picture placeholders that can display rich HTML visualizations."""
+✨ HTML-CAPABLE LAYOUTS: {html_layouts_text}
+(These have picture placeholders for rich HTML visualizations)
 
-        requirements = """
-🎯 CRITICAL DECISION REQUIREMENTS:
-1. **EXPLICITLY DECIDE** which slides should use HTML visualizations
-2. **DO NOT use layouts sequentially** (0,1,2,3,4,5,6,7,8,9)
-3. **CHOOSE layouts based on CONTENT TYPE**, not sequence
-4. **PRIORITIZE HTML** for visual content types
-5. **REUSE effective layouts** for similar content types"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-        html_usage = """
-🎨 WHEN TO USE HTML VISUALIZATIONS (set is_html: true):
-- **Timelines, roadmaps, chronological sequences** → Perfect for HTML
-- **Process flows, workflows, step-by-step procedures** → Ideal for HTML  
-- **Comparisons, before/after scenarios** → Great for HTML
-- **Data visualizations, metrics, statistics** → Excellent for HTML
-- **Complex diagrams, hierarchies, relationships** → Best with HTML
-- **Any content requiring custom graphics or visual flow** → Use HTML
+🎨 HTML VISUALIZATION DECISION GUIDE
 
-🚫 WHEN NOT TO USE HTML (set is_html: false):
-- **Simple text content** → Regular text placeholders
-- **Basic bullet points** → Standard text formatting  
-- **Icon-heavy content** → Use icon placeholders instead
-- **Chart data** → Use chart placeholders
-- **Simple titles and descriptions** → Regular text"""
+USE HTML (set is_html: true) FOR:
+✅ Timelines, roadmaps, chronological sequences  
+✅ Process flows, workflows, step-by-step procedures
+✅ Comparisons, before/after scenarios
+✅ Data visualizations, metrics, statistics  
+✅ Complex diagrams, hierarchies, relationships
+✅ Any content requiring visual flow or custom graphics
 
-        guidelines = """
-Strategic Guidelines:
-- **Title slides**: Use layouts with title placeholders (0, 1, 2, 3)  
-- **HTML Visualizations**: Use HTML-capable layouts with is_html: true
-- **Content with icons**: Prefer layouts with multiple icon placeholders (7, 8)
-- **Charts/Data**: Use chart-specific layouts (5, 6) with is_html: false for simple data
-- **Images**: Use picture-focused layouts (2, 4)
-- **Conclusion**: Use conclusion-specific layouts (8, 9)"""
+SKIP HTML (set is_html: false) FOR:
+❌ Simple text content and basic bullet points
+❌ Icon-heavy content (use icon placeholders instead)  
+❌ Standard chart data (use chart placeholders)
+❌ Simple titles and descriptions
 
-        planning_reqs = """
-Content Planning Requirements:
-1. Use the right number of slides for comprehensive coverage, but do not 
-   exceed 15 slides. If the user requested a specific number of slides, 
-   use that number.
-2. Create a logical flow from introduction to conclusion when relevant.  
-3. **EXPLICITLY SET is_html flag** for each slide based on content type
-4. Ensure each slide has a clear purpose and advances the narrative
-5. IMPORTANT: You can and SHOULD use the same layout for multiple slides 
-   when it makes sense
-6. Make the presentation engaging and informative
-7. Use HTML visualizations strategically for maximum visual impact
-8. Some slides are available in the template for branding (e.g Logo, why 
-   ekona etc..) add them to the presentation plan."""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-        anti_patterns = """
-🚫 AVOID THESE ANTI-PATTERNS:
-- Sequential layout usage (0,1,2,3,4,5,6,7,8,9)
-- Using every available layout regardless of content fit
-- Forcing layout variety over content quality
-- Setting is_html: true for simple text content
-- Missing HTML opportunities for visual content
+📐 LAYOUT SELECTION STRATEGY
 
-✅ PREFERRED PATTERNS:
-- Content-driven selection: [0,1,3(HTML),7,7,7,2,8] 
-- Strategic HTML use: [0,1,3(HTML),3(HTML),5,7,8]
-- Purpose-focused: [0,3(HTML),2,7,7,7,7,8]
-- HTML-focused: [0,3(HTML),3(HTML),7,3(HTML),8]"""
+🔑 KEY PRINCIPLES:
+• Choose layouts based on CONTENT TYPE, not sequence
+• REUSE effective layouts for similar content types  
+• Use HTML-capable layouts for visual content
+• Avoid sequential usage (0,1,2,3,4,5...)
 
-        detailed_specs = """
-🎯 DETAILED PURPOSE SPECIFICATIONS REQUIRED:
-For EVERY slide, provide:
-1. **slide_purpose**: Clear basic purpose (1-2 sentences)
-2. **detailed_purpose**: Comprehensive and detailed explanation of what should be 
-   represented on the slide. 
-3. **content_structure**: Specific content organization requirements 
-   (e.g., "two-column comparison", "numbered list of 5 steps")
-4. **visual_elements**: Required visual elements 
-   (e.g., "icons showing growth, timeline markers, comparison arrows")
-5. **key_information**: List all the key information that must be included in the slide"""
+📚 LAYOUT USAGE GUIDE:
+• Title slides: Layouts with title placeholders
+• Visual content: HTML-capable layouts + is_html: true
+• Icon content: Layouts with multiple icon placeholders
+• Charts/Data: Chart-specific layouts (simple data only)
+• Images: Picture-focused layouts
+• Conclusions: Conclusion-specific layouts
 
-        html_specs = """
-🎨 FOR HTML SLIDES (when is_html: true), ALSO provide:
-6. **html_requirements**: Specific HTML visualization requirements:
-   - Timeline: "horizontal timeline with 4 milestones, each with date, title, 
-     and description"
-   - Process: "4-step process flow in 2x2 grid, each step with icon, title, 
-     and 2-3 bullet points"
-   - Comparison: "side-by-side comparison table with 3 categories and 
-     5 comparison points each"
-   - Data viz: "infographic with 3 key metrics, each with large number, icon, 
-     and trend indicator"
+✅ GOOD PATTERNS: [0,3(HTML),3(HTML),7,7,2,8]
+❌ BAD PATTERNS: [0,1,2,3,4,5,6,7,8,9]
 
-📝 EXAMPLES OF DETAILED SPECIFICATIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Standard Slide Example:
-- slide_purpose: "Introduce the company and establish credibility"
-- detailed_purpose: "ekona is a trusted partner with proven expertise 
-  in digital transformation. Build confidence through showcasing experience, 
-  client success stories, and key differentiators that make the company the right choice.
-  They have a strong focus on customer satisfaction and are known for their innovative 
-  approach to digital transformation. In the past 5 years, they have helped 100+ companies 
-  with their digital transformation. What makes them different is their focus on customer 
-  satisfaction and their innovative approach to digital transformation. They are based in 
-  basel, switzerland and have a team of 100+ employees. They serve clients in the US, Europe and Asia
-  from all industries. In particular, they have a strong focus on the financial services industry, 
-  life sciences, and insurance. Their website is ekona.ai, and it's the first in Switzerland
-  to be fully AI based."
-- content_structure: "Title with company tagline, 3-column layout with 
-  expertise areas, Country coverage, areas of expertise"
-- visual_elements: "Company logo, 3 icons representing key service areas, 
-  star rating or badge"
-- key_information: ["15+ years of experience", "200+ successful projects", 
-  "95% client satisfaction rate", "Award-winning innovation approach"]
+📋 SLIDE SPECIFICATIONS REQUIRED
 
-HTML Slide Example:
-- slide_purpose: "Show the timeline of the company"
-- detailed_purpose: "Present a comprehensive timeline of the company that demonstrates 
-  structured approach, realistic timelines, and clear deliverables. Help client 
-  understand the company's journey and feel confident about the planned approach.
-  The company has been in business for 10 years and has helped 100+ companies with their digital transformation.
-  They are based in basel, switzerland and have a team of 100+ employees. They serve clients in the US, Europe and Asia
-  from all industries. In particular, they have a strong focus on the financial services industry, 
-  life sciences, and insurance. Their website is ekona.ai, and it's the first in Switzerland
-  to be fully AI based. They have a strong focus on customer satisfaction and are known for their innovative 
-  approach to digital transformation. In the past 5 years, they have helped 100+ companies 
-  with their digital transformation. What makes them different is their focus on customer 
-  satisfaction and their innovative approach to digital transformation. They are based in 
-  basel, switzerland and have a team of 100+ employees. They serve clients in the US, Europe and Asia
-  from all industries. In particular, they have a strong focus on the financial services industry, 
-  life sciences, and insurance. Their website is ekona.ai, and it's the first in Switzerland
-  to be fully AI based. 
-  "
-- content_structure: "Title explaining timeline scope, horizontal timeline 
-  with clear phases and a call to action"
-- html_requirements: "Horizontal timeline with 5 major milestones spanning 
-  6 months. Each milestone should include: month indicator, phase name, 
-  2-3 key deliverables, and icon representing the phase type. Use Ekona red 
-  for completed phases and grey for future phases. "
-- visual_elements: "Timeline markers, phase icons (planning, development, 
-  testing, launch, support), progress indicators"
-- key_information: ["Discovery & Planning (Month 1)", 
-  "Development Phase (Months 2-4)", "Testing & QA (Month 5)", 
-  "Launch & Deployment (Month 6)", "Ongoing Support"]
+FOR EVERY SLIDE, PROVIDE:
+1. **slide_purpose**: Clear purpose (1-2 sentences)
+2. **detailed_purpose**: Comprehensive explanation (3-4 sentences) 
+3. **content_structure**: Organization requirements ("2-column comparison", "5-step list")
+4. **visual_elements**: Required visuals ("icons, timeline markers, arrows")  
+5. **key_information**: Essential info points (3-5 items)
 
-Consider the audience and the topic's complexity when planning the structure.
-Focus on telling a compelling story with strategic HTML visualizations that 
-enhance understanding and engagement."""
+FOR HTML SLIDES, ALSO ADD:
+6. **html_requirements**: Specific visualization specs using these options:
+   • Mermaid timeline: "Timeline with 4-6 milestones, dates and descriptions"
+   • Mermaid flowchart: "Left-to-right process with 3-5 steps and decision points"  
+   • DaisyUI cards: "Side-by-side comparison cards with features"
+   • DaisyUI stats: "Key metrics with numbers, descriptions, and trend icons"
+   • Mermaid hierarchy: "Top-to-bottom organizational structure"
+   • **Component + Diagram combos**: "Cards containing Mermaid diagrams, stats with visual context"
 
-        # Combine all parts with proper spacing
-        return "\n\n".join(
-            [
-                intro,
-                requirements,
-                html_usage,
-                guidelines,
-                planning_reqs,
-                anti_patterns,
-                detailed_specs,
-                html_specs,
-            ]
-        )
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 PRESENTATION REQUIREMENTS
+
+• Create 8-15 slides (respect user's specific count if given)
+• Build logical flow: introduction → content → conclusion
+• Set is_html flag explicitly for each slide
+• Ensure each slide advances the narrative
+• Use HTML strategically for maximum visual impact
+• Include branding slides if available in template
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 EXAMPLE SPECIFICATIONS
+
+STANDARD SLIDE:
+- slide_purpose: "Introduce company and establish credibility"
+- detailed_purpose: "Present ekona as trusted digital transformation partner with proven track record. Showcase experience, client success, and key differentiators. Build confidence through demonstrating expertise and innovation."
+- content_structure: "Title with tagline, 3-column expertise areas"
+- visual_elements: "Company logo, 3 service icons, credibility badge"
+- key_information: ["15+ years experience", "200+ projects", "95% satisfaction"]
+
+HTML SLIDE (Timeline):
+- slide_purpose: "Show project timeline and phases"  
+- detailed_purpose: "Present comprehensive 6-month project roadmap with clear phases and deliverables. Help audience understand structured approach and feel confident about realistic timelines."
+- html_requirements: "Mermaid timeline: Discovery (Month 1), Development (Months 2-3), Testing (Month 4), Launch (Month 5), Support (Month 6)"
+- visual_elements: "Timeline with phase markers and key deliverables"
+
+HTML SLIDE (Comparison + Diagrams):
+- slide_purpose: "Compare development approaches with workflows"
+- html_requirements: "Two DaisyUI cards side-by-side: 'Traditional' vs 'Agile'. Each card contains title, description, and top-to-bottom Mermaid flowchart (3-4 steps)"
+- visual_elements: "Comparison cards with embedded process diagrams"
+
+Focus on creating compelling narrative with strategic HTML visualizations that enhance understanding."""
 
     def _get_planning_system_prompt(self) -> str:
-        """Get the system prompt for presentation planning"""
-        return """You are an expert presentation designer specialized in creating 
-engaging, data-rich presentations with detailed purpose specifications and 
-strategic HTML visualization decisions.
+        """Get the optimized system prompt for presentation planning"""
+        return """You are an expert presentation designer creating strategic, engaging presentations with precise HTML visualization decisions.
 
-🎯 PRIMARY MISSION: Create comprehensive presentation plans with detailed purpose 
-specifications that flow through the entire content generation pipeline.
+🎯 CORE MISSION: Create detailed presentation plans that guide the entire content generation pipeline effectively.
 
-CRITICAL RESPONSIBILITIES:
-1. **DETAILED PURPOSE SPECIFICATIONS**: For every slide, provide comprehensive 
-   specifications including detailed_purpose, content_structure, visual_elements, 
-   key_information, and html_requirements (for HTML slides)
-2. **HTML VISUALIZATION DECISIONS**: Explicitly decide which slides should use 
-   HTML visualizations and provide specific HTML requirements
-3. **Strategic Layout Selection**: Choose layouts based on content type, not sequence
-4. **Content Flow Planning**: Ensure each slide's purpose aligns with overall 
-   presentation narrative and provides clear guidance for content generation
+🔑 KEY RESPONSIBILITIES:
+1. **Strategic Layout Selection**: Choose layouts based on content type, not sequence
+2. **HTML Decision Making**: Explicitly decide which slides need HTML visualizations  
+3. **Detailed Specifications**: Provide comprehensive guidance for each slide
+4. **Content Flow Design**: Ensure logical narrative progression
 
-DETAILED SPECIFICATION REQUIREMENTS:
-✅ ALWAYS PROVIDE for every slide:
-- slide_purpose: Clear, concise purpose statement
-- detailed_purpose: 3-4 sentence comprehensive explanation
-- content_structure: Specific organization requirements
-- visual_elements: Required visual components
-- key_information: 3-5 essential information points
+📋 SPECIFICATION REQUIREMENTS:
 
-✅ ADDITIONALLY PROVIDE for HTML slides (is_html: true):
-- html_requirements: Detailed HTML visualization specifications
+For EVERY slide, provide ALL of these fields:
+• **slide_purpose**: Clear, concise purpose (1-2 sentences)
+• **detailed_purpose**: Comprehensive explanation (3-4 sentences)
+• **content_structure**: Specific organization ("2-column layout", "5-step process")
+• **visual_elements**: Required visuals ("icons, arrows, timeline markers")
+• **key_information**: Essential content points (3-5 items)
 
-HTML DECISION FRAMEWORK:
-✅ SET is_html: true FOR:
-- Timelines, roadmaps, chronological sequences
-- Process flows, workflows, step-by-step procedures  
-- Comparisons, before/after scenarios, competitive analysis
-- Data visualizations, metrics dashboards, statistics
-- Complex diagrams, hierarchies, organizational charts
-- Any content requiring custom graphics or interactive-style visuals
+For HTML slides (is_html: true), ALSO add:
+• **html_requirements**: Detailed visualization specs using Mermaid + DaisyUI/Flowbite
 
-❌ SET is_html: false FOR:
-- Simple text content, bullet points
-- Basic titles and descriptions
-- Icon-heavy content (use icon placeholders instead)
-- Standard chart data (use chart placeholders)
-- Introductory or concluding slides with minimal visuals
+🎨 HTML DECISION FRAMEWORK:
 
-STRATEGIC PRINCIPLES:
-- **Purpose-Driven Design**: Every specification must serve the slide's purpose
-- **Content Generation Guidance**: Specifications must provide clear guidance 
-  for content and HTML generation agents
-- **Audience Engagement**: Prioritize visual elements that enhance understanding
-- **Presentation Coherence**: Ensure all slides work together as a unified story
-- **Implementation Clarity**: Specifications must be detailed enough for 
-  accurate implementation
+SET is_html: true FOR visual content requiring:
+✅ Timelines, processes, workflows, comparisons
+✅ Data visualizations, metrics dashboards  
+✅ Hierarchies, relationships, complex diagrams
+✅ Any content needing custom visual flow
 
-Focus on creating presentations with crystal-clear specifications that enable 
-precise content generation and compelling visual storytelling."""
+SET is_html: false FOR simple content like:
+❌ Basic text, bullet points, titles
+❌ Icon-heavy content (use icon placeholders)
+❌ Standard charts (use chart placeholders)
+
+🎯 SUCCESS CRITERIA:
+• Specifications must be detailed enough for accurate content generation
+• Each slide must advance the overall narrative
+• HTML visualizations should enhance understanding, not complicate
+• Layout choices should match content requirements
+• Presentation should tell a compelling, coherent story
+
+Focus on creating presentations that are both visually engaging and strategically sound."""
 
     def _create_default_plan(
         self, layouts_info: Dict[int, Dict[str, Any]]
@@ -1196,42 +1123,144 @@ class HTMLRefinementAgent:
         # Initialize the Azure Blob Uploader
         self.uploader = AzureBlobUploader()
 
+    def _cleanup_old_debug_files(self, keep_latest: int = 5):
+        """
+        Clean up old debug files to prevent accumulation
+
+        Args:
+            keep_latest: Number of latest refinement sessions to keep
+        """
+        try:
+            if not self.temp_dir.exists():
+                return
+
+            # Get all HTML and PNG files
+            debug_files = list(self.temp_dir.glob("*.html")) + list(
+                self.temp_dir.glob("*.png")
+            )
+
+            if (
+                len(debug_files) <= keep_latest * 10
+            ):  # Rough estimate (slides * iterations)
+                return
+
+            # Sort by modification time and remove oldest
+            debug_files.sort(key=lambda f: f.stat().st_mtime)
+            files_to_remove = debug_files[: -keep_latest * 10]
+
+            removed_count = 0
+            for file_path in files_to_remove:
+                try:
+                    file_path.unlink()
+                    removed_count += 1
+                except OSError:
+                    pass
+
+            if removed_count > 0:
+                print(f"  🧹 Cleaned up {removed_count} old debug files")
+
+        except Exception as e:
+            print(f"  - Warning: Failed to clean up debug files: {e}")
+
     @monitor_agent_execution("html_refinement_agent")
     def execute(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
         """
         Refine HTML content through iterative visual feedback.
+        This agent manages a queue of HTML slides and refines them one by one.
         """
-        print(f"🎨 {self.name}: Starting HTML refinement process...")
-        iteration = state.get("html_refinement_iteration", 0)
+        print(f"🎨 {self.name}: Running HTML refinement process...")
 
-        if iteration >= self.max_iterations:
-            print(f"  - Max refinement iterations ({self.max_iterations}) reached.")
-            state["current_step"] = "html_refinement_complete"
-            return state
-
-        iteration += 1
-        state["html_refinement_iteration"] = iteration
-        print(f"  - Iteration {iteration}/{self.max_iterations}")
+        # Clean up old debug files at the start
+        self._cleanup_old_debug_files()
 
         slide_contents = state.get("slide_contents")
         if not slide_contents:
-            print("  - No slide contents to refine.")
+            print("  - No slide contents found. Skipping refinement.")
+            state["needs_html_refinement"] = False
             state["current_step"] = "html_refinement_complete"
             return state
 
-        html_content, slide_index = self._find_first_html_content(slide_contents)
-        if not html_content or not html_content.strip() or slide_index is None:
-            print("  - No HTML content found to refine.")
-            state["current_step"] = "html_refinement_complete"
+        # Initialize the queue of HTML slides on the first run
+        if (
+            "html_slides_to_refine_queue" not in state
+            or state["html_slides_to_refine_queue"] is None
+        ):
+            html_slide_indices = self._identify_html_slides(slide_contents)
+            state["html_slides_to_refine_queue"] = html_slide_indices
+            state["html_refinement_slide_index"] = None
+            state["html_refinement_iteration"] = 0
+            print(
+                f"  - Identified {len(html_slide_indices)} HTML slides to refine: {html_slide_indices}"
+            )
+
+        queue = state.get("html_slides_to_refine_queue", [])
+        current_slide_index = state.get("html_refinement_slide_index")
+        iteration = state.get("html_refinement_iteration", 0)
+
+        # If there is no slide being actively refined, pick the next one from the queue.
+        if current_slide_index is None:
+            if not queue:
+                print("  - HTML refinement queue is empty. Process complete.")
+                state["needs_html_refinement"] = False
+                state["current_step"] = "html_refinement_complete"
+                return state
+
+            # Get the next slide from the queue and reset the iteration count for it.
+            current_slide_index = queue.pop(0)
+            iteration = 1
+            state["html_slides_to_refine_queue"] = queue
+            state["html_refinement_slide_index"] = current_slide_index
+            state["html_refinement_iteration"] = iteration
+            print(
+                f"  - Starting refinement for slide {current_slide_index + 1} (index {current_slide_index}), Iteration {iteration}/{self.max_iterations}"
+            )
+        else:
+            # Continue refining the current slide.
+            iteration += 1
+            state["html_refinement_iteration"] = iteration
+            print(
+                f"  - Continuing refinement for slide {current_slide_index + 1} (index {current_slide_index}), Iteration {iteration}/{self.max_iterations}"
+            )
+
+        # Check if we have exceeded the max refinement iterations for the current slide.
+        if iteration > self.max_iterations:
+            print(
+                f"  - Max refinement iterations reached for slide {current_slide_index + 1}."
+            )
+            # Move to the next slide in the next execution cycle.
+            state["html_refinement_slide_index"] = None
+            state["html_refinement_iteration"] = 0
+
+            # Check if there are more slides in the queue.
+            is_queue_empty = not state.get("html_slides_to_refine_queue")
+            state["needs_html_refinement"] = not is_queue_empty
+
+            if is_queue_empty:
+                print("  - All HTML slides have been refined.")
+                state["current_step"] = "html_refinement_complete"
             return state
 
-        # Extract slide purpose from the presentation plan
+        # --- Core refinement logic for the current_slide_index ---
+        html_content = self._get_html_content_for_slide(
+            slide_contents, current_slide_index
+        )
+        if not html_content or not html_content.strip():
+            print(f"  - No HTML content for slide {current_slide_index + 1}. Skipping.")
+            state["html_refinement_slide_index"] = None
+            state["html_refinement_iteration"] = 0
+            state["needs_html_refinement"] = bool(
+                state.get("html_slides_to_refine_queue")
+            )
+            if not state["needs_html_refinement"]:
+                state["current_step"] = "html_refinement_complete"
+            return state
+
         presentation_plan = state.get("presentation_plan")
         slide_purpose = "No purpose provided."
-        if presentation_plan and slide_index < len(presentation_plan):
-            slide_spec = presentation_plan[slide_index]
+        if presentation_plan and current_slide_index < len(presentation_plan):
+            slide_spec = presentation_plan[current_slide_index]
             purpose_parts = []
             if slide_spec.slide_purpose:
                 purpose_parts.append(f"Purpose: {slide_spec.slide_purpose}")
@@ -1240,16 +1269,19 @@ class HTMLRefinementAgent:
             if purpose_parts:
                 slide_purpose = "\n".join(purpose_parts)
 
-        # Create a unique ID for this refinement cycle if it doesn't exist
-        if "refinement_id" not in state or not state["refinement_id"]:
-            state["refinement_id"] = str(uuid.uuid4())
+        refinement_id = state.get("refinement_id") or str(uuid.uuid4())
+        state["refinement_id"] = refinement_id
 
-        refinement_id = state["refinement_id"]
-        image_filename = f"{refinement_id}_iteration_{iteration}.png"
+        # Use a unique filename for each slide and iteration to avoid conflicts.
+        # Use 1-based slide numbering for clarity
+        slide_number = current_slide_index + 1
+        image_filename = (
+            f"{refinement_id}_slide_{slide_number:02d}_iteration_{iteration}.png"
+        )
         image_path = self.temp_dir / image_filename
-
-        # Save the HTML content for this iteration to a debug file
-        html_filename = f"{refinement_id}_iteration_{iteration}.html"
+        html_filename = (
+            f"{refinement_id}_slide_{slide_number:02d}_iteration_{iteration}.html"
+        )
         html_path = self.temp_dir / html_filename
         try:
             with open(html_path, "w", encoding="utf-8") as f:
@@ -1261,6 +1293,7 @@ class HTMLRefinementAgent:
         if not self._render_html_to_image(html_content, str(image_path)):
             print("  - Failed to render HTML to image.")
             state["error_message"] = "HTML rendering failed during refinement."
+            state["needs_html_refinement"] = False  # Stop refinement on render failure
             state["current_step"] = "html_refinement_complete"
             return state
 
@@ -1270,6 +1303,7 @@ class HTMLRefinementAgent:
         if not image_url:
             print("  - Failed to upload image to Azure Blob Storage.")
             state["error_message"] = "Image upload failed during refinement."
+            state["needs_html_refinement"] = False
             state["current_step"] = "html_refinement_complete"
             return state
 
@@ -1289,42 +1323,501 @@ class HTMLRefinementAgent:
                 for change in correction_response.changes_applied:
                     print(f"    - {change}")
 
-                state["slide_contents"] = self._update_slide_contents(
-                    slide_contents, correction_response.html_code
+                state["slide_contents"] = self._update_slide_content(
+                    slide_contents, current_slide_index, correction_response.html_code
                 )
-                # Decide whether to continue refining
+                # This slide needs another refinement iteration.
                 state["needs_html_refinement"] = True
             else:
-                print("  - No significant changes suggested.")
-                state["current_step"] = "html_refinement_complete"
-                state["needs_html_refinement"] = False
+                print(
+                    "  - No significant changes suggested. Refinement for this slide is complete."
+                )
+                # This slide is done. The next execution will pick the next slide from the queue.
+                state["html_refinement_slide_index"] = None
+                state["html_refinement_iteration"] = 0
+
+                # Check if there are more slides in the queue.
+                is_queue_empty = not state.get("html_slides_to_refine_queue")
+                state["needs_html_refinement"] = not is_queue_empty
+
+                if is_queue_empty:
+                    print("  - All HTML slides have been refined.")
+                    state["current_step"] = "html_refinement_complete"
+
         except Exception as e:
             print(f"  - Error getting HTML correction: {e}")
-            print("  - Proceeding with the current HTML content.")
-            state["error_message"] = f"HTML refinement failed: {e}"
-            state["current_step"] = "html_refinement_complete"
-            state["needs_html_refinement"] = False
+            print("  - Proceeding with the current HTML content for this slide.")
+            # Stop refining this slide and move to the next one.
+            state["html_refinement_slide_index"] = None
+            state["html_refinement_iteration"] = 0
+
+            is_queue_empty_on_error = not state.get("html_slides_to_refine_queue")
+            state["needs_html_refinement"] = not is_queue_empty_on_error
+
+            if is_queue_empty_on_error:
+                state["current_step"] = "html_refinement_complete"
 
         return state
 
-    def _find_first_html_content(
-        self, slide_contents: List[SlideContent]
-    ) -> tuple[Optional[str], Optional[int]]:
+    @monitor_agent_execution("html_refinement_agent_parallel")
+    async def execute_parallel(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Refine HTML content through iterative visual feedback in TRUE parallel.
+        All slides are processed simultaneously with parallel LLM calls.
+
+        Args:
+            state: Current workflow state
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Updated state with refined HTML content
+        """
+        print(f"🎨 {self.name}: Running TRUE parallel HTML refinement process...")
+
+        # Clean up old debug files at the start
+        self._cleanup_old_debug_files()
+
+        slide_contents = state.get("slide_contents")
+        if not slide_contents:
+            print("  - No slide contents found. Skipping refinement.")
+            state["needs_html_refinement"] = False
+            state["current_step"] = "html_refinement_complete"
+            return state
+
+        # Identify all HTML slides
+        html_slide_indices = self._identify_html_slides(slide_contents)
+        if not html_slide_indices:
+            print("  - No HTML slides identified. Skipping refinement.")
+            state["needs_html_refinement"] = False
+            state["current_step"] = "html_refinement_complete"
+            return state
+
+        print(
+            f"  - Identified {len(html_slide_indices)} HTML slides for TRUE parallel refinement: {html_slide_indices}"
+        )
+
+        # Generate a single refinement ID for this batch
+        refinement_id = str(uuid.uuid4())
+        state["refinement_id"] = refinement_id
+
+        # Get presentation plan for slide purposes
+        presentation_plan = state.get("presentation_plan")
+
+        # Prepare slide data for parallel processing
+        slide_data = []
+        for slide_index in html_slide_indices:
+            html_content = self._get_html_content_for_slide(slide_contents, slide_index)
+            if not html_content or not html_content.strip():
+                print(f"  - No HTML content for slide {slide_index + 1}. Skipping.")
+                continue
+
+            # Get slide purpose
+            slide_purpose = "No purpose provided."
+            if presentation_plan and slide_index < len(presentation_plan):
+                slide_spec = presentation_plan[slide_index]
+                purpose_parts = []
+                if slide_spec.slide_purpose:
+                    purpose_parts.append(f"Purpose: {slide_spec.slide_purpose}")
+                if slide_spec.detailed_purpose:
+                    purpose_parts.append(f"Details: {slide_spec.detailed_purpose}")
+                if purpose_parts:
+                    slide_purpose = "\n".join(purpose_parts)
+
+            slide_data.append(
+                {
+                    "slide_index": slide_index,
+                    "html_content": html_content,
+                    "slide_purpose": slide_purpose,
+                }
+            )
+
+        if not slide_data:
+            print("  - No valid HTML slides to process.")
+            state["needs_html_refinement"] = False
+            state["current_step"] = "html_refinement_complete"
+            return state
+
+        # Process all slides with TRUE parallel iterations
+        print(f"  🚀 Starting TRUE parallel refinement for {len(slide_data)} slides...")
+        refined_contents = await self._refine_all_slides_parallel(
+            slide_data, refinement_id, config
+        )
+
+        # Update slide contents with refined HTML
+        updated_slide_contents = slide_contents.copy()
+        success_count = 0
+
+        for slide_index, refined_html in refined_contents.items():
+            if refined_html:
+                updated_slide_contents = self._update_slide_content(
+                    updated_slide_contents, slide_index, refined_html
+                )
+                success_count += 1
+                print(f"  ✅ Successfully refined slide {slide_index + 1}")
+
+        # Update state with refined content
+        state["slide_contents"] = updated_slide_contents
+        state["needs_html_refinement"] = False
+        state["current_step"] = "html_refinement_complete"
+
+        print(
+            f"🎉 {self.name}: TRUE parallel refinement complete! {success_count}/{len(slide_data)} slides refined successfully."
+        )
+        return state
+
+    async def _refine_all_slides_parallel(
+        self,
+        slide_data: List[Dict[str, Any]],
+        refinement_id: str,
+        config: Optional[RunnableConfig] = None,
+        max_iterations: int = 3,
+    ) -> Dict[int, Optional[str]]:
+        """
+        Refine all slides with TRUE parallel processing across iterations.
+        Each iteration processes ALL slides simultaneously.
+
+        Args:
+            slide_data: List of slide data dictionaries
+            refinement_id: Unique ID for this refinement batch
+            config: Langchain configuration
+            max_iterations: Maximum number of refinement iterations
+
+        Returns:
+            Dictionary mapping slide_index to final refined HTML
+        """
+        print(
+            f"  🔄 Processing {len(slide_data)} slides with TRUE parallel iterations..."
+        )
+
+        # Track current HTML for each slide
+        current_html = {}
+        slide_index_map = {}
+
+        # Initialize current HTML and create mapping
+        for i, data in enumerate(slide_data):
+            slide_index = data["slide_index"]
+            current_html[slide_index] = data["html_content"]
+            slide_index_map[slide_index] = data
+
+        # Process iterations with ALL slides in parallel
+        for iteration in range(1, max_iterations + 1):
+            print(
+                f"    🚀 Iteration {iteration}/{max_iterations} - Processing ALL {len(slide_data)} slides in parallel..."
+            )
+
+            # Create parallel tasks for this iteration across ALL slides
+            iteration_tasks = []
+            task_slide_mapping = []
+
+            for slide_index in current_html:
+                slide_number = slide_index + 1
+                html_content = current_html[slide_index]
+                slide_purpose = slide_index_map[slide_index]["slide_purpose"]
+
+                # Create task for single iteration of this slide
+                task = self._process_single_iteration_async(
+                    slide_index=slide_index,
+                    html_content=html_content,
+                    slide_purpose=slide_purpose,
+                    iteration=iteration,
+                    refinement_id=refinement_id,
+                    config=config,
+                )
+                iteration_tasks.append(task)
+                task_slide_mapping.append(slide_index)
+
+            # Execute ALL slides for this iteration in parallel
+            print(
+                f"      ⚡ Executing {len(iteration_tasks)} parallel LLM calls for iteration {iteration}..."
+            )
+            iteration_results = await asyncio.gather(
+                *iteration_tasks, return_exceptions=True
+            )
+
+            # Process results and update HTML for next iteration
+            changes_made = 0
+            for i, result in enumerate(iteration_results):
+                slide_index = task_slide_mapping[i]
+                slide_number = slide_index + 1
+
+                if isinstance(result, BaseException):
+                    print(
+                        f"      ❌ Error in slide {slide_number} iteration {iteration}: {result}"
+                    )
+                    continue
+
+                success, updated_html = result
+                if (
+                    success
+                    and updated_html
+                    and updated_html != current_html[slide_index]
+                ):
+                    current_html[slide_index] = updated_html
+                    changes_made += 1
+                    print(
+                        f"      ✅ Slide {slide_number} iteration {iteration}: Changes applied"
+                    )
+                else:
+                    print(
+                        f"      ⚪ Slide {slide_number} iteration {iteration}: No changes needed"
+                    )
+
+            print(
+                f"    📊 Iteration {iteration} complete: {changes_made} slides updated"
+            )
+
+            # If no changes were made in this iteration, we can stop early
+            if changes_made == 0:
+                print(
+                    f"    🎯 Early termination: No changes needed in iteration {iteration}"
+                )
+                break
+
+        print(f"  ✅ All parallel iterations complete for {len(slide_data)} slides")
+        return current_html
+
+    async def _process_single_iteration_async(
+        self,
+        slide_index: int,
+        html_content: str,
+        slide_purpose: str,
+        iteration: int,
+        refinement_id: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Process a single iteration for one slide (used in parallel processing).
+
+        Args:
+            slide_index: Index of the slide
+            html_content: Current HTML content
+            slide_purpose: Purpose of the slide
+            iteration: Current iteration number
+            refinement_id: Unique refinement ID
+            config: Langchain configuration
+
+        Returns:
+            Tuple of (success, updated_html)
+        """
+        try:
+            slide_number = slide_index + 1
+
+            # Create filenames for this specific iteration
+            image_filename = (
+                f"{refinement_id}_slide_{slide_number:02d}_iter_{iteration}.png"
+            )
+            image_path = self.temp_dir / image_filename
+            html_filename = (
+                f"{refinement_id}_slide_{slide_number:02d}_iter_{iteration}.html"
+            )
+            html_path = self.temp_dir / html_filename
+
+            # Save HTML for debugging
+            try:
+                with open(html_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+            except Exception as e:
+                print(
+                    f"      ⚠️ Failed to save HTML debug file for slide {slide_number}: {e}"
+                )
+
+            # Render HTML to image (async)
+            if not await self._render_html_to_image_async(
+                html_content, str(image_path)
+            ):
+                print(
+                    f"      ❌ Failed to render HTML for slide {slide_number} iteration {iteration}"
+                )
+                return False, None
+
+            # Upload image to Azure Blob Storage
+            image_url = self.uploader.upload_file(
+                str(image_path), blob_name=f"refinement/{image_filename}"
+            )
+            if not image_url:
+                print(
+                    f"      ❌ Failed to upload image for slide {slide_number} iteration {iteration}"
+                )
+                return False, None
+
+            # Get LLM correction (this is where the parallel magic happens!)
+            correction_response = await self._get_html_correction_async(
+                html_content, image_url, slide_purpose, config
+            )
+
+            if (
+                correction_response
+                and correction_response.html_code.strip().lower() != "no changes"
+                and correction_response.html_code.strip() != html_content.strip()
+            ):
+                print(
+                    f"      🔄 Slide {slide_number} iter {iteration}: LLM suggested changes"
+                )
+                return True, correction_response.html_code
+            print(
+                f"      ⚪ Slide {slide_number} iter {iteration}: No changes from LLM"
+            )
+            return True, html_content
+
+        except Exception as e:
+            print(
+                f"      ❌ Error processing slide {slide_index + 1} iteration {iteration}: {e}"
+            )
+            return False, None
+
+    def _identify_html_slides(self, slide_contents: list[SlideContent]) -> list[int]:
+        """Scans all slide contents and returns a list of indices for slides containing HTML."""
+        html_slide_indices = []
         for i, slide in enumerate(slide_contents):
-            for content in slide.content.values():
-                # Be more lenient with the check to find HTML after refinement
+            has_html = False
+            for placeholder_name, content in slide.content.items():
                 if isinstance(content, str) and "<" in content and ">" in content:
                     if content.strip().startswith("<"):
-                        return content, i
-        return None, None
+                        html_slide_indices.append(i)
+                        has_html = True
+                        print(
+                            f"  - Found HTML content in slide {i + 1}, placeholder '{placeholder_name}'"
+                        )
+                        break  # Move to next slide once HTML is found
+
+            if not has_html:
+                # Check if slide has any content that might be HTML-related
+                for placeholder_name, content in slide.content.items():
+                    if isinstance(content, str) and any(
+                        tag in content.lower()
+                        for tag in ["<div", "<html", "<body", "<span", "<p>"]
+                    ):
+                        print(
+                            f"  - Slide {i + 1} has potential HTML content in placeholder '{placeholder_name}': {content[:100]}..."
+                        )
+
+        print(
+            f"  - HTML slide identification complete: found {len(html_slide_indices)} HTML slides"
+        )
+        return html_slide_indices
+
+    def _get_html_content_for_slide(
+        self, slide_contents: list[SlideContent], slide_index: int
+    ) -> Optional[str]:
+        """Gets the HTML content for a specific slide index."""
+        if slide_index >= len(slide_contents):
+            return None
+        slide = slide_contents[slide_index]
+        for content in slide.content.values():
+            if isinstance(content, str) and "<" in content and ">" in content:
+                if content.strip().startswith("<"):
+                    return content
+        return None
 
     def _render_html_to_image(self, html_content: str, image_path: str) -> bool:
+        # Try to render with default method first
         try:
+            print("  - Attempting to render HTML with default method...")
             self.html_renderer.render_html_to_image(html_content, image_path)
-            return os.path.exists(image_path)
+            if os.path.exists(image_path):
+                print("  - Successfully rendered HTML to image with default method")
+                return True
         except Exception as e:
-            print(f"  - Error rendering HTML to image: {e}")
-            return False
+            print(f"  - Error rendering HTML to image with default method: {e}")
+
+        # If default method failed, try other available methods
+        for method in ["playwright", "selenium", "weasyprint", "imgkit"]:
+            if method == self.html_renderer.active_method:
+                continue  # Skip the already tried method
+
+            if self.html_renderer.available_methods.get(method, False):
+                try:
+                    print(f"  - Attempting to render HTML with {method}...")
+                    # Create a temporary renderer with this method
+                    temp_renderer = HTMLRenderer(preferred_method=method)
+                    temp_renderer.render_html_to_image(html_content, image_path)
+                    if os.path.exists(image_path):
+                        print(f"  - Successfully rendered HTML to image with {method}")
+                        return True
+                except Exception as e:
+                    print(f"  - Error rendering HTML to image with {method}: {e}")
+
+        print("  - Failed to render HTML with all available methods")
+        return False
+
+    async def _render_html_to_image_async(
+        self, html_content: str, image_path: str
+    ) -> bool:
+        """Async version of _render_html_to_image for use in async contexts"""
+        # Try to render with async method first
+        try:
+            print("  - Attempting to render HTML with async method...")
+            result = await self.html_renderer.render_html_to_image_async(
+                html_content, image_path
+            )
+            if result and os.path.exists(image_path):
+                print("  - Successfully rendered HTML to image with async method")
+                return True
+        except Exception as e:
+            print(f"  - Error rendering HTML to image with async method: {e}")
+
+        # If async method failed, try other available methods with async execution
+        import concurrent.futures
+
+        for method in [
+            "selenium",
+            "weasyprint",
+            "imgkit",
+        ]:  # Skip playwright as we tried async version
+            if self.html_renderer.available_methods.get(method, False):
+                try:
+                    print(f"  - Attempting to render HTML with {method} (async)...")
+                    # Create a temporary renderer with this method and run in executor
+                    temp_renderer = HTMLRenderer(preferred_method=method)
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            temp_renderer.render_html_to_image, html_content, image_path
+                        )
+                        result = await asyncio.wrap_future(future)
+
+                    if result and os.path.exists(image_path):
+                        print(
+                            f"  - Successfully rendered HTML to image with {method} (async)"
+                        )
+                        return True
+                except Exception as e:
+                    print(
+                        f"  - Error rendering HTML to image with {method} (async): {e}"
+                    )
+
+        print("  - Failed to render HTML with all available methods (async)")
+        return False
+
+    async def _get_html_correction_async(
+        self,
+        html_content: str,
+        image_url: str,
+        slide_purpose: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> Optional[RefinedHTML]:
+        """
+        Async version of _get_html_correction for true parallel LLM calls
+        """
+        import concurrent.futures
+
+        system_prompt = self._get_system_prompt()
+        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose)
+
+        # Run the LLM call in a thread executor for true parallelism
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                self.llm_client.generate_structured_vision_content,
+                system_prompt,
+                user_prompt,
+                RefinedHTML,
+                config,
+            )
+            response = await asyncio.wrap_future(future)
+
+        return response if response else None
 
     def _get_html_correction(
         self,
@@ -1333,6 +1826,9 @@ class HTMLRefinementAgent:
         slide_purpose: str,
         config: Optional[RunnableConfig] = None,
     ) -> Optional[RefinedHTML]:
+        """
+        Synchronous version (kept for compatibility with sequential processing)
+        """
         system_prompt = self._get_system_prompt()
         user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose)
 
@@ -1344,78 +1840,122 @@ class HTMLRefinementAgent:
         )
         return response if response else None
 
-    def _update_slide_contents(
-        self, slide_contents: List[SlideContent], new_html: str
-    ) -> List[SlideContent]:
+    def _update_slide_content(
+        self, slide_contents: list[SlideContent], slide_index: int, new_html: str
+    ) -> list[SlideContent]:
+        """Creates a new list of slide contents with the HTML updated for a specific slide."""
         updated_contents = []
-        for slide in slide_contents:
-            new_content = {}
-            for key, value in slide.content.items():
-                if isinstance(value, str) and value.strip().startswith("<"):
-                    new_content[key] = new_html
-                else:
-                    new_content[key] = value
-            updated_contents.append(
-                SlideContent(layout_index=slide.layout_index, content=new_content)
-            )
+        for i, slide in enumerate(slide_contents):
+            if i == slide_index:
+                new_content_dict = {}
+                for key, value in slide.content.items():
+                    if isinstance(value, str) and value.strip().startswith("<"):
+                        new_content_dict[key] = new_html
+                    else:
+                        new_content_dict[key] = value
+                updated_slide = SlideContent(
+                    layout_index=slide.layout_index, content=new_content_dict
+                )
+                updated_contents.append(updated_slide)
+            else:
+                updated_contents.append(slide)
         return updated_contents
 
     def _create_user_prompt(
         self, html_content: str, image_url: str, slide_purpose: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return [
+            {
+                "type": "text",
+                "text": f"""**SLIDE PURPOSE & REQUIREMENTS:**
+{slide_purpose}
+
+**TASK:** Evaluate if the HTML code below successfully fulfills the slide's purpose and requirements. 
+The attached image shows how this HTML currently renders.
+If any content is missing in the image it means it is either outside the boundary or not rendering properly.
+
+**EVALUATION CRITERIA:**
+• Does the visualization effectively communicate the slide's purpose?
+• Is the content well-organized and visually clear?
+• Are all required elements present and properly positioned?
+• Does the design enhance understanding of the intended message?
+
+**HTML CODE TO EVALUATE:**
+```html
+{html_content}
+```
+
+**INSTRUCTIONS:**
+1. Review the slide's purpose and requirements above
+2. Examine the rendered image to see how the current HTML performs
+3. Determine if the HTML successfully fulfills the slide's purpose
+4. If improvements are needed, refine the HTML code to better meet the requirements
+5. Focus on purpose alignment, not just visual aesthetics""",
+            },
             {
                 "type": "image_url",
                 "image_url": {"url": image_url},
             },
-            {
-                "type": "text",
-                "text": f"""**Slide's Purpose:**
-{slide_purpose}
-
-Based on the slide's purpose and the image, correct the following HTML:
-
-```html
-{html_content}
-```""",
-            },
         ]
 
     def _get_system_prompt(self) -> str:
-        return """You are an expert web developer and UI/UX designer. 
-        Your task is to refine the provided HTML code based on the visual representation in the image and the slide's purpose.
+        return """You are an expert web developer and presentation design specialist.
+Your task is to evaluate HTML code against slide requirements and refine it for optimal purpose fulfillment.
 
+**YOUR MISSION:** Assess whether the provided HTML code successfully achieves the slide's intended purpose and requirements. If not, improve the HTML to better fulfill those objectives.
+
+**RESPONSE FORMAT:**
 Your response MUST be a JSON object that strictly follows this format: 
-`{"html_code": "<FULL_CORRECTED_HTML_CODE>", "reasoning": "...", "changes_applied": ["...", "..."]}`.
+`{"html_code": "<FULL_HTML_CODE>", "reasoning": "...", "changes_applied": ["...", "..."]}`.
 Do NOT provide any other text, explanations, or markdown.
 
-**Your Goal:** Based on the visual representation in the image and the slide's intended purpose, 
-fix this slide layout, icon quality, layering, and visual clarity by modifying the HTML code associated with the slide.
-- **Align with Purpose**: Ensure the final design effectively communicates the slide's purpose.
-- Make sure all lines are correctly positioned and not overlapping.
-- Make sure all icons are visible and not overlapping.
-- Make sure all text is visible and not overlapping.
-- Make sure all elements are correctly positioned and not overlapping.
-- Make sure all elements are correctly sized and not overflowing.
-- Make sure all elements are correctly colored and not clashing.
-- Make sure all elements are correctly aligned and not misaligned.
-- Make sure the content is visually appealing and not cluttered.
-- Make sure the content is not too small or too large.
-- Ensure the content is well positioned, centered, and not too close to the edges.
+**EVALUATION PROCESS:**
+1. **Purpose Assessment**: Does the HTML effectively communicate the slide's intended message?
+2. **Requirements Check**: Are all specified requirements met (content structure, visual elements, etc.)?
+3. **Visual Effectiveness**: Does the rendered result enhance understanding and engagement?
+4. **Technical Quality**: Is the HTML technically sound and properly structured?
 
-**Constraints:**
-- The final output MUST be a single JSON object.
-- If minor changes are possible, make them, try to keep the original HTML code as close as possible unless it is not possible to do so.
-- The `html_code` value must be a single block of HTML code.
-- Adhere to the viewport size: 1577x603 pixels.
-- Use TailwindCSS, Flowbite, and daisyUI components.
-- Mermaid.js is used for diagrams, timelines, and graphs.
-- If the image looks perfect and no changes are needed, return the EXACT original HTML code in the `html_code` field, with an empty reasoning and changes_applied.
+**REFINEMENT PRIORITIES:**
+1. **Purpose Alignment**: Ensure the visualization directly supports the slide's objectives
+2. **Content Clarity**: Information should be easily understood and well-organized
+3. **Visual Hierarchy**: Important elements should be properly emphasized
+4. **Professional Quality**: Design should be polished and business-appropriate
+5. **Space Utilization**: Effective use of the 1577x603px viewport
 
-VISUAL DESIGN:
-- Colors:
-  Primary: #dc261e (Ekona red)
-  Secondary: #2d3748 (Dark gray)
-  Background: #ffffff (White)
-  Text: #4b5563 (Gray)
-"""  # noqa: E501
+**TECHNICAL REQUIREMENTS:**
+- **Viewport**: 1577x603 pixels exactly
+- **Frameworks**: TailwindCSS, Flowbite, and daisyUI components only
+- **Diagrams**: Mermaid.js for timelines, flowcharts, and visualizations
+- **No Titles**: Remove `<h1>` tags (slide has its own title)
+- **Responsive**: Fixed pixel values for critical positioning
+- **Performance**: High z-index values (z-10+) for proper layering
+
+**DESIGN STANDARDS:**
+- **Colors**: Primary #dc261e (Ekona red), Secondary #2d3748 (Dark gray), Background #ffffff, Text #4b5563
+- **Typography**: Clear font hierarchy with multiple fallbacks
+- **Layout**: No overlapping elements, proper spacing, professional appearance
+- **Icons**: Properly sized and positioned, no visual conflicts
+- **Content**: All text visible and readable, appropriate sizing
+
+**MERMAID.JS SYNTAX RULES:**
+- **Links**: Use `A -- "text" --> B` or `A o-- "text" --> B` (NOT `A --o "text" --> B`)
+- **Nodes**: Use `nodeId["Display Text"]` format
+- **Subgraphs**: Use `subgraph "Title" ... end` structure
+- **Validation**: Double-check all syntax for correctness
+
+**REFINEMENT DECISIONS:**
+- **No Changes Needed**: If HTML perfectly fulfills the purpose, return original code with empty reasoning/changes
+- **Minor Improvements**: Focus on enhancing purpose fulfillment without major restructuring  
+- **Significant Changes**: When current approach doesn't effectively serve the slide's purpose
+- **Conservative Approach**: Preserve working elements while improving purpose alignment
+
+**QUALITY CHECKLIST:**
+✅ Purpose clearly communicated through visualization
+✅ All requirements from slide specifications met
+✅ Professional, polished visual presentation
+✅ No overlapping or mispositioned elements
+✅ Optimal use of available space
+✅ Technically sound HTML structure
+✅ Proper color scheme and branding
+
+Focus on creating HTML that serves the slide's purpose effectively, not just fixing visual issues."""

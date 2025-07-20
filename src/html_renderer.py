@@ -6,12 +6,14 @@ Supports timeline generation, custom visualizations, and complex layouts with
 enhanced Ekona branding and icon support.
 """
 
+import asyncio
 import os
 import tempfile
 from typing import Dict
 
 # HTML-to-image rendering options (install one based on preference)
 try:
+    from playwright.async_api import async_playwright
     from playwright.sync_api import sync_playwright
 
     PLAYWRIGHT_AVAILABLE = True
@@ -67,6 +69,19 @@ class HTMLRenderer:
         else:
             print("⚠️ Lucide icon sprite not found - icons may not display")
 
+    def _is_async_context(self) -> bool:
+        """
+        Check if we're running in an async context
+
+        Returns:
+            True if running in async context, False otherwise
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            return True
+        except RuntimeError:
+            return False
+
     def _prepare_html_for_rendering(self, html_content: str) -> str:
         """
         Prepare HTML for rendering by injecting Lucide sprite and Mermaid.js
@@ -77,8 +92,12 @@ class HTMLRenderer:
         Returns:
             HTML content ready for rendering
         """
-        # 1. Inject Lucide icon sprite
-        if self.lucide_sprite_content:
+        # Check if HTML already contains a sprite definition
+        if "<symbol id=" in html_content and self.lucide_sprite_content:
+            # HTML already has sprites, don't inject again
+            print("✅ HTML already contains SVG sprite definitions, skipping injection")
+        # 1. Inject Lucide icon sprite if needed
+        elif self.lucide_sprite_content:
             body_start = html_content.find("<body")
             if body_start != -1:
                 body_tag_end = html_content.find(">", body_start) + 1
@@ -219,6 +238,7 @@ class HTMLRenderer:
     ) -> bool:
         """
         Render HTML content to an image file with high quality settings
+        Automatically detects async context and uses appropriate method
 
         Args:
             html_content: HTML content string to render
@@ -234,26 +254,153 @@ class HTMLRenderer:
             # Prepare HTML by injecting necessary scripts and sprites
             prepared_html = self._prepare_html_for_rendering(html_content)
 
-            # Try rendering with the active method
-            if self.active_method == "playwright":
+            # Check if we're in an async context
+            if self._is_async_context():
+                print("🔄 Async context detected, avoiding Playwright sync API...")
+                # In async context, avoid Playwright or use async version
+                if self.active_method == "playwright":
+                    print(
+                        "  - Attempting to render HTML with selenium (async-safe fallback)..."
+                    )
+                    return self._render_with_selenium(
+                        prepared_html, output_path, width, height, **kwargs
+                    )
+                # For other methods, proceed normally as they're sync-safe
+                if self.active_method == "selenium":
+                    return self._render_with_selenium(
+                        prepared_html, output_path, width, height, **kwargs
+                    )
+                if self.active_method == "weasyprint":
+                    return self._render_with_weasyprint(
+                        prepared_html, output_path, width, height, **kwargs
+                    )
+                if self.active_method == "imgkit":
+                    return self._render_with_imgkit(
+                        prepared_html, output_path, width, height, **kwargs
+                    )
+            # Not in async context, use normal methods
+            elif self.active_method == "playwright":
                 return self._render_with_playwright(
                     prepared_html, output_path, width, height, **kwargs
                 )
-            if self.active_method == "selenium":
+            elif self.active_method == "selenium":
                 return self._render_with_selenium(
                     prepared_html, output_path, width, height, **kwargs
                 )
-            if self.active_method == "weasyprint":
+            elif self.active_method == "weasyprint":
                 return self._render_with_weasyprint(
                     prepared_html, output_path, width, height, **kwargs
                 )
-            if self.active_method == "imgkit":
+            elif self.active_method == "imgkit":
                 return self._render_with_imgkit(
                     prepared_html, output_path, width, height, **kwargs
                 )
 
         except Exception as e:
             print(f"❌ Error rendering HTML with {self.active_method}: {e}")
+            print("  - Attempting to render HTML with selenium...")
+            # Fallback to selenium which is most reliable
+            try:
+                return self._render_with_selenium(
+                    prepared_html, output_path, width, height, **kwargs
+                )
+            except Exception as selenium_e:
+                print(f"❌ Selenium fallback also failed: {selenium_e}")
+
+        return False
+
+    async def render_html_to_image_async(
+        self,
+        html_content: str,
+        output_path: str,
+        width: int = 3154,  # 2x resolution for crisp images (1577*2)
+        height: int = 1206,  # 2x resolution for crisp images (603*2)
+        **kwargs,
+    ) -> bool:
+        """
+        Async version of render_html_to_image for use in async contexts
+
+        Args:
+            html_content: HTML content string to render
+            output_path: Path where the image should be saved
+            width: Image width in pixels (default: 3154 for 2x crisp rendering)
+            height: Image height in pixels (default: 1206 for 2x crisp rendering)
+            **kwargs: Additional rendering options
+
+        Returns:
+            True if rendering was successful, False otherwise
+        """
+        try:
+            # Prepare HTML by injecting necessary scripts and sprites
+            prepared_html = self._prepare_html_for_rendering(html_content)
+
+            # Try async Playwright first, then fallback to sync methods
+            if self.active_method == "playwright" and PLAYWRIGHT_AVAILABLE:
+                return await self._render_with_playwright_async(
+                    prepared_html, output_path, width, height, **kwargs
+                )
+            # Run sync methods in executor to avoid blocking
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                if self.active_method == "selenium":
+                    future = executor.submit(
+                        self._render_with_selenium,
+                        prepared_html,
+                        output_path,
+                        width,
+                        height,
+                        **kwargs,
+                    )
+                elif self.active_method == "weasyprint":
+                    future = executor.submit(
+                        self._render_with_weasyprint,
+                        prepared_html,
+                        output_path,
+                        width,
+                        height,
+                        **kwargs,
+                    )
+                elif self.active_method == "imgkit":
+                    future = executor.submit(
+                        self._render_with_imgkit,
+                        prepared_html,
+                        output_path,
+                        width,
+                        height,
+                        **kwargs,
+                    )
+                else:
+                    # Default to selenium
+                    future = executor.submit(
+                        self._render_with_selenium,
+                        prepared_html,
+                        output_path,
+                        width,
+                        height,
+                        **kwargs,
+                    )
+
+                return await asyncio.wrap_future(future)
+
+        except Exception as e:
+            print(f"❌ Error in async HTML rendering: {e}")
+            # Fallback to selenium in executor
+            try:
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        self._render_with_selenium,
+                        prepared_html,
+                        output_path,
+                        width,
+                        height,
+                        **kwargs,
+                    )
+                    return await asyncio.wrap_future(future)
+            except Exception as selenium_e:
+                print(f"❌ Async selenium fallback also failed: {selenium_e}")
 
         return False
 
@@ -413,4 +560,46 @@ class HTMLRenderer:
             return os.path.exists(output_path)
         except Exception as e:
             print(f"imgkit rendering error: {e}")
+            return False
+
+    async def _render_with_playwright_async(
+        self, html_content: str, output_path: str, width: int, height: int, **kwargs
+    ) -> bool:
+        """Async version of Playwright rendering for use in async contexts"""
+        try:
+            async with async_playwright() as p:
+                # Launch browser with high DPI settings
+                browser = await p.chromium.launch(
+                    args=[
+                        "--force-device-scale-factor=2",  # High DPI
+                        "--disable-web-security",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ]
+                )
+
+                page = await browser.new_page(
+                    viewport={
+                        "width": width // 2,
+                        "height": height // 2,
+                    },  # Actual viewport
+                    device_scale_factor=2,  # High DPI rendering
+                )
+
+                # Set content and wait for rendering
+                await page.set_content(html_content, wait_until="networkidle")
+
+                # Take screenshot with high quality settings
+                await page.screenshot(
+                    path=output_path,
+                    type="png",
+                    full_page=False,
+                    clip={"x": 0, "y": 0, "width": width // 2, "height": height // 2},
+                )
+
+                await browser.close()
+                return os.path.exists(output_path)
+
+        except Exception as e:
+            print(f"Async Playwright rendering error: {e}")
             return False

@@ -5,6 +5,8 @@ Langgraph workflow orchestration for the slide generation process.
 Coordinates agents and manages the overall presentation creation flow.
 """
 
+import asyncio
+import os
 from typing import Any, Dict, List, Optional
 
 from langchain_core.runnables import RunnableConfig
@@ -32,8 +34,12 @@ class SlideGenerationWorkflow:
     PowerPoint presentations with comprehensive monitoring and error handling.
     """
 
-    def __init__(self):
-        """Initialize the workflow with all agent instances"""
+    def __init__(self, use_parallel_html_refinement: bool = True):
+        """Initialize the workflow with all agent instances
+
+        Args:
+            use_parallel_html_refinement: Whether to use parallel HTML refinement (default: True)
+        """
         self.layout_agent = LayoutAnalysisAgent()
         self.planning_agent = PresentationPlanningAgent()
         self.content_agent = ContentGenerationAgent()
@@ -42,6 +48,12 @@ class SlideGenerationWorkflow:
         self.assembly_agent = SlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
         self.icon_validator = IconValidationAgent()
+
+        # Configuration options
+        self.use_parallel_html_refinement = (
+            use_parallel_html_refinement
+            or os.getenv("USE_PARALLEL_HTML_REFINEMENT", "true").lower() == "true"
+        )
 
         # Build the workflow graph
         self.workflow = self._build_workflow_graph()
@@ -239,6 +251,112 @@ class SlideGenerationWorkflow:
                 },
             }
 
+    async def run_with_parallel_refinement(
+        self,
+        topic: str,
+        template_path: str,
+        output_path: str,
+        config: Optional[RunnableConfig] = None,
+    ) -> SlideGenerationState:
+        """
+        Run the slide generation workflow with parallel HTML refinement
+
+        This method runs the standard workflow but uses parallel processing
+        for HTML refinement to improve performance.
+
+        Args:
+            topic: Presentation topic
+            template_path: Path to PowerPoint template
+            output_path: Path to save generated presentation
+            config: Langchain configuration with callbacks
+
+        Returns:
+            Final workflow state
+        """
+        # Initialize state
+        state = self._create_initial_state(topic, template_path, output_path)
+
+        # Create monitoring trace
+        with slide_monitor.trace_workflow(
+            "slide_generation_parallel", topic, {"parallel_refinement": True}
+        ) as trace:
+            state["monitor_trace"] = trace
+
+            # Run layout analysis
+            state = self.layout_agent.execute(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run presentation planning
+            state = self.planning_agent.execute(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run content generation
+            state = self.content_agent.execute(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run HTML content generation (if needed)
+            state = self.html_content_agent.execute(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run parallel HTML refinement
+            state = await self.refinement_agent.execute_parallel(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run slide assembly
+            state = self.assembly_agent.execute(state, config)
+            if state.get("error_message"):
+                return state
+
+            # Run icon validation if needed
+            if state.get("needs_icon_retry"):
+                state = self.icon_validator.execute(state, config)
+                if state.get("error_message"):
+                    return state
+
+            # Run quality review
+            state = self.quality_agent.execute(state, config)
+
+            # Mark as successful
+            state["success"] = True
+
+        return state
+
+    def _create_initial_state(
+        self, topic: str, template_path: str, output_path: str
+    ) -> SlideGenerationState:
+        """Create initial workflow state"""
+        initial_state: SlideGenerationState = {
+            "topic": topic,
+            "template_path": template_path,
+            "output_path": output_path,
+            "layout_indices": None,
+            "current_step": "starting",
+            "error_message": None,
+            "retry_count": 0,
+            "html_refinement_iteration": 0,
+            "html_refinement_slide_index": None,
+            "html_slides_to_refine_queue": None,
+            "refinement_id": None,
+            "layouts_info": None,
+            "dynamic_models": None,
+            "presentation_plan": None,
+            "selected_layouts": None,
+            "slide_contents": None,
+            "icon_errors": None,
+            "icon_corrections": None,
+            "needs_icon_retry": False,
+            "needs_html_refinement": False,
+            "presentation_path": None,
+            "success": False,
+            "monitor_trace": None,
+        }
+        return initial_state
+
     def _process_workflow_results(
         self, final_state: SlideGenerationState
     ) -> Dict[str, Any]:
@@ -329,8 +447,32 @@ class SlideGenerationWorkflow:
     def _html_refinement_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """HTML refinement agent node"""
-        return self.refinement_agent.execute(state, config)
+        """HTML refinement agent node with configurable parallel processing"""
+
+        if not self.use_parallel_html_refinement:
+            print("🔄 Using sequential HTML refinement")
+            return self.refinement_agent.execute(state, config)
+
+        # Try to use parallel refinement
+        try:
+            # Check if we're already in an async context
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we need to handle this differently
+                print(
+                    "⚠️ Running in async context, using sequential fallback for HTML refinement"
+                )
+                return self.refinement_agent.execute(state, config)
+            except RuntimeError:
+                # No running loop, we can safely use asyncio.run
+                print("🔄 Using parallel HTML refinement for better performance")
+                return asyncio.run(
+                    self.refinement_agent.execute_parallel(state, config)
+                )
+        except Exception as e:
+            print(f"❌ Parallel HTML refinement failed: {e}")
+            print("🔄 Falling back to sequential HTML refinement")
+            return self.refinement_agent.execute(state, config)
 
     def _quality_review_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
