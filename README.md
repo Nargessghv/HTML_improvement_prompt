@@ -2,6 +2,98 @@
 
 An AI-powered slide generation system using **agent-based architecture** with **unified Langfuse tracing** for comprehensive monitoring and analytics.
 
+## 🗄️ Database Infrastructure (Completed)
+
+### **Supabase Database Schema**
+Complete relational database structure for frontend project management:
+
+#### **`projects` Table**
+```sql
+id                UUID PRIMARY KEY DEFAULT gen_random_uuid()
+user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE
+title             TEXT NOT NULL
+topic             TEXT NOT NULL
+status            TEXT NOT NULL DEFAULT 'draft' -- draft, processing, completed, failed
+created_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+updated_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW() -- Auto-updating trigger
+completed_at      TIMESTAMP WITH TIME ZONE
+metadata          JSONB DEFAULT '{}'::jsonb
+```
+
+#### **`workflow_states` Table**
+```sql
+id                      UUID PRIMARY KEY DEFAULT gen_random_uuid()
+project_id              UUID REFERENCES projects(id) ON DELETE CASCADE
+agent_name              TEXT NOT NULL -- layout_analysis, planning, content_generation, etc.
+status                  TEXT NOT NULL DEFAULT 'pending' -- pending, in_progress, completed, failed
+input_data              JSONB
+output_data             JSONB
+error_message           TEXT
+started_at              TIMESTAMP WITH TIME ZONE
+completed_at            TIMESTAMP WITH TIME ZONE
+execution_time_seconds  INTEGER
+created_at              TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+```
+
+#### **`slides` Table**
+```sql
+id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+project_id    UUID REFERENCES projects(id) ON DELETE CASCADE
+slide_number  INTEGER NOT NULL
+title         TEXT
+content       JSONB NOT NULL -- structured slide content
+html_content  TEXT -- generated HTML visualizations
+refined_html  TEXT -- refined HTML after processing
+layout_type   TEXT
+created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+updated_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW() -- Auto-updating trigger
+```
+
+#### **`conversations` Table**
+```sql
+id          UUID PRIMARY KEY DEFAULT gen_random_uuid()
+project_id  UUID REFERENCES projects(id) ON DELETE CASCADE
+slide_id    UUID REFERENCES slides(id) ON DELETE CASCADE
+messages    JSONB NOT NULL DEFAULT '[]'::jsonb
+created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+updated_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW() -- Auto-updating trigger
+```
+
+#### **`project_files` Table**
+```sql
+id          UUID PRIMARY KEY DEFAULT gen_random_uuid()
+project_id  UUID REFERENCES projects(id) ON DELETE CASCADE
+file_type   TEXT NOT NULL -- pptx, html_debug, images
+file_path   TEXT NOT NULL -- Supabase Storage path
+file_name   TEXT NOT NULL
+file_size   INTEGER
+created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+```
+
+**Key Features:**
+- UUID primary keys with proper foreign key relationships and CASCADE deletes
+- JSONB columns for flexible metadata, structured content, and conversation messages
+- Timestamp tracking with auto-updating `updated_at` triggers on projects, slides, conversations
+- User isolation through `auth.users` references with CASCADE delete protection
+
+### **Security Configuration**
+- **Row Level Security (RLS)**: All tables protected with user-scoped policies
+- **Storage Buckets**: 3 private buckets with user-folder isolation:
+  - `presentations` (PPTX/PDF files, 50MB limit)
+  - `html-debug` (HTML/image files, 10MB limit) 
+  - `slide-images` (Preview images, 20MB limit)
+- **File Access**: Signed URLs with time-limited access for security
+
+### **Performance Optimization**
+- **Database Indexes**: Optimized queries on user_id, project_id, status, timestamps
+- **Auto-Triggers**: `update_updated_at_column()` function with triggers on projects, slides, conversations tables
+- **JSONB Support**: Efficient storage and querying of slide content and workflow metadata
+
+### **Real-time Capabilities**
+- Supabase Realtime subscriptions ready for live workflow progress
+- Workflow state changes broadcast to frontend for instant UI updates
+- Agent status tracking (pending → in_progress → completed → failed)
+
 ## 🌟 Key Features
 
 ### **🤖 Agent-Based Architecture**

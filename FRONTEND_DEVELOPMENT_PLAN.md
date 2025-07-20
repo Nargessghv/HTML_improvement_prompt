@@ -101,11 +101,11 @@ CREATE TABLE project_files (
 
 #### Tasks:
 - [x] **1.1.1** Create Supabase project and obtain credentials
-- [ ] **1.1.2** Set up database schema with all tables
-- [ ] **1.1.3** Configure Row Level Security (RLS) policies for all tables
-- [ ] **1.1.4** Set up Supabase Storage buckets for file uploads
-- [ ] **1.1.5** Configure database indexes for performance
-- [ ] **1.1.6** Set up database functions and triggers for updated_at timestamps
+- [x] **1.1.2** Set up database schema with all tables
+- [x] **1.1.3** Configure Row Level Security (RLS) policies for all tables
+- [x] **1.1.4** Set up Supabase Storage buckets for file uploads
+- [x] **1.1.5** Configure database indexes for performance
+- [x] **1.1.6** Set up database functions and triggers for updated_at timestamps
 
 ### 1.2 Frontend Project Setup
 **Estimated Time**: 1-2 days  
