@@ -94,6 +94,99 @@ created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 - Workflow state changes broadcast to frontend for instant UI updates
 - Agent status tracking (pending → in_progress → completed → failed)
 
+## 🚀 Backend API Integration (Completed)
+
+### **FastAPI Server**
+Complete REST API server for frontend integration with real-time workflow tracking:
+
+**Endpoints Available:**
+- `POST /projects` - Create new slide generation project
+- `GET /projects` - List user's projects with pagination
+- `GET /projects/{id}` - Get specific project details  
+- `GET /projects/{id}/workflow-states` - Get real-time workflow progress
+- `GET /projects/{id}/slides` - Get generated slides
+- `POST /projects/{id}/restart` - Restart failed workflows
+- `DELETE /projects/{id}` - Delete project and related data
+
+**Security Features:**
+- JWT authentication with Supabase Auth
+- User-scoped data access (RLS enforcement)
+- CORS configuration for frontend integration
+- Background task processing with error handling
+
+### **Workflow Database Integration**
+The existing AI workflow now automatically updates the database during execution:
+
+**Agent Tracking:**
+- `layout_analysis` - Template analysis and dynamic model creation
+- `presentation_planning` - LLM-powered slide structure optimization
+- `content_generation` - Contextual content with full presentation awareness
+- `html_content_generation` - Intelligent HTML visualization creation
+- `html_refinement` - Visual feedback and iterative improvement
+- `quality_review` - Content assessment and metrics
+- `slide_assembly` - Final PowerPoint presentation creation
+
+**Real-time Updates:**
+- Execution timestamps (started_at, completed_at, execution_time_seconds)
+- Status progression tracking for each agent
+- Error message capture and logging
+- Project status management (draft → processing → completed/failed)
+
+**Usage Example:**
+```python
+# API server automatically handles database updates
+workflow = SlideGenerationWorkflow()
+workflow.set_database_callback(update_callback, project_id)
+result = workflow.run(topic="Your Topic", template_path="template.pptx")
+# Real-time updates sent to frontend via Supabase subscriptions
+```
+
+### **Centralized Database Layer**
+Complete Python backend integration with centralized Supabase client:
+
+**Database Module (`src/database.py`):**
+- **SupabaseClient Class**: Singleton pattern for connection management
+- **Project Operations**: Full CRUD with user isolation (`create_project`, `get_project`, `update_project_status`, `delete_project`)
+- **Workflow States**: Real-time tracking (`create_workflow_state`, `get_project_workflow_states`)
+- **Slides Management**: Content storage (`create_slide`, `get_project_slides`, `update_slide`)
+- **Conversations**: AI chat history (`create_conversation`, `add_conversation_message`)
+- **File Management**: Asset tracking (`create_project_file`, `get_project_files`)
+- **Health Monitoring**: Connection validation (`health_check`)
+
+**Backend Integration Benefits:**
+- **Single Source of Truth**: All database operations centralized
+- **Type Safety**: Full TypeScript-style hints and validation
+- **Error Handling**: Consistent exception management across all operations
+- **Performance**: Connection pooling and optimized queries
+- **Maintainability**: Clean abstraction over raw Supabase calls
+
+**Usage Example:**
+```python
+from src.database import get_supabase_client
+
+# Initialize centralized client
+db = get_supabase_client()
+
+# Create project with automatic UUID and timestamps
+project = db.create_project(user_id="...", title="...", topic="...")
+
+# Track workflow progress in real-time
+db.create_workflow_state(project_id, "layout_analysis", "in_progress")
+db.create_workflow_state(project_id, "layout_analysis", "completed", 
+                        execution_time_seconds=45)
+
+# Store generated slides
+db.create_slide(project_id, slide_number=1, content={...}, html_content="...")
+```
+
+### **Integration Architecture**
+```
+Frontend (Next.js) ←→ FastAPI Server ←→ Database Module ←→ Supabase Database
+     ↑                      ↓              ↑                    ↓
+     └── Real-time ←→ AI Workflow ←→ Centralized Client ←→ Row Level Security
+         Subscriptions    Progress Updates   (src/database.py)      & Auth
+```
+
 ## 🌟 Key Features
 
 ### **🤖 Agent-Based Architecture**

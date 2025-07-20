@@ -7,7 +7,9 @@ Coordinates agents and manages the overall presentation creation flow.
 
 import asyncio
 import os
-from typing import Any, Dict, List, Optional
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Callable
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
@@ -55,8 +57,35 @@ class SlideGenerationWorkflow:
             or os.getenv("USE_PARALLEL_HTML_REFINEMENT", "true").lower() == "true"
         )
 
+        # Database callback for real-time updates
+        self.database_callback: Optional[Callable] = None
+        self.project_id: Optional[str] = None
+
         # Build the workflow graph
         self.workflow = self._build_workflow_graph()
+
+    def set_database_callback(self, callback: Callable, project_id: str):
+        """Set database callback for real-time workflow updates
+        
+        Args:
+            callback: Function to call for database updates
+            project_id: Project ID for database tracking
+        """
+        self.database_callback = callback
+        self.project_id = project_id
+
+    def _update_workflow_state(self, agent_name: str, status: str, **kwargs):
+        """Update workflow state in database if callback is set"""
+        if self.database_callback and self.project_id:
+            try:
+                self.database_callback(
+                    project_id=self.project_id,
+                    agent_name=agent_name, 
+                    status=status,
+                    **kwargs
+                )
+            except Exception as e:
+                print(f"Database callback error for {agent_name}: {e}")
 
     def _build_workflow_graph(self):
         """
@@ -426,14 +455,54 @@ class SlideGenerationWorkflow:
     def _layout_analysis_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """Layout analysis agent node"""
-        return self.layout_agent.execute(state, config)
+        """Layout analysis agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("layout_analysis", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.layout_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("layout_analysis", "failed", 
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("layout_analysis", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("layout_analysis", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _presentation_planning_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """Presentation planning agent node"""
-        return self.planning_agent.execute(state, config)
+        """Presentation planning agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("presentation_planning", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.planning_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("presentation_planning", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("presentation_planning", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("presentation_planning", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _content_generation_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
@@ -515,8 +584,28 @@ class SlideGenerationWorkflow:
     def _slide_assembly_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """Slide assembly agent node"""
-        return self.assembly_agent.execute(state, config)
+        """Slide assembly agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("slide_assembly", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.assembly_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("slide_assembly", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("slide_assembly", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("slide_assembly", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _icon_validation_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
