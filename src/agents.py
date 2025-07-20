@@ -1170,7 +1170,7 @@ class HTMLRefinementAgent:
         self.name = "html_refinement_agent"
         self.llm_client = LangchainLLMClient()
         self.html_renderer = HTMLRenderer()
-        self.max_iterations = 3
+        self.max_iterations = 5
         self.temp_dir = Path("html_debug")
         self.temp_dir.mkdir(exist_ok=True)
 
@@ -1802,7 +1802,7 @@ class HTMLRefinementAgent:
         slide_data: List[Dict[str, Any]],
         refinement_id: str,
         config: Optional[RunnableConfig] = None,
-        max_iterations: int = 3,
+        max_iterations: int = 5,
     ) -> Dict[int, Optional[str]]:
         """
         Refine all slides with TRUE parallel processing. Each slide runs its full
@@ -1848,7 +1848,7 @@ class HTMLRefinementAgent:
         slide_purpose: str,
         refinement_id: str,
         config: Optional[RunnableConfig] = None,
-        max_iterations: int = 3,
+        max_iterations: int = 5,
     ) -> Optional[str]:
         """
         Processes the full refinement loop for a single slide asynchronously.
