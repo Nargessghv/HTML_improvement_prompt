@@ -117,9 +117,9 @@ CREATE TABLE project_files (
 - [x] **1.2.2** Install and configure Tailwind CSS + shadcn/ui
 - [x] **1.2.3** Set up Supabase client configuration
 - [x] **1.2.4** Configure environment variables and .env files
-- [ ] **1.2.5** Set up ESLint, Prettier, and development tooling
-- [ ] **1.2.6** Create basic project structure and folder organization
-- [ ] **1.2.7** Set up state management (Zustand/Redux Toolkit)
+- [x] **1.2.5** Set up ESLint, Prettier, and development tooling
+- [x] **1.2.6** Create basic project structure and folder organization
+- [x] **1.2.7** Set up state management (Zustand/Redux Toolkit)
 
 ### 1.3 Backend API Integration Layer
 **Estimated Time**: 2-3 days  

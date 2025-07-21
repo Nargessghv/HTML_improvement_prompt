@@ -55,12 +55,47 @@ export interface Conversation {
   id: string
   project_id: string
   slide_id: string
-  messages: Record<string, unknown>[]
+  messages: ChatMessage[]
   created_at: string
   updated_at: string
 }
 
+// Chat and AI types
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: string
+  metadata?: Record<string, unknown>
+}
+
+// UI State types
+export interface UserPreferences {
+  theme: 'light' | 'dark' | 'system'
+  sidebarCollapsed: boolean
+  itemsPerPage: number
+  enableNotifications: boolean
+  enableAutoSave: boolean
+}
+
 // API Response types
+export interface ApiResponse<T = unknown> {
+  data?: T
+  error?: string
+  message?: string
+  success: boolean
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
 export interface CreateProjectRequest {
   title: string
   topic: string
@@ -117,10 +152,10 @@ export interface AgentProgress {
   description: string
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
   progress_percentage?: number
-  started_at?: string
-  completed_at?: string
-  execution_time_seconds?: number
-  error_message?: string
+  started_at?: string | null
+  completed_at?: string | null
+  execution_time_seconds?: number | null
+  error_message?: string | null
 }
 
 // Webhook types
