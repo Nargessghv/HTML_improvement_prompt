@@ -220,16 +220,23 @@ CREATE TABLE project_files (
 - **Search & Filter**: Full-text search and status-based filtering functionality
 - **Responsive Design**: Mobile-first approach with cards and grid layouts
 - **Navigation**: Seamless navigation between dashboard, projects list, and individual projects
-- **Dependencies Added**: dialog, form, textarea components from shadcn/ui
+- **Dependencies Added**: dialog, form, textarea, dropdown-menu components from shadcn/ui
+- **Project Management Modals**: Complete CRUD operations via modals:
+  - EditProjectModal: Update project title and topic with validation
+  - DeleteProjectModal: Safe deletion with title confirmation to prevent accidents
+  - DuplicateProjectModal: Create project copies (always as draft status)
+  - ShareProjectModal: URL sharing with privacy notices and future collaboration features
+- **Action Integration**: Dropdown menus on both project detail pages and project list cards
+- **Real-time UI Updates**: All project operations immediately reflect in the UI via state updates
 
 #### Tasks:
 - [x] **2.3.1** Create "New Project" modal with topic input
 - [x] **2.3.2** Build project detail page layout
 - [x] **2.3.3** Implement project status tracking UI
-- [x] **2.3.4** Add project editing capabilities (title, topic)
-- [x] **2.3.5** Create project deletion with confirmation
-- [x] **2.3.6** Implement project duplication functionality
-- [x] **2.3.7** Add project sharing capabilities
+- [x] **2.3.4** Add project editing capabilities (title, topic) - EditProjectModal with form validation
+- [x] **2.3.5** Create project deletion with confirmation - DeleteProjectModal with title confirmation
+- [x] **2.3.6** Implement project duplication functionality - DuplicateProjectModal creates draft copies
+- [x] **2.3.7** Add project sharing capabilities - ShareProjectModal with URL sharing (privacy-focused)
 
 ---
 

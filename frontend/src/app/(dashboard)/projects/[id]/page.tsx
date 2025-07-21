@@ -8,6 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { 
+  EditProjectModal,
+  DeleteProjectModal,
+  DuplicateProjectModal,
+  ShareProjectModal
+} from '@/components/modals'
+import { 
   ArrowLeft, 
   Calendar, 
   Clock, 
@@ -15,8 +21,20 @@ import {
   PlayCircle,
   CheckCircle2,
   XCircle,
-  Loader2
+  Loader2,
+  Edit3,
+  Trash2,
+  Copy,
+  Share2,
+  MoreHorizontal
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface Project {
   id: string
@@ -58,6 +76,10 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isStarting, setIsStarting] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
 
   const projectId = params?.id as string
 
@@ -122,6 +144,21 @@ export default function ProjectDetailPage() {
     }
   }
 
+  const handleProjectUpdated = (updatedProject: Project) => {
+    setProject(updatedProject)
+    toast.success('Project updated successfully!')
+  }
+
+  const handleProjectDeleted = () => {
+    toast.success('Project deleted successfully')
+    router.push('/projects')
+  }
+
+  const handleProjectDuplicated = (newProject: Project) => {
+    toast.success('Project duplicated successfully!')
+    router.push(`/projects/${newProject.id}`)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -138,7 +175,7 @@ export default function ProjectDetailPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Project not found</h2>
-          <p className="text-gray-600 mb-4">The project you're looking for doesn't exist or you don't have access to it.</p>
+          <p className="text-gray-600 mb-4">The project you&apos;re looking for doesn&apos;t exist or you don&apos;t have access to it.</p>
           <Button onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
@@ -201,6 +238,37 @@ export default function ProjectDetailPage() {
               )}
             </Button>
           )}
+          
+          {/* Project Actions Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowEditModal(true)}>
+                <Edit3 className="w-4 h-4 mr-2" />
+                Edit Project
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowDuplicateModal(true)}>
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowShareModal(true)}>
+                <Share2 className="w-4 h-4 mr-2" />
+                Share
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => setShowDeleteModal(true)}
+                className="text-red-600 focus:text-red-600"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Project
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -318,9 +386,29 @@ export default function ProjectDetailPage() {
                   )}
                 </Button>
               )}
-              <Button variant="outline" className="w-full" disabled>
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setShowEditModal(true)}
+              >
+                <Edit3 className="w-4 h-4 mr-2" />
                 Edit Project
-                <span className="ml-2 text-xs text-gray-400">(Coming Soon)</span>
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setShowDuplicateModal(true)}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setShowShareModal(true)}
+              >
+                <Share2 className="w-4 h-4 mr-2" />
+                Share
               </Button>
               <Button variant="outline" className="w-full" disabled>
                 Download Results
@@ -330,6 +418,34 @@ export default function ProjectDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Modals */}
+      <EditProjectModal
+        open={showEditModal}
+        onOpenChange={setShowEditModal}
+        project={project}
+        onProjectUpdated={handleProjectUpdated}
+      />
+      
+      <DeleteProjectModal
+        open={showDeleteModal}
+        onOpenChange={setShowDeleteModal}
+        project={project}
+        onProjectDeleted={handleProjectDeleted}
+      />
+      
+      <DuplicateProjectModal
+        open={showDuplicateModal}
+        onOpenChange={setShowDuplicateModal}
+        project={project}
+        onProjectDuplicated={handleProjectDuplicated}
+      />
+      
+      <ShareProjectModal
+        open={showShareModal}
+        onOpenChange={setShowShareModal}
+        project={project}
+      />
     </div>
   )
 }

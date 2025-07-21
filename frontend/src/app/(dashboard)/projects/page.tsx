@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
@@ -9,7 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { NewProjectModal } from '@/components/modals/NewProjectModal'
+import { 
+  NewProjectModal,
+  EditProjectModal,
+  DeleteProjectModal,
+  DuplicateProjectModal,
+  ShareProjectModal
+} from '@/components/modals'
 import { 
   Plus,
   Search, 
@@ -20,8 +25,18 @@ import {
   Loader2,
   Eye,
   MoreHorizontal,
-  Filter
+  Edit3,
+  Trash2,
+  Copy,
+  Share2
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface Project {
   id: string
@@ -57,13 +72,17 @@ const statusConfig = {
 }
 
 export default function ProjectsPage() {
-  const router = useRouter()
   const { supabase, user } = useSupabaseAuth()
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -105,7 +124,6 @@ export default function ProjectsPage() {
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Project change:', payload)
           
           if (payload.eventType === 'INSERT') {
             setProjects(prev => [payload.new as Project, ...prev])
@@ -143,6 +161,43 @@ export default function ProjectsPage() {
   }
 
   const statusCounts = getStatusCounts()
+
+  const handleProjectAction = (action: string, project: Project) => {
+    setSelectedProject(project)
+    switch (action) {
+      case 'edit':
+        setShowEditModal(true)
+        break
+      case 'duplicate':
+        setShowDuplicateModal(true)
+        break
+      case 'share':
+        setShowShareModal(true)
+        break
+      case 'delete':
+        setShowDeleteModal(true)
+        break
+    }
+  }
+
+  const handleProjectUpdated = (updatedProject: Project) => {
+    setProjects(prev => 
+      prev.map(p => p.id === updatedProject.id ? updatedProject : p)
+    )
+    toast.success('Project updated successfully!')
+  }
+
+  const handleProjectDeleted = () => {
+    if (selectedProject) {
+      setProjects(prev => prev.filter(p => p.id !== selectedProject.id))
+      toast.success('Project deleted successfully!')
+    }
+  }
+
+  const handleProjectDuplicated = (newProject: Project) => {
+    setProjects(prev => [newProject, ...prev])
+    toast.success('Project duplicated successfully!')
+  }
 
   if (isLoading) {
     return (
@@ -291,6 +346,36 @@ export default function ProjectsPage() {
                           <Eye className="w-4 h-4" />
                         </Button>
                       </Link>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleProjectAction('edit', project)}>
+                            <Edit3 className="w-4 h-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleProjectAction('duplicate', project)}>
+                            <Copy className="w-4 h-4 mr-2" />
+                            Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleProjectAction('share', project)}>
+                            <Share2 className="w-4 h-4 mr-2" />
+                            Share
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem 
+                            onClick={() => handleProjectAction('delete', project)}
+                            className="text-red-600 focus:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </CardContent>
@@ -300,10 +385,37 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* New Project Modal */}
+      {/* Modals */}
       <NewProjectModal 
         open={showNewProjectModal}
         onOpenChange={setShowNewProjectModal}
+      />
+      
+      <EditProjectModal
+        open={showEditModal}
+        onOpenChange={setShowEditModal}
+        project={selectedProject}
+        onProjectUpdated={handleProjectUpdated}
+      />
+      
+      <DeleteProjectModal
+        open={showDeleteModal}
+        onOpenChange={setShowDeleteModal}
+        project={selectedProject}
+        onProjectDeleted={handleProjectDeleted}
+      />
+      
+      <DuplicateProjectModal
+        open={showDuplicateModal}
+        onOpenChange={setShowDuplicateModal}
+        project={selectedProject}
+        onProjectDuplicated={handleProjectDuplicated}
+      />
+      
+      <ShareProjectModal
+        open={showShareModal}
+        onOpenChange={setShowShareModal}
+        project={selectedProject}
       />
     </div>
   )
