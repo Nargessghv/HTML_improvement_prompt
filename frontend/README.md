@@ -20,7 +20,7 @@ This is the frontend application for the Ekona AI-Powered PowerPoint Slide Creat
 
 Before running this application, you need:
 
-1. **Supabase Project**: Set up a Supabase project with the required database schema
+1. **Supabase Project**: Set up a Supabase project with the required database schema (see Database Setup below)
 2. **Environment Configuration**: Configure environment variables (see setup below)
 3. **Backend API**: The Python backend API should be running (typically on port 8000)
 
@@ -37,6 +37,25 @@ Before running this application, you need:
    - `NEXT_PUBLIC_API_URL`: Backend API URL (default: http://localhost:8000)
 
 3. **For detailed environment setup**, see [ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md)
+
+## Database Setup
+
+**IMPORTANT**: You must run the database setup script before using the application.
+
+1. **Go to your Supabase project dashboard**
+2. **Navigate to SQL Editor**
+3. **Copy and paste the entire contents** of `database-setup.sql`
+4. **Run the script** - this creates all required tables, indexes, and security policies
+
+The database setup includes:
+- ✅ `projects` table (for storing presentation projects)
+- ✅ `workflow_states` table (for AI agent progress tracking)
+- ✅ `slides` table (for individual slides)
+- ✅ `conversations` table (for AI chat history)
+- ✅ `project_files` table (for generated files)
+- ✅ Row Level Security policies (users can only access their own data)
+- ✅ Indexes for performance
+- ✅ Auto-updating timestamps
 
 ## Development Setup
 
@@ -298,16 +317,27 @@ All stores are fully typed with:
   - Protected route middleware with comprehensive security
   - Email verification flow with secure callback handling
   - User profile management with avatar upload functionality
-- **Components**: Professional auth forms with validation and Ekona branding
-- **State Management**: Full Zustand store integration with persistence
+- **Phase 2.2**: Complete dashboard layout and navigation including:
+  - Professional header with user dropdown and notifications
+  - Collapsible sidebar with route highlighting and "New Project" CTA
+  - Mobile-responsive navigation with hamburger menu
+  - Real-time project stats and recent projects display
+- **Phase 2.3**: Complete project management interface including:
+  - "New Project" modal with topic input and validation
+  - Projects list page with search, filtering, and status indicators
+  - Individual project detail pages with workflow tracking
+  - Real-time project updates via Supabase subscriptions
+- **Components**: Professional UI components with Ekona branding
+- **State Management**: Simplified authentication system without infinite loops
 - **Form Handling**: React Hook Form + Zod validation schemas
 - **Route Protection**: Smart middleware protecting all application routes
-- **Profile Management**: Complete user profile editing at `/settings/profile`
+- **Database Integration**: Complete Supabase setup with all required tables
+- **Real-time Features**: Project updates automatically sync across all pages
 
 #### 🚧 Next Steps
-- **Phase 2.2**: Main dashboard layout and navigation
-- **Phase 2.3**: Project management interface
-- **Phase 3**: Workflow progress tracking
+- **Phase 3.1**: Backend API integration for workflow processing
+- **Phase 3.2**: Real-time workflow progress visualization
+- **Phase 4**: Slide content management and HTML rendering
 
 ## Learn More
 

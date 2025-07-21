@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui'
+import { NewProjectModal } from '@/components/modals/NewProjectModal'
 import {
   LayoutDashboard,
   FolderOpen,
@@ -58,6 +59,7 @@ const navigation: NavItem[] = [
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false)
 
   return (
     <aside 
@@ -100,17 +102,17 @@ export function Sidebar({ className }: SidebarProps) {
       <nav className="p-2">
         {/* Quick Action */}
         <div className="mb-4">
-          <Link
-            href="/projects/new"
+          <button
+            onClick={() => setShowNewProjectModal(true)}
             className={cn(
-              'flex items-center gap-3 px-3 py-2 rounded-md transition-colors',
+              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors',
               'bg-blue-600 hover:bg-blue-700 text-white',
               isCollapsed && 'justify-center'
             )}
           >
             <Plus className="w-4 h-4" />
             {!isCollapsed && <span className="text-sm font-medium">New Project</span>}
-          </Link>
+          </button>
         </div>
 
         {/* Main Navigation */}
@@ -186,6 +188,12 @@ export function Sidebar({ className }: SidebarProps) {
           </div>
         </div>
       )}
+      
+      {/* New Project Modal */}
+      <NewProjectModal 
+        open={showNewProjectModal}
+        onOpenChange={setShowNewProjectModal}
+      />
     </aside>
   )
 }
