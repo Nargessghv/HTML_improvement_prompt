@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth'
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { registerSchema, type RegisterFormData } from '@/schemas/auth'
 
 export function RegisterForm() {
@@ -73,7 +73,7 @@ export function RegisterForm() {
           <div className="text-center text-sm text-muted-foreground w-full">
             Already have an account?{' '}
             <Link
-              href="/auth/login"
+              href="/login"
               className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
             >
               Sign in
@@ -214,7 +214,7 @@ export function RegisterForm() {
           <div className="text-center text-sm text-muted-foreground">
             Already have an account?{' '}
             <Link
-              href="/auth/login"
+              href="/login"
               className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
             >
               Sign in

@@ -1,6 +1,5 @@
 // UI state management with Zustand
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
 import { UserPreferences } from '@/types'
 
 interface UIState {
@@ -99,9 +98,7 @@ const defaultModals = {
   chatInterface: false
 }
 
-export const useUIStore = create<UIStore>()(
-  persist(
-    (set, get) => ({
+export const useUIStore = create<UIStore>()((set, get) => ({
       // Initial state
       preferences: defaultPreferences,
       sidebarCollapsed: false,
@@ -248,18 +245,7 @@ export const useUIStore = create<UIStore>()(
         set((state) => ({
           activeFilters: {}
         }))
-    }),
-    {
-      name: 'ui-storage',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        preferences: state.preferences,
-        sidebarCollapsed: state.sidebarCollapsed,
-        sidebarWidth: state.sidebarWidth
-      })
-    }
-  )
-)
+    }))
 
 // Selectors for better performance
 export const useTheme = () => useUIStore((state) => state.preferences.theme)

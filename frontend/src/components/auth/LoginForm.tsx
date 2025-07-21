@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth'
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { loginSchema, type LoginFormData } from '@/schemas/auth'
 
 export function LoginForm() {
@@ -125,7 +125,7 @@ export function LoginForm() {
 
           <div className="flex items-center justify-between">
             <Link
-              href="/auth/reset-password"
+              href="/reset-password"
               className="text-sm text-ekona-teal hover:text-ekona-blue transition-colors"
             >
               Forgot your password?
@@ -152,7 +152,7 @@ export function LoginForm() {
           <div className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{' '}
             <Link
-              href="/auth/register"
+              href="/register"
               className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
             >
               Sign up

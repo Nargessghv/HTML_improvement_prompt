@@ -1,40 +1,47 @@
 // Custom hook for Supabase authentication integration with Zustand
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import { useAuthStore, useAuthActions, useNotifications } from '@/stores'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 export const useSupabaseAuth = () => {
   const router = useRouter()
-  const { addNotification } = useNotifications()
+  const [isHydrated, setIsHydrated] = useState(false)
   
-  const { user, isAuthenticated, isLoading, session } = useAuthStore()
-  const { setSession, setLoading, signOut, initialize } = useAuthActions()
+  // Use the store directly instead of selectors to avoid hydration issues
+  const authStore = useAuthStore()
+  const uiStore = useNotifications()
 
-  // Initialize auth state on mount
+  // Check if component is hydrated
   useEffect(() => {
+    setIsHydrated(true)
+  }, [])
+
+  // Initialize auth state on mount (only after hydration)
+  useEffect(() => {
+    if (!isHydrated) return
+    
     let mounted = true
 
     const initializeAuth = async () => {
       try {
-        initialize()
+        authStore.initialize()
         
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (mounted) {
           if (error) {
             console.error('Error getting session:', error)
-            setLoading(false)
+            authStore.setLoading(false)
             return
           }
 
-          setSession(session)
-          setLoading(false)
+          authStore.setSession(session)
         }
       } catch (error) {
         console.error('Auth initialization error:', error)
         if (mounted) {
-          setLoading(false)
+          authStore.setLoading(false)
         }
       }
     }
@@ -44,20 +51,22 @@ export const useSupabaseAuth = () => {
     return () => {
       mounted = false
     }
-  }, [initialize, setSession, setLoading])
+  }, [isHydrated])
 
-  // Listen to auth changes
+  // Listen to auth changes (only after hydration)
   useEffect(() => {
+    if (!isHydrated) return
+    
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       // Auth state changed
       
-      setSession(session)
+      authStore.setSession(session)
       
       switch (event) {
         case 'SIGNED_IN':
-          addNotification({
+          uiStore.addNotification({
             type: 'success',
             title: 'Welcome!',
             message: `Successfully signed in as ${session?.user?.email}`
@@ -66,12 +75,12 @@ export const useSupabaseAuth = () => {
           break
           
         case 'SIGNED_OUT':
-          addNotification({
+          uiStore.addNotification({
             type: 'info',
             title: 'Signed out',
             message: 'You have been successfully signed out'
           })
-          router.push('/login')
+          router.push('/auth/login')
           break
           
         case 'TOKEN_REFRESHED':
@@ -79,7 +88,7 @@ export const useSupabaseAuth = () => {
           break
           
         case 'USER_UPDATED':
-          addNotification({
+          uiStore.addNotification({
             type: 'success',
             title: 'Profile updated',
             message: 'Your profile has been successfully updated'
@@ -87,7 +96,7 @@ export const useSupabaseAuth = () => {
           break
           
         case 'PASSWORD_RECOVERY':
-          addNotification({
+          uiStore.addNotification({
             type: 'info',
             title: 'Password reset',
             message: 'Please check your email for password reset instructions'
@@ -97,12 +106,12 @@ export const useSupabaseAuth = () => {
     })
 
     return () => subscription.unsubscribe()
-  }, [setSession, router, addNotification])
+  }, [isHydrated, router])
 
   // Sign in with email and password
   const signInWithPassword = useCallback(async (email: string, password: string) => {
     try {
-      setLoading(true)
+      authStore.setLoading(true)
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -110,7 +119,7 @@ export const useSupabaseAuth = () => {
       })
 
       if (error) {
-        addNotification({
+        uiStore.addNotification({
           type: 'error',
           title: 'Sign in failed',
           message: error.message
@@ -120,16 +129,16 @@ export const useSupabaseAuth = () => {
 
       return { success: true, data }
     } catch (error) {
-      addNotification({
+      uiStore.addNotification({
         type: 'error',
         title: 'Sign in failed',
         message: 'An unexpected error occurred'
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, addNotification])
+  }, [])
 
   // Sign up with email and password
   const signUpWithPassword = useCallback(async (email: string, password: string) => {
@@ -322,10 +331,10 @@ export const useSupabaseAuth = () => {
 
   return {
     // State
-    user,
-    isAuthenticated,
-    isLoading,
-    session,
+    user: authStore.user,
+    isAuthenticated: authStore.isAuthenticated,
+    isLoading: authStore.isLoading,
+    session: authStore.session,
     
     // Actions
     signInWithPassword,

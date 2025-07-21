@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth'
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { resetPasswordSchema, type ResetPasswordFormData } from '@/schemas/auth'
 
 export function ResetPasswordForm() {
@@ -77,7 +77,7 @@ export function ResetPasswordForm() {
           <div className="text-center text-sm text-muted-foreground w-full">
             Remember your password?{' '}
             <Link
-              href="/auth/login"
+              href="/login"
               className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
             >
               Sign in
@@ -142,7 +142,7 @@ export function ResetPasswordForm() {
           <div className="text-center text-sm text-muted-foreground">
             Remember your password?{' '}
             <Link
-              href="/auth/login"
+              href="/login"
               className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
             >
               Sign in

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         console.error('Auth callback error:', error.message)
         // Redirect to login with error
         return NextResponse.redirect(
-          new URL(`/auth/login?error=${encodeURIComponent(error.message)}`, request.url)
+          new URL(`/login?error=${encodeURIComponent(error.message)}`, request.url)
         )
       }
       
@@ -55,11 +55,11 @@ export async function GET(request: NextRequest) {
       console.error('Unexpected auth callback error:', error)
       // Handle unexpected errors
       return NextResponse.redirect(
-        new URL('/auth/login?error=Authentication failed', request.url)
+        new URL('/login?error=Authentication failed', request.url)
       )
     }
   }
 
   // No code provided - redirect to login
-  return NextResponse.redirect(new URL('/auth/login', request.url))
+  return NextResponse.redirect(new URL('/login', request.url))
 }

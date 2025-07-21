@@ -1,6 +1,5 @@
 // Authentication state management with Zustand
 import { create } from 'zustand'
-import { createJSONStorage, persist } from 'zustand/middleware'
 import { User } from '@supabase/supabase-js'
 
 export interface AuthUser extends User {
@@ -24,59 +23,47 @@ interface AuthActions {
 
 export type AuthStore = AuthState & AuthActions
 
-export const useAuthStore = create<AuthStore>()(
-  persist(
-    (set, get) => ({
-      // State
-      user: null,
-      isLoading: true,
-      isAuthenticated: false,
-      session: null,
+export const useAuthStore = create<AuthStore>()((set, get) => ({
+  // State
+  user: null,
+  isLoading: true,
+  isAuthenticated: false,
+  session: null,
 
-      // Actions
-      setUser: (user) => 
-        set((state) => ({
-          user,
-          isAuthenticated: !!user,
-          isLoading: false
-        })),
-
-      setSession: (session) =>
-        set((state) => ({
-          session,
-          isAuthenticated: !!session?.user,
-          user: session?.user || null
-        })),
-
-      setLoading: (loading) =>
-        set((state) => ({
-          isLoading: loading
-        })),
-
-      signOut: () =>
-        set((state) => ({
-          user: null,
-          session: null,
-          isAuthenticated: false,
-          isLoading: false
-        })),
-
-      initialize: () =>
-        set((state) => ({
-          isLoading: true
-        }))
+  // Actions
+  setUser: (user) => 
+    set({
+      user,
+      isAuthenticated: !!user,
+      isLoading: false
     }),
-    {
-      name: 'auth-storage',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        user: state.user,
-        session: state.session,
-        isAuthenticated: state.isAuthenticated
-      })
-    }
-  )
-)
+
+  setSession: (session) =>
+    set({
+      session,
+      isAuthenticated: !!session?.user,
+      user: session?.user || null,
+      isLoading: false
+    }),
+
+  setLoading: (loading) =>
+    set({
+      isLoading: loading
+    }),
+
+  signOut: () =>
+    set({
+      user: null,
+      session: null,
+      isAuthenticated: false,
+      isLoading: false
+    }),
+
+  initialize: () =>
+    set({
+      isLoading: true
+    })
+}))
 
 // Selectors for better performance
 export const useAuth = () => useAuthStore((state) => ({
