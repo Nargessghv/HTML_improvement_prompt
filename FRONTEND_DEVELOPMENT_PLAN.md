@@ -130,9 +130,9 @@ CREATE TABLE project_files (
 - [x] **1.3.1** Create API endpoints in existing Python backend for frontend integration
 - [x] **1.3.2** Modify workflow.py to update Supabase database during processing
 - [x] **1.3.3** Add Supabase client to Python backend
-- [ ] **1.3.4** Create webhook/callback system for real-time status updates
-- [ ] **1.3.5** Implement file upload endpoints for presentations
-- [ ] **1.3.6** Add error handling and logging for database operations
+- [x] **1.3.4** Create webhook/callback system for real-time status updates
+- [x] **1.3.5** Implement file upload endpoints for presentations
+- [x] **1.3.6** Add error handling and logging for database operations
 
 ---
 

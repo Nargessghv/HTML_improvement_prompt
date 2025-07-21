@@ -96,10 +96,10 @@ created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 
 ## 🚀 Backend API Integration (Completed)
 
-### **FastAPI Server**
-Complete REST API server for frontend integration with real-time workflow tracking:
+### **FastAPI Server with Real-time Updates**
+Complete REST API server for frontend integration with real-time workflow tracking and webhook system:
 
-**Endpoints Available:**
+**Core Project Endpoints:**
 - `POST /projects` - Create new slide generation project
 - `GET /projects` - List user's projects with pagination
 - `GET /projects/{id}` - Get specific project details  
@@ -108,11 +108,30 @@ Complete REST API server for frontend integration with real-time workflow tracki
 - `POST /projects/{id}/restart` - Restart failed workflows
 - `DELETE /projects/{id}` - Delete project and related data
 
+**Real-time Communication Endpoints:**
+- `ws://localhost:8000/ws/{project_id}` - WebSocket for live updates
+- `POST /webhooks/register` - Register webhook URLs for external integrations
+- `POST /webhooks/test` - Test webhook delivery with sample payload
+- `GET /webhooks/events` - List available webhook event types
+
+**File Management Endpoints:**
+- `POST /projects/{id}/files/upload` - Upload files (presentations, images, debug files)
+- `GET /projects/{id}/files` - List project files with download URLs
+- `GET /projects/{id}/files/{file_id}/download` - Download specific file
+- `DELETE /projects/{id}/files/{file_id}` - Delete project file
+
 **Security Features:**
 - JWT authentication with Supabase Auth
 - User-scoped data access (RLS enforcement)
 - CORS configuration for frontend integration
 - Background task processing with error handling
+
+**Error Handling & Logging System:** ✨ **NEW**
+- Comprehensive error classification and handling
+- Structured logging with operation tracking
+- Global exception handlers with appropriate HTTP status codes
+- Input validation and security-aware error messages
+- Performance monitoring and detailed health checks
 
 ### **Workflow Database Integration**
 The existing AI workflow now automatically updates the database during execution:
@@ -179,12 +198,159 @@ db.create_workflow_state(project_id, "layout_analysis", "completed",
 db.create_slide(project_id, slide_number=1, content={...}, html_content="...")
 ```
 
+### **Real-time Webhook & WebSocket System** ✨ **NEW**
+Comprehensive real-time update system for live progress tracking:
+
+**WebSocket Endpoints:**
+- `ws://localhost:8000/ws/{project_id}?token={jwt_token}` - Real-time project updates
+- Automatic connection management with user authentication
+- Project-specific and user-scoped message routing
+- Heartbeat/ping-pong for connection health monitoring
+
+**Webhook Management:**
+- `POST /webhooks/register` - Register webhook URLs for external integrations
+- `POST /webhooks/test` - Test webhook delivery with sample payload
+- `GET /webhooks/events` - List available webhook event types
+- Event filtering and user-specific webhook configuration
+
+**Real-time Events:**
+```json
+{
+  "event_type": "workflow_update",
+  "project_id": "uuid",
+  "agent_name": "layout_analysis", 
+  "status": "completed",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "execution_time_seconds": 45,
+    "slides_generated": 5
+  }
+}
+```
+
+**Available Event Types:**
+- `workflow_update` - Agent status changes (pending → in_progress → completed/failed)
+- `project_created` - New project initialization
+- `project_completed` - Successful presentation generation
+- `project_failed` - Generation failure with error details
+- `slide_generated` - Individual slide completion
+- `error_occurred` - Any error during processing
+
+**Usage Example:**
+```python
+# Register webhook for external system integration
+webhook_data = {
+    "webhook_url": "https://your-app.com/slide-updates",
+    "events": ["workflow_update", "project_completed"],
+    "description": "Slack notifications"
+}
+
+# WebSocket client connection (JavaScript)
+const ws = new WebSocket(`ws://localhost:8000/ws/${projectId}?token=${jwtToken}`);
+ws.onmessage = (event) => {
+    const update = JSON.parse(event.data);
+    updateProgressUI(update);
+};
+```
+
+### **File Upload & Storage System** ✨ **NEW**
+Complete file management system with secure upload, download, and storage capabilities:
+
+**Supported File Types:**
+- **PowerPoint Files (pptx)**: Generated presentations (50MB max)
+- **PDF Exports (pdf)**: Exported presentation files (50MB max)  
+- **HTML Debug Files (html_debug)**: HTML visualizations and debug output (10MB max)
+- **Images (images)**: General project images (20MB max)
+- **Slide Images (slide_images)**: Slide preview thumbnails (20MB max)
+
+**Storage Architecture:**
+- **Supabase Storage Integration**: Three organized buckets with user/project isolation
+  - `presentations` bucket: PPTX and PDF files
+  - `html-debug` bucket: HTML debug files and visualizations
+  - `slide-images` bucket: Image files and slide previews
+- **Secure File Access**: Time-limited signed URLs (1-hour expiration)
+- **Automatic Organization**: Files organized by `{user_id}/{project_id}/{file_type}/` structure
+- **Database Tracking**: Complete file metadata stored in `project_files` table
+
+**File Upload Features:**
+```python
+# Upload file with validation
+POST /projects/{project_id}/files/upload
+Content-Type: multipart/form-data
+{
+  "file": <binary_file_content>,
+  "file_type": "pptx|pdf|html_debug|images|slide_images"
+}
+
+# Response includes download URL
+{
+  "id": "file_uuid",
+  "file_name": "presentation.pptx", 
+  "file_size": 2048576,
+  "download_url": "https://signed.url/with/auth"
+}
+```
+
+**Automatic Presentation Upload:**
+- Generated presentations are automatically uploaded to storage upon completion
+- Files tracked in database with metadata for easy frontend access
+- Real-time updates sent when files are uploaded or processed
+
+### **Error Handling & Monitoring System** ✨ **NEW**
+Comprehensive error handling and logging infrastructure for production-ready operations:
+
+**Database Layer Error Handling:**
+- **Custom Exception Classes**: `DatabaseError`, `DatabaseValidationError`, `DatabaseConnectionError`, `DatabasePermissionError`
+- **Operation Logging Decorator**: Automatic logging with unique operation IDs and timing
+- **Input Validation**: UUID format, required fields, data type, and length validation
+- **Enhanced Error Context**: Operation name, table, original error preservation
+
+**API Layer Error Handling:**
+```python
+# Global exception handlers with appropriate HTTP status codes
+DatabaseValidationError    → 400 Bad Request
+DatabasePermissionError    → 403 Forbidden  
+DatabaseConnectionError    → 503 Service Unavailable
+DatabaseError             → 500 Internal Server Error
+```
+
+**Structured Logging:**
+```python
+# Example log output with operation tracking
+[abc12345] Starting create_project on projects
+[abc12345] Successfully completed create_project (245ms)
+
+# Error logging with full context
+[def67890] Failed get_project: {
+  'operation': 'get_project',
+  'table': 'projects', 
+  'error_type': 'DatabaseValidationError',
+  'error_message': 'Invalid UUID format for project_id'
+}
+```
+
+**Enhanced Health Monitoring:**
+- **Detailed Health Endpoint**: `/health` with system status, database connectivity, service status
+- **Connection Validation**: Automatic health checks on initialization and periodic monitoring
+- **Performance Tracking**: Request timing, operation duration, error rates
+- **Service Status**: Real-time status of API, webhooks, file upload, WebSocket services
+
+**Security-Aware Error Handling:**
+- No sensitive data in error responses
+- User-scoped error messages
+- Detailed logging for debugging without exposing internal details
+- Graceful degradation for service failures
+
 ### **Integration Architecture**
 ```
 Frontend (Next.js) ←→ FastAPI Server ←→ Database Module ←→ Supabase Database
      ↑                      ↓              ↑                    ↓
-     └── Real-time ←→ AI Workflow ←→ Centralized Client ←→ Row Level Security
-         Subscriptions    Progress Updates   (src/database.py)      & Auth
+ WebSocket/Webhooks ←→ AI Workflow ←→ Centralized Client ←→ Row Level Security
+   Real-time Updates    Progress Tracking  (src/database.py)      & Auth
+     ↑                      ↓                                      ↓
+   File Management ←→ Supabase Storage ←→ Signed URLs ←→ Secure File Access
+     ↑                      ↓                                      ↓
+  Error Handling ←→ Structured Logging ←→ Health Monitoring ←→ Performance Tracking
 ```
 
 ## 🌟 Key Features
