@@ -115,8 +115,8 @@ CREATE TABLE project_files (
 #### Tasks:
 - [x] **1.2.1** Initialize Next.js 14 project with TypeScript
 - [x] **1.2.2** Install and configure Tailwind CSS + shadcn/ui
-- [ ] **1.2.3** Set up Supabase client configuration
-- [ ] **1.2.4** Configure environment variables and .env files
+- [x] **1.2.3** Set up Supabase client configuration
+- [x] **1.2.4** Configure environment variables and .env files
 - [ ] **1.2.5** Set up ESLint, Prettier, and development tooling
 - [ ] **1.2.6** Create basic project structure and folder organization
 - [ ] **1.2.7** Set up state management (Zustand/Redux Toolkit)
