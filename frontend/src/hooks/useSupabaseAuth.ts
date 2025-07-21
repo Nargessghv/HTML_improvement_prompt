@@ -204,7 +204,7 @@ export const useSupabaseAuth = () => {
     } finally {
       setLoading(false)
     }
-  }, [supabase.auth, setLoading, signOut, addNotification])
+  }, [setLoading, signOut, addNotification])
 
   // Reset password
   const resetPassword = useCallback(async (email: string) => {
@@ -278,6 +278,48 @@ export const useSupabaseAuth = () => {
     }
   }, [setLoading, addNotification])
 
+  // Update profile
+  const updateProfile = useCallback(async (profileData: {
+    full_name?: string
+    display_name?: string
+    bio?: string
+    avatar_url?: string
+  }) => {
+    try {
+      setLoading(true)
+      
+      const { error } = await supabase.auth.updateUser({
+        data: profileData
+      })
+
+      if (error) {
+        addNotification({
+          type: 'error',
+          title: 'Profile update failed',
+          message: error.message
+        })
+        return { success: false, error }
+      }
+
+      addNotification({
+        type: 'success',
+        title: 'Profile updated',
+        message: 'Your profile has been successfully updated'
+      })
+
+      return { success: true }
+    } catch (error) {
+      addNotification({
+        type: 'error',
+        title: 'Profile update failed',
+        message: 'An unexpected error occurred'
+      })
+      return { success: false, error }
+    } finally {
+      setLoading(false)
+    }
+  }, [setLoading, addNotification])
+
   return {
     // State
     user,
@@ -291,6 +333,7 @@ export const useSupabaseAuth = () => {
     signOut: handleSignOut,
     resetPassword,
     updatePassword,
+    updateProfile,
     
     // Supabase client for advanced usage
     supabase
