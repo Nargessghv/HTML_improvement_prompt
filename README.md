@@ -94,6 +94,52 @@ created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 - Workflow state changes broadcast to frontend for instant UI updates
 - Agent status tracking (pending → in_progress → completed → failed)
 
+## 🌐 Frontend Development (In Progress)
+
+### **Next.js 14 Frontend Application** ✨ **NEW**
+Modern React-based frontend for the AI-powered slide generation system:
+
+**Technology Stack:**
+- **Framework**: Next.js 15.4.2 with App Router and TypeScript
+- **Styling**: Tailwind CSS v4 with Ekona design system
+- **UI Components**: shadcn/ui component library with custom Ekona styling
+- **Typography**: UnivaNova font family (Ekona brand font)
+- **Colors**: Ekona red (#E63946) primary color with neutral palette
+- **Authentication**: Supabase Auth integration (planned)
+- **State Management**: Zustand for client state (planned)
+- **Development**: Turbopack for fast development experience
+- **Code Quality**: ESLint and TypeScript for type safety
+
+**Project Structure:**
+```
+frontend/
+├── src/app/          # Next.js App Router pages and layouts
+├── src/components/   # Reusable React components (planned)
+├── src/lib/         # Utility functions and configurations (planned)
+├── src/hooks/       # Custom React hooks (planned)
+├── src/types/       # TypeScript type definitions (planned)
+├── public/          # Static assets and icons
+└── package.json     # Dependencies and scripts
+```
+
+**Development Features:**
+- Fast development with Turbopack bundler
+- TypeScript for type-safe development
+- Modern React 19 with latest features
+- Import alias `@/*` for clean module imports
+- ESLint configuration for code quality
+- Ekona brand identity integration
+
+**Design System Features:**
+- **Brand Colors**: Ekona red (#E63946) with sophisticated neutral palette
+- **Typography**: UnivaNova font family for consistent brand typography
+- **Components**: Custom shadcn/ui components styled with Ekona design language
+- **Swiss Flag**: CSS-only Swiss flag component for brand identity
+- **Subtle Shadows**: Ekona-style shadow system for depth and elegance
+- **Light Weight**: 300 font-weight for modern, clean appearance
+
+**Current Status:** ✅ **Phase 1.2.2 Complete** - UI framework and Ekona design system integrated
+
 ## 🚀 Backend API Integration (Completed)
 
 ### **FastAPI Server with Real-time Updates**

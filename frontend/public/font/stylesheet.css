@@ -1,0 +1,156 @@
+/*
+  Only Light, Medium, Regular, Bold, SemiBold, Heavy (and their Italic variants) are used for readability.
+  Thin, ThinItalic, Hairline, and HairlineItalic font-face rules are commented out below.
+*/
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-BoldItalic.eot');
+    src: url('UnivaNova-BoldItalic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-BoldItalic.woff2') format('woff2'),
+        url('UnivaNova-BoldItalic.woff') format('woff'),
+        url('UnivaNova-BoldItalic.svg#UnivaNova-BoldItalic') format('svg');
+    font-weight: 700;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-Bold.eot');
+    src: url('UnivaNova-Bold.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-Bold.woff2') format('woff2'),
+        url('UnivaNova-Bold.woff') format('woff'),
+        url('UnivaNova-Bold.svg#UnivaNova-Bold') format('svg');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-Regular.eot');
+    src: url('UnivaNova-Regular.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-Regular.woff2') format('woff2'),
+        url('UnivaNova-Regular.woff') format('woff'),
+        url('UnivaNova-Regular.svg#UnivaNova-Regular') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-SemiBoldItalic.eot');
+    src: url('UnivaNova-SemiBoldItalic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-SemiBoldItalic.woff2') format('woff2'),
+        url('UnivaNova-SemiBoldItalic.woff') format('woff'),
+        url('UnivaNova-SemiBoldItalic.svg#UnivaNova-SemiBoldItalic') format('svg');
+    font-weight: 600;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-Medium.eot');
+    src: url('UnivaNova-Medium.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-Medium.woff2') format('woff2'),
+        url('UnivaNova-Medium.woff') format('woff'),
+        url('UnivaNova-Medium.svg#UnivaNova-Medium') format('svg');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-SemiBold.eot');
+    src: url('UnivaNova-SemiBold.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-SemiBold.woff2') format('woff2'),
+        url('UnivaNova-SemiBold.woff') format('woff'),
+        url('UnivaNova-SemiBold.svg#UnivaNova-SemiBold') format('svg');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-MediumItalic.eot');
+    src: url('UnivaNova-MediumItalic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-MediumItalic.woff2') format('woff2'),
+        url('UnivaNova-MediumItalic.woff') format('woff'),
+        url('UnivaNova-MediumItalic.svg#UnivaNova-MediumItalic') format('svg');
+    font-weight: 500;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-Italic.eot');
+    src: url('UnivaNova-Italic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-Italic.woff2') format('woff2'),
+        url('UnivaNova-Italic.woff') format('woff'),
+        url('UnivaNova-Italic.svg#UnivaNova-Italic') format('svg');
+    font-weight: normal;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-Light.eot');
+    src: url('UnivaNova-Light.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-Light.woff2') format('woff2'),
+        url('UnivaNova-Light.woff') format('woff'),
+        url('UnivaNova-Light.svg#UnivaNova-Light') format('svg');
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-HeavyItalic.eot');
+    src: url('UnivaNova-HeavyItalic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-HeavyItalic.woff2') format('woff2'),
+        url('UnivaNova-HeavyItalic.woff') format('woff'),
+        url('UnivaNova-HeavyItalic.svg#UnivaNova-HeavyItalic') format('svg');
+    font-weight: 900;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Univa Nova';
+    src: url('UnivaNova-LightItalic.eot');
+    src: url('UnivaNova-LightItalic.eot?#iefix') format('embedded-opentype'),
+        url('UnivaNova-LightItalic.woff2') format('woff2'),
+        url('UnivaNova-LightItalic.woff') format('woff'),
+        url('UnivaNova-LightItalic.svg#UnivaNova-LightItalic') format('svg');
+    font-weight: 300;
+    font-style: italic;
+    font-display: swap;
+}
+
+/*
+@font-face {
+    font-family: 'Univa Nova-Thin';
+    ...
+}
+@font-face {
+    font-family: 'Univa Nova-ThinItalic';
+    ...
+}
+@font-face {
+    font-family: 'Univa Nova Hairline';
+    ...
+}
+@font-face {
+    font-family: 'Univa Nova HairlineItalic';
+    ...
+}
+*/
+

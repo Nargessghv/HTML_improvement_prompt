@@ -113,8 +113,8 @@ CREATE TABLE project_files (
 **Can be done in parallel**: Partially (after 1.1.1)
 
 #### Tasks:
-- [ ] **1.2.1** Initialize Next.js 14 project with TypeScript
-- [ ] **1.2.2** Install and configure Tailwind CSS + shadcn/ui
+- [x] **1.2.1** Initialize Next.js 14 project with TypeScript
+- [x] **1.2.2** Install and configure Tailwind CSS + shadcn/ui
 - [ ] **1.2.3** Set up Supabase client configuration
 - [ ] **1.2.4** Configure environment variables and .env files
 - [ ] **1.2.5** Set up ESLint, Prettier, and development tooling
