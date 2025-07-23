@@ -60,8 +60,9 @@ export const UI_CONSTANTS = {
   ANIMATION_DURATION: 200,
 } as const
 
-// Viewport Constants (for slide rendering)
-export const SLIDE_VIEWPORT = {
+// Default Viewport Constants (for slide rendering preview)
+// Note: Actual slide dimensions are now dynamic based on PowerPoint template placeholders
+export const DEFAULT_SLIDE_VIEWPORT = {
   WIDTH: 1577,
   HEIGHT: 603,
   ASPECT_RATIO: 1577 / 603,

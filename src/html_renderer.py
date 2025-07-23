@@ -260,8 +260,8 @@ class HTMLRenderer:
         self,
         html_content: str,
         output_path: str,
-        width: int = 3154,  # 2x resolution for crisp images (1577*2)
-        height: int = 1206,  # 2x resolution for crisp images (603*2)
+        width: int,
+        height: int,
         **kwargs,
     ) -> bool:
         """
@@ -271,8 +271,8 @@ class HTMLRenderer:
         Args:
             html_content: HTML content string to render
             output_path: Path where the image should be saved
-            width: Image width in pixels (default: 3154 for 2x crisp rendering)
-            height: Image height in pixels (default: 1206 for 2x crisp rendering)
+            width: Image width in pixels (should match placeholder width * 2 for crisp rendering)
+            height: Image height in pixels (should match placeholder height * 2 for crisp rendering)
             **kwargs: Additional rendering options
 
         Returns:
@@ -341,8 +341,8 @@ class HTMLRenderer:
         self,
         html_content: str,
         output_path: str,
-        width: int = 3154,  # 2x resolution for crisp images (1577*2)
-        height: int = 1206,  # 2x resolution for crisp images (603*2)
+        width: int,
+        height: int,
         **kwargs,
     ) -> bool:
         """
@@ -351,8 +351,8 @@ class HTMLRenderer:
         Args:
             html_content: HTML content string to render
             output_path: Path where the image should be saved
-            width: Image width in pixels (default: 3154 for 2x crisp rendering)
-            height: Image height in pixels (default: 1206 for 2x crisp rendering)
+            width: Image width in pixels (should match placeholder width * 2 for crisp rendering)
+            height: Image height in pixels (should match placeholder height * 2 for crisp rendering)
             **kwargs: Additional rendering options
 
         Returns:

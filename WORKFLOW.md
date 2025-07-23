@@ -54,7 +54,7 @@ The system follows a modular, agent-based architecture where each agent is respo
     - Comparisons
     - Data visualizations
     - Complex diagrams
-  - Ensures proper viewport dimensions (1577x603 pixels)
+  - Ensures proper viewport dimensions
   - Applies Ekona theme and styling
 - **Output**: Enhanced slide contents with HTML visualizations
 

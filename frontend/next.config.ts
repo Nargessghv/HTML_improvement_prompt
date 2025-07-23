@@ -44,7 +44,25 @@ const nextConfig: NextConfig = {
         hostname: '*.supabase.co',
         pathname: '/storage/v1/object/public/**',
       },
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        pathname: '/storage/v1/object/sign/**',
+      },
+      {
+        protocol: 'https', 
+        hostname: '*.supabase.co',
+        pathname: '/storage/**',
+      },
+      {
+        // For signed URLs with query parameters
+        protocol: 'https',
+        hostname: '*.supabase.co',
+      },
     ],
+    // Add debugging for image load failures
+    dangerouslyAllowSVG: false,
+    minimumCacheTTL: 30, // Shorter cache for signed URLs
   },
 
   // Performance optimization

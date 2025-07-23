@@ -20,6 +20,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 import httpx
+from supabase import create_client
 from .workflow import SlideGenerationWorkflow
 from .database import get_supabase_client, SupabaseClient, DatabaseError, DatabaseConnectionError, DatabaseValidationError, DatabasePermissionError
 
@@ -240,7 +241,8 @@ webhook_config = WebhookConfig()
 # Pydantic models for API requests/responses
 class ProjectCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
-    topic: str = Field(..., min_length=1, max_length=1000)
+    topic: str = Field(..., min_length=1)
+    project_id: Optional[str] = None  # For starting workflow on existing project
 
 class ProjectResponse(BaseModel):
     id: str
@@ -303,15 +305,29 @@ class ProjectFileResponse(BaseModel):
 
 # Authentication helper
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Extract user from JWT token"""
+    """Extract user from JWT token and set database context"""
     try:
+        # Create a temporary client to verify the token without affecting the main client
+        temp_client = create_client(
+            os.getenv("SUPABASE_URL"), 
+            os.getenv("SUPABASE_ANON_KEY")  # Always use anon key for token verification
+        )
+        
         # Verify JWT token with Supabase
-        user = db.client.auth.get_user(credentials.credentials)
-        if not user or not user.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user.user
+        auth_response = temp_client.auth.get_user(credentials.credentials)
+        
+        if auth_response.user is None:
+            api_logger.warning("Authentication failed: No user found for provided token")
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+        
+        # User context will be set per-operation when needed
+        
+        api_logger.info(f"User authenticated successfully: {auth_response.user.id}")
+        return auth_response.user
+        
     except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid authentication")
+        api_logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
 
 # Real-time notification system
 async def send_realtime_update(project_id: str, user_id: str, event_type: str, **kwargs):
@@ -348,8 +364,25 @@ def create_realtime_callback(project_id: str, user_id: str):
     """Create callback function for real-time workflow updates"""
     
     def update_callback(project_id: str, agent_name: str, status: str, **kwargs):
-        # Update database
-        db.create_workflow_state(project_id, agent_name, status, **kwargs)
+        # Update or create workflow state in database
+        try:
+            # First, try to find existing workflow state for this agent
+            existing_states = db.get_project_workflow_states(project_id)
+            existing_state = next((state for state in existing_states if state["agent_name"] == agent_name), None)
+            
+            if existing_state:
+                # Update existing state
+                api_logger.info(f"Updating existing workflow state for {agent_name}: {status}")
+                db.update_workflow_state(existing_state["id"], status, **kwargs)
+            else:
+                # Create new state
+                api_logger.info(f"Creating new workflow state for {agent_name}: {status}")
+                db.create_workflow_state(project_id, agent_name, status, **kwargs)
+                
+        except Exception as e:
+            api_logger.error(f"Error updating workflow state for {agent_name}: {e}")
+            # Fallback to create (original behavior)
+            db.create_workflow_state(project_id, agent_name, status, **kwargs)
         
         # Send real-time updates
         asyncio.create_task(send_realtime_update(
@@ -537,25 +570,49 @@ async def get_webhook_events():
     }
 
 @app.post("/projects", response_model=ProjectResponse)
-async def create_project(
+async def create_or_start_project(
     request: ProjectCreateRequest,
     background_tasks: BackgroundTasks,
-    user = Depends(get_current_user)
+    user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-    """Create a new slide generation project"""
+    """Create a new project OR start workflow on existing project"""
     try:
-        # Create project using database client
-        project = db.create_project(
-            user_id=user.id,
-            title=request.title,
-            topic=request.topic
-        )
+        project = None
+        event_type = "project_created"
         
-        # Send project created event
+        if request.project_id:
+            # Frontend is requesting to start workflow on existing project
+            api_logger.info(f"Starting workflow on existing project: {request.project_id}")
+            
+            # Verify project exists and belongs to user
+            project = db.get_project(request.project_id, user.id, credentials.credentials)
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            # Update project status to processing
+            db.update_project_status(request.project_id, "processing")
+            project["status"] = "processing"
+            
+            event_type = "workflow_started"
+            api_logger.info(f"Updated existing project {request.project_id} to processing status")
+            
+        else:
+            # Create new project
+            api_logger.info(f"Creating new project: {request.title}")
+            project = db.create_project(
+                user_id=user.id,
+                title=request.title,
+                topic=request.topic,
+                jwt_token=credentials.credentials
+            )
+            api_logger.info(f"Created new project with ID: {project['id']}")
+        
+        # Send appropriate event
         await send_realtime_update(
             project_id=project["id"],
             user_id=user.id,
-            event_type="project_created",
+            event_type=event_type,
             data={"title": request.title, "topic": request.topic}
         )
         
@@ -563,24 +620,29 @@ async def create_project(
         background_tasks.add_task(
             start_slide_generation_workflow, 
             project["id"], 
-            request.topic,
+            project["topic"],  # Use topic from database
             user.id
         )
         
+        api_logger.info(f"Workflow background task started for project: {project['id']}")
         return ProjectResponse(**project)
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating project: {str(e)}")
+        api_logger.error(f"Error in create_or_start_project: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing project: {str(e)}")
 
 @app.get("/projects", response_model=List[ProjectResponse])
 async def get_user_projects(
     user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     limit: int = 50,
     offset: int = 0
 ):
     """Get all projects for the current user"""
     try:
-        projects_data = db.get_user_projects(user.id, limit, offset)
+        projects_data = db.get_user_projects(user.id, limit, offset, credentials.credentials)
         return [ProjectResponse(**project) for project in projects_data]
         
     except Exception as e:
@@ -589,11 +651,12 @@ async def get_user_projects(
 @app.get("/projects/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,
-    user = Depends(get_current_user)
+    user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """Get a specific project"""
     try:
-        project = db.get_project(project_id, user.id)
+        project = db.get_project(project_id, user.id, credentials.credentials)
         
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -759,8 +822,15 @@ async def upload_project_file(
             }
         )
         
-        if upload_result.get("error"):
-            raise HTTPException(status_code=500, detail=f"Storage upload failed: {upload_result['error']}")
+        # Check upload result - handle different Supabase response formats
+        upload_error = None
+        if hasattr(upload_result, 'error') and upload_result.error:
+            upload_error = str(upload_result.error)
+        elif isinstance(upload_result, dict) and upload_result.get("error"):
+            upload_error = str(upload_result["error"])
+        
+        if upload_error:
+            raise HTTPException(status_code=500, detail=f"Storage upload failed: {upload_error}")
         
         # Create file record in database
         file_record = db.create_project_file(
@@ -934,6 +1004,16 @@ def _get_storage_bucket_for_type(file_type: str) -> str:
 async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str):
     """Background task to run the slide generation workflow"""
     try:
+        # Get project details from database (in case title/topic were updated)
+        project = db.get_project(project_id, user_id)
+        if not project:
+            api_logger.error(f"Project {project_id} not found for workflow execution")
+            return
+            
+        # Use the actual topic from the database
+        actual_topic = project.get("topic", topic)
+        api_logger.info(f"Starting workflow for project {project_id} with topic: {actual_topic[:100]}...")
+        
         # Update project status to processing
         db.update_project_status(project_id, "processing")
         
@@ -943,7 +1023,7 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
             user_id=user_id,
             event_type="workflow_update",
             status="processing",
-            data={"message": "Workflow started"}
+            data={"message": "Workflow started", "topic": actual_topic}
         )
         
         # Initialize workflow with database integration
@@ -961,9 +1041,10 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         
         # Run workflow
         result = workflow.run(
-            topic=topic,
+            topic=actual_topic,
             template_path=template_path,
-            output_path=output_path
+            output_path=output_path,
+            title=project.get("title")
         )
         
         if result.get("success"):
@@ -990,7 +1071,21 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                         file_options={"content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}
                     )
                     
-                    if not upload_result.get("error"):
+                    # Debug: Log upload result format
+                    api_logger.info(f"Upload result type: {type(upload_result)}")
+                    api_logger.info(f"Upload result: {upload_result}")
+                    
+                    # Check upload result - Supabase returns different response formats
+                    upload_successful = False
+                    if hasattr(upload_result, 'error') and upload_result.error is None:
+                        upload_successful = True
+                    elif isinstance(upload_result, dict) and not upload_result.get("error"):
+                        upload_successful = True
+                    elif upload_result and not hasattr(upload_result, 'error'):
+                        # Some versions return the upload response directly
+                        upload_successful = True
+                    
+                    if upload_successful:
                         # Create file record in database
                         db.create_project_file(
                             project_id=project_id,
@@ -1001,7 +1096,12 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                         )
                         print(f"✅ Uploaded presentation to storage: {storage_path}")
                     else:
-                        print(f"❌ Failed to upload presentation: {upload_result['error']}")
+                        error_msg = "Unknown upload error"
+                        if hasattr(upload_result, 'error') and upload_result.error:
+                            error_msg = str(upload_result.error)
+                        elif isinstance(upload_result, dict) and upload_result.get("error"):
+                            error_msg = str(upload_result["error"])
+                        print(f"❌ Failed to upload presentation: {error_msg}")
                         
                 except Exception as e:
                     print(f"❌ Error uploading presentation file: {e}")

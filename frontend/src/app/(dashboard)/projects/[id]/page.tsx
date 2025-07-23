@@ -7,12 +7,16 @@ import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { 
   EditProjectModal,
   DeleteProjectModal,
   DuplicateProjectModal,
   ShareProjectModal
 } from '@/components/modals'
+import { WorkflowProgress } from '@/components/workflow/WorkflowProgress'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -26,7 +30,11 @@ import {
   Trash2,
   Copy,
   Share2,
-  MoreHorizontal
+  MoreHorizontal,
+  Download,
+  FileText,
+  Image,
+  RefreshCw
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -46,25 +54,34 @@ interface Project {
   completed_at: string | null
 }
 
+interface ProjectFile {
+  id: string
+  file_name: string
+  file_type: string
+  file_size?: number
+  created_at: string
+  download_url: string
+}
+
 const statusConfig = {
   draft: { 
     label: 'Draft', 
-    color: 'bg-gray-100 text-gray-800',
+    color: 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-200',
     icon: Clock 
   },
   processing: { 
     label: 'Processing', 
-    color: 'bg-blue-100 text-blue-800',
+    color: 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary',
     icon: Loader2 
   },
   completed: { 
     label: 'Completed', 
-    color: 'bg-green-100 text-green-800',
+    color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
     icon: CheckCircle2 
   },
   failed: { 
     label: 'Failed', 
-    color: 'bg-red-100 text-red-800',
+    color: 'bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-destructive',
     icon: XCircle 
   }
 }
@@ -80,6 +97,8 @@ export default function ProjectDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([])
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false)
 
   const projectId = params?.id as string
 
@@ -114,6 +133,47 @@ export default function ProjectDetailPage() {
     fetchProject()
   }, [projectId, user, supabase, router])
 
+  // Fetch project files when project is loaded and completed
+  useEffect(() => {
+    if (!projectId || !user || !project) return
+    if (project.status !== 'completed') return
+
+    fetchProjectFiles()
+  }, [projectId, user, supabase, project]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchProjectFiles = async () => {
+    if (!projectId || !user) return
+
+    setIsLoadingFiles(true)
+    try {
+      // Get the session to access the JWT token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.warn('No valid session found')
+        return
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/projects/${projectId}/files`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch files: ${response.status}`)
+      }
+
+      const files: ProjectFile[] = await response.json()
+      setProjectFiles(files)
+    } catch (error) {
+      console.error('Error fetching project files:', error)
+      toast.error('Failed to load project files')
+    } finally {
+      setIsLoadingFiles(false)
+    }
+  }
+
   const startProcessing = async () => {
     if (!project) return
 
@@ -133,8 +193,43 @@ export default function ProjectDetailPage() {
       setProject({ ...project, status: 'processing' })
       toast.success('Project processing started!')
 
-      // TODO: Call backend API to start the AI workflow
-      // This will be implemented when we add backend integration
+      // Call backend API to start the AI workflow
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        
+        // Get the current session to access the JWT token
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          throw new Error('No valid session found')
+        }
+        
+        const response = await fetch(`${apiUrl}/projects`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}` // Pass the session's JWT token
+          },
+          body: JSON.stringify({
+            title: project.title,
+            topic: project.topic,
+            project_id: project.id // Pass existing project ID so backend can update it
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error(`Backend API error: ${response.status}`)
+        }
+
+        const result = await response.json()
+        console.log('Backend workflow started:', result)
+        toast.success('AI workflow has been initiated!')
+        
+      } catch (backendError) {
+        console.error('Failed to start backend workflow:', backendError)
+        toast.error('Started locally but could not connect to AI backend. Ensure the Python API server is running.')
+        
+        // Don't fail the whole process - the frontend workflow tracking will still work
+      }
 
     } catch (error) {
       console.error('Error starting processing:', error)
@@ -157,6 +252,66 @@ export default function ProjectDetailPage() {
   const handleProjectDuplicated = (newProject: Project) => {
     toast.success('Project duplicated successfully!')
     router.push(`/projects/${newProject.id}`)
+  }
+
+  const downloadFile = async (file: ProjectFile) => {
+    try {
+      // Use the signed download URL directly
+      const link = document.createElement('a')
+      link.href = file.download_url
+      link.download = file.file_name
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      toast.success(`Downloaded ${file.file_name}`)
+    } catch (error) {
+      console.error('Error downloading file:', error)
+      toast.error(`Failed to download ${file.file_name}`)
+    }
+  }
+
+  const getFileIcon = (fileType: string) => {
+    switch (fileType) {
+      case 'pptx':
+        return FileText
+      case 'pdf':
+        return FileText
+      case 'images':
+      case 'slide_images':
+        return Image
+      default:
+        return FileText
+    }
+  }
+
+  const getDisplayName = (file: ProjectFile) => {
+    switch (file.file_type) {
+      case 'pptx':
+        return 'PowerPoint Presentation'
+      case 'pdf':
+        return 'PDF Document'
+      case 'images':
+        return 'Slide Images'
+      case 'slide_images':
+        return 'Individual Slide Images'
+      default:
+        return file.file_type.toUpperCase() + ' File'
+    }
+  }
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return 'Unknown size'
+    
+    const units = ['B', 'KB', 'MB', 'GB']
+    let size = bytes
+    let unitIndex = 0
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024
+      unitIndex++
+    }
+    
+    return `${size.toFixed(1)} ${units[unitIndex]}`
   }
 
   if (isLoading) {
@@ -223,7 +378,7 @@ export default function ProjectDetailPage() {
             <Button 
               onClick={startProcessing}
               disabled={isStarting}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {isStarting ? (
                 <>
@@ -282,43 +437,134 @@ export default function ProjectDetailPage() {
                 The topic and requirements for this presentation
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="whitespace-pre-wrap text-gray-700">
-                {project.topic}
-              </div>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[400px] w-full">
+                <div className="p-6">
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => <h1 className="text-lg font-bold text-gray-900 mb-3 mt-0">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-base font-semibold text-gray-800 mb-2 mt-4">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-800 mb-2 mt-3">{children}</h3>,
+                        h4: ({ children }) => <h4 className="text-sm font-medium text-gray-700 mb-1 mt-2">{children}</h4>,
+                        p: ({ children }) => <p className="text-gray-700 mb-2 leading-relaxed">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc list-inside text-gray-700 mb-2 ml-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside text-gray-700 mb-2 ml-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
+                        strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                        em: ({ children }) => <em className="italic text-gray-800">{children}</em>,
+                        code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
+                        pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-md overflow-x-auto text-sm font-mono mb-3">{children}</pre>,
+                        blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 mb-3">{children}</blockquote>,
+                        hr: () => <hr className="border-gray-300 my-4" />,
+                        a: ({ href, children }) => <a href={href} className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                      }}
+                    >
+                      {project.topic}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </ScrollArea>
             </CardContent>
           </Card>
 
-          {/* Workflow Progress - Placeholder for now */}
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Workflow Progress</CardTitle>
-              <CardDescription>
-                AI agents working on your presentation
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {project.status === 'draft' ? (
-                <div className="text-center py-8 text-gray-500">
-                  <PlayCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>Click "Start Processing" to begin the AI workflow</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="text-sm text-gray-600">
-                    Workflow visualization will be implemented here
-                  </div>
-                  {/* TODO: Implement real workflow progress visualization */}
-                  {project.status === 'processing' && (
-                    <div className="flex items-center space-x-2 text-blue-600">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>AI agents are working on your presentation...</span>
+          {/* Workflow Progress */}
+          <div className="mt-6">
+            <WorkflowProgress project={project} />
+          </div>
+
+{/* HTML Refinement Viewer - Now accessed via modal button in WorkflowProgress */}
+
+          {/* Download Section for Completed Projects */}
+          {project.status === 'completed' && (
+            <div className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Download Results</CardTitle>
+                  <CardDescription>
+                    Download your generated presentation files
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingFiles ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      <span>Loading available files...</span>
+                    </div>
+                  ) : projectFiles.length > 0 ? (
+                    <div className="space-y-3">
+                      {projectFiles.map((file) => {
+                        const FileIcon = getFileIcon(file.file_type)
+                        return (
+                          <div key={file.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                            <div className="flex items-center space-x-3">
+                              <FileIcon className="w-5 h-5 text-gray-500" />
+                              <div>
+                                <p className="font-medium">{getDisplayName(file)}</p>
+                                <p className="text-sm text-gray-500">
+                                  {formatFileSize(file.file_size)} • Created {new Date(file.created_at).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => downloadFile(file)}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </Button>
+                          </div>
+                        )
+                      })}
+                      <div className="pt-3 border-t">
+                        <Button 
+                          variant="outline" 
+                          onClick={fetchProjectFiles}
+                          disabled={isLoadingFiles}
+                        >
+                          {isLoadingFiles ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Refreshing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Refresh Files
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Download className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p className="text-gray-500 mb-3">No files available for download yet</p>
+                      <Button 
+                        variant="outline"
+                        onClick={fetchProjectFiles}
+                        disabled={isLoadingFiles}
+                      >
+                        {isLoadingFiles ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Check for Files
+                          </>
+                        )}
+                      </Button>
                     </div>
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -371,7 +617,7 @@ export default function ProjectDetailPage() {
                 <Button 
                   onClick={startProcessing}
                   disabled={isStarting}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   {isStarting ? (
                     <>
@@ -410,10 +656,73 @@ export default function ProjectDetailPage() {
                 <Share2 className="w-4 h-4 mr-2" />
                 Share
               </Button>
-              <Button variant="outline" className="w-full" disabled>
-                Download Results
-                <span className="ml-2 text-xs text-gray-400">(Coming Soon)</span>
-              </Button>
+              {project.status === 'completed' && projectFiles.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700">Download Files:</p>
+                  {projectFiles.map((file) => {
+                    const FileIcon = getFileIcon(file.file_type)
+                    return (
+                      <Button 
+                        key={file.id}
+                        variant="outline" 
+                        className="w-full justify-start"
+                        onClick={() => downloadFile(file)}
+                      >
+                        <FileIcon className="w-4 h-4 mr-2" />
+                        <div className="flex-1 text-left">
+                          <div className="text-sm font-medium">{getDisplayName(file)}</div>
+                          <div className="text-xs text-gray-500">{formatFileSize(file.file_size)}</div>
+                        </div>
+                        <Download className="w-4 h-4 ml-2" />
+                      </Button>
+                    )
+                  })}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={fetchProjectFiles}
+                    disabled={isLoadingFiles}
+                  >
+                    {isLoadingFiles ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Refreshing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Refresh Files
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ) : project.status === 'completed' ? (
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={fetchProjectFiles}
+                  disabled={isLoadingFiles}
+                >
+                  {isLoadingFiles ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading Files...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 mr-2" />
+                      Check for Downloads
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button variant="outline" className="w-full" disabled>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download Results
+                  <span className="ml-2 text-xs text-gray-400">(Available after completion)</span>
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

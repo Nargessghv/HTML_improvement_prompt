@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
 
@@ -27,8 +28,7 @@ const editProjectSchema = z.object({
     .max(100, 'Title must be less than 100 characters'),
   topic: z
     .string()
-    .min(10, 'Topic must be at least 10 characters')
-    .max(2000, 'Topic must be less than 2000 characters'),
+    .min(10, 'Topic must be at least 10 characters'),
 })
 
 type EditProjectFormData = z.infer<typeof editProjectSchema>
@@ -143,13 +143,15 @@ export function EditProjectModal({
 
           <div className="space-y-2">
             <Label htmlFor="topic">Topic Description</Label>
-            <Textarea
-              id="topic"
-              placeholder="Describe what you want your presentation to be about. Be as detailed as possible - this helps our AI create better slides."
-              rows={5}
-              {...register('topic')}
-              disabled={isSubmitting}
-            />
+            <ScrollArea className="h-[140px]">
+              <Textarea
+                id="topic"
+                placeholder="Describe what you want your presentation to be about. Be as detailed as possible - this helps our AI create better slides."
+                className="min-h-[140px] max-h-none resize-none border-0 shadow-none focus-visible:ring-0"
+                {...register('topic')}
+                disabled={isSubmitting}
+              />
+            </ScrollArea>
             {errors.topic && (
               <p className="text-sm text-red-600">{errors.topic.message}</p>
             )}

@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { User, Upload, Loader2 } from 'lucide-react'
 
 interface ProfileFormProps {
@@ -174,13 +175,14 @@ export function ProfileForm({ onSuccess }: ProfileFormProps) {
           {/* Bio */}
           <div>
             <Label htmlFor="bio">Bio</Label>
-            <Textarea
-              id="bio"
-              placeholder="Tell us about yourself..."
-              rows={4}
-              {...register('bio')}
-              className={errors.bio ? 'border-red-500' : ''}
-            />
+            <ScrollArea className="h-[120px]">
+              <Textarea
+                id="bio"
+                placeholder="Tell us about yourself..."
+                className={`min-h-[120px] max-h-none resize-none border-0 shadow-none focus-visible:ring-0 ${errors.bio ? 'border-red-500' : ''}`}
+                {...register('bio')}
+              />
+            </ScrollArea>
             {errors.bio && (
               <p className="text-sm text-red-600 mt-1">
                 {errors.bio.message}

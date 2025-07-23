@@ -43,6 +43,7 @@ class SlideGenerationState(TypedDict):
     template_path: str
     output_path: str
     layout_indices: Optional[List[int]]
+    title: Optional[str]
 
     # Workflow state
     current_step: str
@@ -76,6 +77,9 @@ class SlideGenerationState(TypedDict):
 
     # Monitoring context
     monitor_trace: Optional[Any]
+    
+    # Project tracking for Supabase integration
+    project_id: Optional[str]
 
 
 class LayoutAnalysisAgent:
@@ -171,10 +175,11 @@ class PresentationPlanningAgent:
                 layouts_info = layouts_dict
 
             topic = state["topic"]
+            title = state.get("title")  # Get title from state (may be None)
 
             # Use LLM to create intelligent presentation plan with callback tracing
             presentation_plan = self._plan_presentation_with_tracing(
-                layouts_info, topic, config
+                layouts_info, topic, title, config
             )
 
             # Extract layout indices from the plan
@@ -212,6 +217,7 @@ class PresentationPlanningAgent:
         self,
         layouts_info: Dict[int, Dict[str, Any]],
         topic: str,
+        title: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideSpec]:
         """
@@ -219,7 +225,8 @@ class PresentationPlanningAgent:
 
         Args:
             layouts_info: Dictionary of layout information
-            topic: The presentation topic
+            topic: The presentation topic/description
+            title: The presentation title (optional)
             config: Langchain configuration with callbacks
 
         Returns:
@@ -228,7 +235,7 @@ class PresentationPlanningAgent:
         from .llm_models import PresentationPlan
 
         # Create the planning prompt
-        prompt = self._create_presentation_planning_prompt(layouts_info, topic)
+        prompt = self._create_presentation_planning_prompt(layouts_info, topic, title)
         system_prompt = self._get_planning_system_prompt()
 
         try:
@@ -256,6 +263,7 @@ class PresentationPlanningAgent:
         self,
         layouts_info: dict[int, dict[str, object]],
         topic: str,
+        title: Optional[str] = None,
     ) -> str:
         """
         Create optimized prompt for strategic presentation planning
@@ -306,9 +314,13 @@ class PresentationPlanningAgent:
             else "None identified"
         )
 
+        # Build title/topic section
+        title_section = f'TITLE: "{title}"\n' if title else ""
+        topic_label = "TOPIC" if not title else "DESCRIPTION"
+        
         return f"""📋 CREATE STRATEGIC PRESENTATION PLAN
 
-TOPIC: "{topic}"
+{title_section}{topic_label}: "{topic}"
 
 🎯 AVAILABLE LAYOUTS:
 {layouts_text}
@@ -1176,6 +1188,18 @@ class HTMLRefinementAgent:
 
         # Initialize the Azure Blob Uploader
         self.uploader = AzureBlobUploader()
+        
+        # Initialize Supabase storage and database clients for refinement tracking
+        try:
+            from .supabase_storage import get_storage_client
+            from .database import get_supabase_client
+            self.storage_client = get_storage_client()
+            self.db_client = get_supabase_client()
+            print("✅ Supabase storage and database clients initialized for refinement tracking")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize Supabase clients for refinement tracking: {e}")
+            self.storage_client = None
+            self.db_client = None
 
         # Image compression settings optimized for LLM vision models
         self.compression_settings = {
@@ -1486,6 +1510,107 @@ class HTMLRefinementAgent:
         except Exception as e:
             print(f"  ❌ Error during image compression: {e}")
             return True  # Return True to continue processing even if compression fails
+    
+    def _track_refinement_in_supabase(self, project_id: str, slide_id: str, iteration: int,
+                                    html_content: str, image_path: Path, 
+                                    refinement_feedback: Optional[str] = None,
+                                    refinement_prompt: Optional[str] = None,
+                                    is_final: bool = False) -> Optional[str]:
+        """
+        Track HTML refinement iteration in Supabase storage and database
+        
+        Args:
+            project_id: Project UUID
+            slide_id: Slide UUID
+            iteration: Refinement iteration number
+            html_content: HTML content for this iteration
+            image_path: Path to rendered image file
+            refinement_feedback: LLM feedback from this iteration
+            refinement_prompt: Prompt used for this iteration
+            is_final: Whether this is the final refinement
+            
+        Returns:
+            Refinement record ID if successful, None otherwise
+        """
+        if not self.storage_client or not self.db_client:
+            print("  - Supabase clients not available, skipping refinement tracking")
+            return None
+        
+        try:
+            # Upload HTML and image to Supabase Storage
+            html_url, image_url = self.storage_client.upload_refinement_files(
+                project_id, slide_id, iteration, html_content, image_path
+            )
+            
+            # Create database record for this refinement iteration
+            refinement_record = self.db_client.create_html_refinement(
+                project_id=project_id,
+                slide_id=slide_id,
+                iteration_number=iteration,
+                html_content=html_content,
+                html_file_url=html_url,
+                image_file_url=image_url,
+                refinement_feedback=refinement_feedback,
+                refinement_prompt=refinement_prompt,
+                is_final=is_final
+            )
+            
+            print(f"  ✅ Tracked refinement iteration {iteration} in Supabase: {refinement_record['id']}")
+            return refinement_record['id']
+            
+        except Exception as e:
+            print(f"  ⚠️ Failed to track refinement in Supabase: {e}")
+            return None
+    
+    def _get_or_create_slide_id(self, project_id: str, slide_index: int, slide_content: Any) -> Optional[str]:
+        """
+        Get existing slide ID or create a new slide record for refinement tracking
+        
+        Args:
+            project_id: Project UUID
+            slide_index: Zero-based slide index
+            slide_content: Slide content object
+            
+        Returns:
+            Slide UUID if successful, None otherwise
+        """
+        if not self.db_client:
+            return None
+        
+        try:
+            # Check if slide already exists
+            existing_slides = self.db_client.get_project_slides(project_id)
+            slide_number = slide_index + 1  # Convert to 1-based
+            
+            for slide in existing_slides:
+                if slide['slide_number'] == slide_number:
+                    return slide['id']
+            
+            # Create new slide record
+            slide_title = f"Slide {slide_number}"
+            content_dict = {}
+            
+            if hasattr(slide_content, 'content') and slide_content.content:
+                content_dict = slide_content.content
+                # Try to get a better title from content
+                for key, value in slide_content.content.items():
+                    if 'title' in key.lower() and isinstance(value, str):
+                        slide_title = value[:100]  # Limit length
+                        break
+            
+            slide_record = self.db_client.create_slide(
+                project_id=project_id,
+                slide_number=slide_number,
+                title=slide_title,
+                content=content_dict,
+                layout_type=f"layout_{getattr(slide_content, 'layout_index', 0)}"
+            )
+            
+            return slide_record['id']
+            
+        except Exception as e:
+            print(f"  ⚠️ Failed to get/create slide ID: {e}")
+            return None
 
     @monitor_agent_execution("html_refinement_agent")
     def execute(
@@ -1772,7 +1897,7 @@ class HTMLRefinementAgent:
         # Process all slides with TRUE parallel iterations
         print(f"  🚀 Starting TRUE parallel refinement for {len(slide_data)} slides...")
         refined_contents = await self._refine_all_slides_parallel(
-            slide_data, refinement_id, config
+            slide_data, refinement_id, state, config
         )
 
         # Update slide contents with refined HTML
@@ -1801,6 +1926,7 @@ class HTMLRefinementAgent:
         self,
         slide_data: List[Dict[str, Any]],
         refinement_id: str,
+        state: SlideGenerationState,
         config: Optional[RunnableConfig] = None,
         max_iterations: int = 5,
     ) -> Dict[int, Optional[str]]:
@@ -1812,13 +1938,22 @@ class HTMLRefinementAgent:
             f"  🔄 Processing {len(slide_data)} slides with independent parallel refinement loops..."
         )
 
+        # Extract project ID and slide contents from state
+        project_id = state.get("project_id")
+        slide_contents = state.get("slide_contents", [])
+        
         tasks = []
         for data in slide_data:
+            slide_index = data["slide_index"]
+            slide_content = slide_contents[slide_index] if slide_index < len(slide_contents) else None
+            
             task = self._refine_one_slide_fully_async(
-                slide_index=data["slide_index"],
+                slide_index=slide_index,
                 initial_html_content=data["html_content"],
                 slide_purpose=data["slide_purpose"],
                 refinement_id=refinement_id,
+                project_id=project_id,
+                slide_content=slide_content,
                 config=config,
                 max_iterations=max_iterations,
             )
@@ -1847,6 +1982,8 @@ class HTMLRefinementAgent:
         initial_html_content: str,
         slide_purpose: str,
         refinement_id: str,
+        project_id: Optional[str] = None,
+        slide_content: Optional[Any] = None,
         config: Optional[RunnableConfig] = None,
         max_iterations: int = 5,
     ) -> Optional[str]:
@@ -1857,6 +1994,13 @@ class HTMLRefinementAgent:
         current_html = initial_html_content
         slide_number = slide_index + 1
         print(f"  🚀 Starting full refinement loop for slide {slide_number}...")
+        
+        # Get or create slide ID for Supabase tracking
+        slide_id = None
+        if project_id and slide_content:
+            slide_id = self._get_or_create_slide_id(project_id, slide_index, slide_content)
+            if slide_id:
+                print(f"      📋 Using slide ID {slide_id} for Supabase tracking")
 
         for iteration in range(1, max_iterations + 1):
             print(
@@ -1899,6 +2043,16 @@ class HTMLRefinementAgent:
             correction_response = await self._get_html_correction_async(
                 current_html, image_url, slide_purpose, config
             )
+            
+            # Track this refinement iteration in Supabase
+            refinement_feedback = None
+            refinement_prompt = slide_purpose
+            is_final = False
+            
+            if correction_response:
+                refinement_feedback = correction_response.reasoning
+                if hasattr(correction_response, 'changes_applied'):
+                    refinement_feedback += f"\nChanges: {correction_response.changes_applied}"
 
             if (
                 correction_response
@@ -1909,10 +2063,26 @@ class HTMLRefinementAgent:
                     f"      🔄 Slide {slide_number}, Iteration {iteration}: LLM suggested changes. Continuing loop."
                 )
                 current_html = correction_response.html_code
+                
+                # Track the updated HTML in Supabase
+                if project_id and slide_id:
+                    self._track_refinement_in_supabase(
+                        project_id, slide_id, iteration, current_html, image_path,
+                        refinement_feedback, refinement_prompt, is_final=False
+                    )
+                
             else:
                 print(
                     f"      ⚪ Slide {slide_number}, Iteration {iteration}: No changes from LLM. Refinement complete for this slide."
                 )
+                
+                # Mark this as the final refinement
+                if project_id and slide_id:
+                    self._track_refinement_in_supabase(
+                        project_id, slide_id, iteration, current_html, image_path,
+                        refinement_feedback, refinement_prompt, is_final=True
+                    )
+                
                 break  # Early exit if no changes are needed
 
         print(f"  ✅ Finished refinement loop for slide {slide_number}.")
@@ -1963,10 +2133,13 @@ class HTMLRefinementAgent:
         return None
 
     def _render_html_to_image(self, html_content: str, image_path: str) -> bool:
+        # Extract dimensions from HTML content
+        width, height = self._extract_html_dimensions(html_content)
+        
         # Try to render with default method first
         try:
             print("  - Attempting to render HTML with default method...")
-            self.html_renderer.render_html_to_image(html_content, image_path)
+            self.html_renderer.render_html_to_image(html_content, image_path, width, height)
             if os.path.exists(image_path):
                 print("  - Successfully rendered HTML to image with default method")
                 return True
@@ -1983,7 +2156,7 @@ class HTMLRefinementAgent:
                     print(f"  - Attempting to render HTML with {method}...")
                     # Create a temporary renderer with this method
                     temp_renderer = HTMLRenderer(preferred_method=method)
-                    temp_renderer.render_html_to_image(html_content, image_path)
+                    temp_renderer.render_html_to_image(html_content, image_path, width, height)
                     if os.path.exists(image_path):
                         print(f"  - Successfully rendered HTML to image with {method}")
                         return True
@@ -1997,11 +2170,14 @@ class HTMLRefinementAgent:
         self, html_content: str, image_path: str
     ) -> bool:
         """Async version of _render_html_to_image for use in async contexts"""
+        # Extract dimensions from HTML content
+        width, height = self._extract_html_dimensions(html_content)
+        
         # Try to render with async method first
         try:
             print("  - Attempting to render HTML with async method...")
             result = await self.html_renderer.render_html_to_image_async(
-                html_content, image_path
+                html_content, image_path, width, height
             )
             if result and os.path.exists(image_path):
                 print("  - Successfully rendered HTML to image with async method")
@@ -2025,7 +2201,7 @@ class HTMLRefinementAgent:
 
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(
-                            temp_renderer.render_html_to_image, html_content, image_path
+                            temp_renderer.render_html_to_image, html_content, image_path, width, height
                         )
                         result = await asyncio.wrap_future(future)
 
@@ -2041,6 +2217,37 @@ class HTMLRefinementAgent:
 
         print("  - Failed to render HTML with all available methods (async)")
         return False
+
+    def _extract_html_dimensions(self, html_content: str) -> tuple[int, int]:
+        """Extract viewport dimensions from HTML content body class
+        
+        Args:
+            html_content: HTML content with body class containing dimensions
+            
+        Returns:
+            Tuple of (width, height) in pixels
+        """
+        import re
+        
+        # Default fallback dimensions
+        default_width, default_height = 1577, 603
+        
+        try:
+            # Look for patterns like w-[1577px] h-[603px] in body class
+            width_match = re.search(r'w-\[(\d+)px\]', html_content)
+            height_match = re.search(r'h-\[(\d+)px\]', html_content)
+            
+            if width_match and height_match:
+                width = int(width_match.group(1))
+                height = int(height_match.group(1))
+                return width, height
+            
+            print(f"  - Could not extract dimensions from HTML, using defaults: {default_width}x{default_height}")
+            return default_width, default_height
+                
+        except Exception as e:
+            print(f"  - Error extracting HTML dimensions: {e}, using defaults: {default_width}x{default_height}")
+            return default_width, default_height
 
     async def _get_html_correction_async(
         self,
@@ -2163,7 +2370,7 @@ Do NOT provide any other text, explanations, or markdown.
 **CRITICAL EVALUATION PRIORITIES:**
 
 **1. VIEWPORT CONSTRAINT ANALYSIS (TOP PRIORITY):**
-- **Detect Content Cropping**: Is ANY content cut off or extending beyond the 1577x603px viewport?
+- **Detect Content Cropping**: Is ANY content cut off or extending beyond the viewport?
 - **Check Overflow**: Are there scrollbars or content flowing outside the visible area?
 - **Validate Container Heights**: Are diagrams, cards, or text blocks exceeding the available space?
 - **Verify Complete Visibility**: Can you see ALL content elements in their entirety?
@@ -2176,7 +2383,7 @@ Do NOT provide any other text, explanations, or markdown.
 - **REQUIREMENT**: Content should NEVER be placed directly in body - always use cards
 
 **3. Content Layout Assessment:**
-- **Space Distribution**: Is the 1577x603px space used efficiently without overflow?
+- **Space Distribution**: Is the space used efficiently without overflow?
 - **Content Scaling**: Are text sizes, diagrams, and elements appropriately sized?
 - **Grid/Flex Usage**: Is CSS Grid or Flexbox used effectively for layout?
 - **Safe Margins**: Are there appropriate margins (minimum 20px) on all sides?
@@ -2204,7 +2411,7 @@ Do NOT provide any other text, explanations, or markdown.
 5. **Content Clarity**: Information should be easily understood and well-organized
 6. **Visual Hierarchy**: Important elements should be properly emphasized with correct brand colors
 7. **Professional Quality**: Design should be polished and business-appropriate with consistent branding
-8. **Space Utilization**: Effective use of the 1577x603px viewport
+8. **Space Utilization**: Effective use of the viewport
 
 **VIEWPORT CONSTRAINT SOLUTIONS:**
 - **Content Overflow**: Use `overflow: hidden` on containers, reduce content size, or reorganize layout
@@ -2216,7 +2423,7 @@ Do NOT provide any other text, explanations, or markdown.
 **MANDATORY CARD PATTERNS TO ENFORCE:**
 ```html
 <!-- Single Card (for simple content) -->
-<body class="w-[1577px] h-[603px] p-8 overflow-hidden">
+<body class="w-[WIDTHpx] h-[HEIGHTpx] p-8 overflow-hidden">
     <div class="card bg-base-100 shadow-xl h-full">
         <div class="card-body p-6">
             <!-- All content here -->
@@ -2225,7 +2432,7 @@ Do NOT provide any other text, explanations, or markdown.
 </body>
 
 <!-- Multi-Card Layout (for complex content) -->
-<body class="w-[1577px] h-[603px] p-8 overflow-hidden">
+<body class="w-[WIDTHpx] h-[HEIGHTpx] p-8 overflow-hidden">
     <div class="grid grid-cols-2 gap-6 h-full">
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body p-6">
@@ -2244,10 +2451,12 @@ Do NOT provide any other text, explanations, or markdown.
         </div>
     </div>
 </body>
+
+NOTE: Replace WIDTH and HEIGHT with the exact pixel dimensions found in the existing HTML being refined.
 ```
 
 **TECHNICAL REQUIREMENTS:**
-- **Viewport**: 1577x603 pixels exactly with `overflow: hidden`
+- **Viewport**: Match the exact dimensions specified in the HTML body element with `overflow: hidden`
 - **Frameworks**: TailwindCSS, Flowbite, and daisyUI components only
 - **Diagrams**: Mermaid.js or D3.js with height constraints (`max-h-[400px]`)
 - **No Titles**: Remove `<h1>` tags (slide has its own title)
@@ -2282,7 +2491,7 @@ Do NOT provide any other text, explanations, or markdown.
 - **Conservative Approach**: Preserve working elements while improving purpose alignment
 
 **QUALITY CHECKLIST:**
-✅ CRITICAL: ALL content fits within 1577x603px viewport (no cropping or overflow)
+✅ CRITICAL: ALL content fits within the specified viewport dimensions (no cropping or overflow)
 ✅ MANDATORY: All content wrapped in proper DaisyUI card structure
 ✅ MANDATORY: Ekona color palette enforced on ALL elements (Swiss Red #dc261e, Dark Grey #2d3748, Black #000000, White #ffffff)
 ✅ Purpose clearly communicated through visualization

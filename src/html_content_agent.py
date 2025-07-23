@@ -86,11 +86,9 @@ class HTMLContentGenerationAgent:
                 print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
                 return state
 
-            # Use async parallel HTML generation by default
-            processed_slides = asyncio.run(
-                self._process_planned_html_slides_parallel(
-                    slide_contents, presentation_plan, state.get("topic", ""), config
-                )
+            # Use parallel HTML generation (workflow handles async context properly)
+            processed_slides = self._process_slides_for_html_content(
+                slide_contents, state.get("topic", ""), config
             )
 
             # Update state with processed content
@@ -297,6 +295,8 @@ class HTMLContentGenerationAgent:
                     topic=topic,
                     slide_number=slide_number,
                     total_slides=total_slides,
+                    viewport_width=1577,  # TODO: Get actual placeholder width from slide
+                    viewport_height=603,  # TODO: Get actual placeholder height from slide
                     slide_spec=None,
                     config=config,
                 )
@@ -450,6 +450,8 @@ class HTMLContentGenerationAgent:
                     topic=topic,
                     slide_number=slide_number,
                     total_slides=total_slides,
+                    viewport_width=1577,  # TODO: Get actual placeholder width from slide
+                    viewport_height=603,  # TODO: Get actual placeholder height from slide
                     slide_spec=slide_spec,
                     config=config,
                 )
@@ -634,6 +636,8 @@ class HTMLContentGenerationAgent:
         topic: str,
         slide_number: int,
         total_slides: int,
+        viewport_width: int = 1577,
+        viewport_height: int = 603,
         slide_spec: Optional[Any] = None,
         config: Optional[RunnableConfig] = None,
     ) -> Optional[str]:
@@ -646,6 +650,8 @@ class HTMLContentGenerationAgent:
             topic: Overall presentation topic
             slide_number: Current slide number
             total_slides: Total number of slides
+            viewport_width: Width of the HTML viewport in pixels
+            viewport_height: Height of the HTML viewport in pixels
 
         Returns:
             HTML content string or None if generation failed
@@ -657,12 +663,14 @@ class HTMLContentGenerationAgent:
                 topic,
                 slide_number,
                 total_slides,
+                viewport_width,
+                viewport_height,
                 slide_spec,
             )
 
             # Generate HTML content
             generated_html = self.llm_client.generate_content(
-                system_prompt=self._get_html_generation_system_prompt(),
+                system_prompt=self._get_html_generation_system_prompt(viewport_width, viewport_height),
                 user_prompt=prompt,
                 config=config,
             )
@@ -841,6 +849,8 @@ class HTMLContentGenerationAgent:
         topic: str,
         slide_number: int,
         total_slides: int,
+        viewport_width: int = 1577,
+        viewport_height: int = 603,
         slide_spec: Optional[Any] = None,
     ) -> str:
         """Create prompt for HTML visualization generation."""
@@ -882,23 +892,23 @@ CONTEXT:
                     "these specifications exactly."
                 )
 
-        # Static requirements section
-        requirements_section = """
+        # Dynamic requirements section based on actual viewport dimensions
+        requirements_section = f"""
 VIEWPORT REQUIREMENTS:
-1.  **Overall Container**: The `<body>` of the HTML MUST be exactly `1577x603` pixels. Use Tailwind classes `w-[1577px] h-[603px]`. The root element should be a flex container (`flex`, `w-full`, `h-full`) to manage layout.
+1.  **Overall Container**: The `<body>` of the HTML MUST be exactly `{viewport_width}x{viewport_height}` pixels. Use Tailwind classes `w-[{viewport_width}px] h-[{viewport_height}px]`. The root element should be a flex container (`flex`, `w-full`, `h-full`) to manage layout.
 
 2.  **Diagram Sizing**: The `div` containing a Mermaid diagram should NOT fill the entire container if there is other content (like a title or descriptive text).
     - Use flexbox or grid to allocate space. For example, a title can be in one `div` and the diagram in another `div` that takes the remaining space (`flex-grow`).
     - The diagram's container should have padding (e.g., `p-8`) to ensure it doesn't touch the edges.
     - Example Layout:
-      <body class="w-[1577px] h-[603px] flex flex-col p-8">
+      <body class="w-[{viewport_width}px] h-[{viewport_height}px] flex flex-col p-8">
         <h1 class="text-3xl font-bold mb-4">Diagram Title</h1>
         <div class="mermaid flex-grow">
           ... Mermaid diagram ...
         </div>
       </body>
 
-3.  **No Overflow**: All content, including text and the diagram, MUST fit within the `1577x603` viewport without any scrolling or content being cut off.
+3.  **No Overflow**: All content, including text and the diagram, MUST fit within the `{viewport_width}x{viewport_height}` viewport without any scrolling or content being cut off.
 """
 
         # Visual design section
@@ -984,7 +994,7 @@ ADVANCED VISUALIZATION (D3.js):
         }
     </style>
 </head>
-<body class="w-[1577px] h-[603px] bg-white flex items-center justify-center p-8">
+<body class="w-[{viewport_width}px] h-[{viewport_height}px] bg-white flex items-center justify-center p-8">
     <!-- NEVER include Lucide sprite definitions here - the renderer handles all sprites -->
     <div class="card w-full h-full bg-base-100 shadow-xl">
         <div class="card-body flex flex-col">
@@ -1103,7 +1113,7 @@ DAISYUI TIMELINE ALTERNATIVE:
 - **Professional Layout**: Clean, corporate design suitable for business presentations
 
 **DaisyUI Timeline Example (for simple timelines):**
-<div class="w-[1577px] h-[603px] bg-white p-8">
+<div class="w-[{viewport_width}px] h-[{viewport_height}px] bg-white p-8">
   <div class="timeline timeline-vertical">
     <div class="timeline-item">
       <div class="timeline-start text-end pr-4">
@@ -1485,19 +1495,19 @@ See the mandatory D3.js timeline example above - use this exact pattern for all 
             ]
         )
 
-    def _get_html_generation_system_prompt(self) -> str:
+    def _get_html_generation_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
         """Get system prompt for HTML generation"""
-        return """You are an expert web developer and data visualization specialist.
+        return f"""You are an expert web developer and data visualization specialist.
 Your mission is to convert descriptive content into visually compelling HTML 
-visualizations that perfectly fill a 1577x603px container for business presentations.
+visualizations that perfectly fill a {viewport_width}x{viewport_height}px container for business presentations.
 
 **Your Role:** You receive descriptive content about what should be visualized 
 (timelines, processes, comparisons, etc.) and convert it into functional HTML code.
 
 **CRITICAL VIEWPORT CONSTRAINT:** 
-- The **ENTIRE HTML `<body>`** is the `1577x603px` container (NO SCROLLING ALLOWED)
+- The **ENTIRE HTML `<body>`** is the `{viewport_width}x{viewport_height}px` container (NO SCROLLING ALLOWED)
 - ALL content MUST fit within this fixed viewport without any overflow
-- ANY content extending beyond 603px height will be CROPPED and LOST
+- ANY content extending beyond {viewport_height}px height will be CROPPED and LOST
 - Use `overflow: hidden` on containers to prevent unwanted scrollbars
 
 **MANDATORY DAISYUI CARD STRUCTURE:**
@@ -1526,7 +1536,7 @@ visualizations that perfectly fill a 1577x603px container for business presentat
 6.  **No Custom SVG**: You MUST NOT generate any inline SVG code except for icon references.
 
 **VIEWPORT MANAGEMENT (CRITICAL):**
-- **Fixed Dimensions**: ALWAYS use the exact body dimensions: `class="w-[1577px] h-[603px]"`
+- **Fixed Dimensions**: ALWAYS use the exact body dimensions: `class="w-[{viewport_width}px] h-[{viewport_height}px]"`
 - **Content Distribution**: Use CSS Grid or Flexbox to distribute content within the viewport
 - **Responsive Scaling**: Content must scale to fit - NEVER exceed the viewport bounds
 - **Overflow Prevention**: Use `overflow: hidden` on any container that might overflow
@@ -1615,7 +1625,7 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     - ⚠️ CRITICAL: NEVER use Mermaid timeline syntax - use D3.js or DaisyUI for ALL timelines and roadmaps
     - Place ALL Mermaid syntax inside a `<div class="mermaid max-h-[400px] w-full">` element
     - The renderer automatically applies Ekona brand colors, do not add styling
-    - Keep diagrams simple enough to fit within 1577x603px container
+    - Keep diagrams simple enough to fit within {viewport_width}x{viewport_height}px container
     - **CRITICAL MERMAID SYNTAX RULES**:
       * Use simple text in nodes, avoid HTML tags like <b>, <br/>, <i>
       * Use quotes for node text: A["Simple Text Here"]
@@ -1656,10 +1666,10 @@ visualizations that perfectly fill a 1577x603px container for business presentat
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.2/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 0; }
+        body {{ font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; margin: 0; }}
     </style>
 </head>
-<body class="w-[1577px] h-[603px] p-8 overflow-hidden" style="background-color: #ffffff;">
+<body class="w-[{viewport_width}px] h-[{viewport_height}px] p-8 overflow-hidden" style="background-color: #ffffff;">
     <div class="grid grid-cols-2 gap-6 h-full">
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body p-6">
@@ -2252,6 +2262,8 @@ CRITICAL REQUIREMENTS:
         topic: str,
         slide_number: int,
         total_slides: int,
+        viewport_width: int = 1577,
+        viewport_height: int = 603,
         slide_spec: Optional[Any] = None,
         config: Optional[RunnableConfig] = None,
     ) -> tuple:
@@ -2266,12 +2278,14 @@ CRITICAL REQUIREMENTS:
                 topic,
                 slide_number,
                 total_slides,
+                viewport_width,
+                viewport_height,
                 slide_spec,
             )
 
             # Use async LLM client method for true parallelism
             generated_html = await self.llm_client.generate_content_async(
-                system_prompt=self._get_html_generation_system_prompt(),
+                system_prompt=self._get_html_generation_system_prompt(viewport_width, viewport_height),
                 user_prompt=prompt,
                 config=config,
             )

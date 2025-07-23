@@ -731,16 +731,40 @@ class SlideGenerator:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
                 temp_image_path = temp_file.name
 
-            # Render HTML to image with 2x resolution for crisp rendering
-            # Renderer will divide by 2 to get 1577x603 viewport (matching HTML design)
+            # Get placeholder dimensions for dynamic sizing
+            # PowerPoint internally uses EMUs (English Metric Units)
+            # 1 inch = 914400 EMUs, and we need to convert to pixels
+            # Using standard screen resolution of 96 DPI for consistency
+            DPI = 96
+            EMU_PER_INCH = 914400
+            EMU_PER_PIXEL = EMU_PER_INCH / DPI  # 9525 EMUs per pixel at 96 DPI
+            
+            placeholder_width_px = int(placeholder.width.emu / EMU_PER_PIXEL)
+            placeholder_height_px = int(placeholder.height.emu / EMU_PER_PIXEL)
+            
+            print(f"  - Placeholder dimensions: {placeholder_width_px}x{placeholder_height_px}px")
+            
+            # Render HTML to image with 2x resolution for high quality
+            # The HTML renderer internally uses device scale factor for crisp rendering
             success = self.html_renderer.render_html_to_image(
                 html_content=html_content,
                 output_path=temp_image_path,
-                width=3154,  # 2x resolution (1577*2) - will be divided by 2 for viewport
-                height=1206,  # 2x resolution (603*2) - will be divided by 2 for viewport
+                width=placeholder_width_px * 2,  # 2x resolution for high quality
+                height=placeholder_height_px * 2,  # 2x resolution for high quality
             )
 
             if success and os.path.exists(temp_image_path):
+                # Set proper DPI metadata on the image to ensure correct sizing in PowerPoint
+                try:
+                    from PIL import Image
+                    # Open the image and save with explicit DPI
+                    img = Image.open(temp_image_path)
+                    # Save with 192 DPI (2x of 96) since we rendered at 2x resolution
+                    img.save(temp_image_path, dpi=(192, 192))
+                    print(f"  - Set image DPI to 192 for proper PowerPoint display")
+                except Exception as e:
+                    print(f"  - Warning: Could not set DPI metadata: {e}")
+                
                 # Replace placeholder with rendered image
                 self._replace_placeholder_with_image(
                     placeholder, temp_image_path, custom_name

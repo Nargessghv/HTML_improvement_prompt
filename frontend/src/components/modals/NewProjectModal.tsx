@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { Loader2, Sparkles } from 'lucide-react'
 
@@ -33,8 +34,7 @@ const projectSchema = z.object({
     .min(3, 'Title must be at least 3 characters')
     .max(100, 'Title must be less than 100 characters'),
   topic: z.string()
-    .min(10, 'Topic description must be at least 10 characters')
-    .max(1000, 'Topic description must be less than 1000 characters'),
+    .min(10, 'Topic description must be at least 10 characters'),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
@@ -144,11 +144,13 @@ export function NewProjectModal({ open, onOpenChange }: NewProjectModalProps) {
                 <FormItem>
                   <FormLabel>Topic Description</FormLabel>
                   <FormControl>
-                    <Textarea
-                      placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included..."
-                      className="min-h-[120px] resize-none"
-                      {...field}
-                    />
+                    <ScrollArea className="h-[120px]">
+                      <Textarea
+                        placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included..."
+                        className="min-h-[120px] max-h-none resize-none border-0 shadow-none focus-visible:ring-0"
+                        {...field}
+                      />
+                    </ScrollArea>
                   </FormControl>
                   <FormDescription>
                     Be specific about your content needs. The more detail you provide, the better our AI can tailor the presentation.

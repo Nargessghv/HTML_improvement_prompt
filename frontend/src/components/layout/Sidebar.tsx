@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui'
@@ -11,7 +12,6 @@ import {
   FolderOpen,
   Settings,
   PlayCircle,
-  FileText,
   Plus,
   ChevronLeft,
   ChevronRight
@@ -64,36 +64,53 @@ export function Sidebar({ className }: SidebarProps) {
   return (
     <aside 
       className={cn(
-        'bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transition-all duration-300',
+        'bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 transition-all duration-300',
         isCollapsed ? 'w-16' : 'w-64',
         className
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-800">
         {!isCollapsed && (
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <FileText className="w-4 h-4 text-white" />
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 flex items-center justify-center">
+              <Image 
+                src="/ekona_logo_transparent.png" 
+                alt="Ekona Logo" 
+                width={40} 
+                height={40}
+                className="object-contain"
+              />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+              <h2 className="text-lg font-light text-neutral-900 dark:text-white">
                 Ekona
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 font-light">
                 Slide Creator
               </p>
             </div>
           </div>
         )}
+        {isCollapsed && (
+          <div className="w-8 h-8 flex items-center justify-center">
+            <Image 
+              src="/ekona_logo_transparent.png" 
+              alt="Ekona Logo" 
+              width={32} 
+              height={32}
+              className="object-contain"
+            />
+          </div>
+        )}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
         >
           {isCollapsed ? (
-            <ChevronRight className="w-4 h-4 text-gray-500" />
+            <ChevronRight className="w-4 h-4 text-neutral-500" />
           ) : (
-            <ChevronLeft className="w-4 h-4 text-gray-500" />
+            <ChevronLeft className="w-4 h-4 text-neutral-500" />
           )}
         </button>
       </div>
@@ -105,8 +122,8 @@ export function Sidebar({ className }: SidebarProps) {
           <button
             onClick={() => setShowNewProjectModal(true)}
             className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors',
-              'bg-blue-600 hover:bg-blue-700 text-white',
+              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors font-light',
+              'bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm',
               isCollapsed && 'justify-center'
             )}
           >
@@ -126,16 +143,16 @@ export function Sidebar({ className }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md transition-colors group',
+                  'flex items-center gap-3 px-3 py-2 rounded-md transition-colors group font-light',
                   isActive
-                    ? 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800',
+                    ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary'
+                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800',
                   isCollapsed && 'justify-center'
                 )}
               >
                 <Icon className={cn(
                   'w-4 h-4 flex-shrink-0',
-                  isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'
+                  isActive ? 'text-primary dark:text-primary' : 'text-neutral-500 dark:text-neutral-400'
                 )} />
                 {!isCollapsed && (
                   <>
@@ -150,10 +167,10 @@ export function Sidebar({ className }: SidebarProps) {
                 
                 {/* Tooltip for collapsed state */}
                 {isCollapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
                     {item.title}
                     {item.description && (
-                      <div className="text-gray-300 dark:text-gray-600">
+                      <div className="text-neutral-300 dark:text-neutral-600">
                         {item.description}
                       </div>
                     )}
@@ -167,12 +184,12 @@ export function Sidebar({ className }: SidebarProps) {
         {/* Recent Projects Section */}
         {!isCollapsed && (
           <div className="mt-6">
-            <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+            <h3 className="px-3 text-xs font-light text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">
               Recent Projects
             </h3>
             <div className="space-y-1">
               {/* Placeholder for recent projects - will be populated dynamically */}
-              <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 italic">
+              <div className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400 italic font-light">
                 No recent projects
               </div>
             </div>
@@ -182,8 +199,8 @@ export function Sidebar({ className }: SidebarProps) {
 
       {/* Footer */}
       {!isCollapsed && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-800">
-          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-200 dark:border-neutral-800">
+          <div className="text-xs text-neutral-500 dark:text-neutral-400 text-center font-light">
             © 2024 Ekona Technologies
           </div>
         </div>

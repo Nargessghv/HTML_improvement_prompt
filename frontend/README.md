@@ -53,9 +53,13 @@ The database setup includes:
 - ✅ `slides` table (for individual slides)
 - ✅ `conversations` table (for AI chat history)
 - ✅ `project_files` table (for generated files)
+- ✅ `html_refinements` table (for HTML refinement iterations tracking)
 - ✅ Row Level Security policies (users can only access their own data)
 - ✅ Indexes for performance
 - ✅ Auto-updating timestamps
+- ✅ Supabase Storage bucket (`html-refinements`) for storing HTML files and screenshots
+
+**Additional Setup Required**: Run `database-schema-refinements.sql` for HTML refinement tracking features.
 
 ## Development Setup
 
@@ -124,7 +128,9 @@ src/
 │   ├── auth/           # Authentication components
 │   ├── projects/       # Project management components
 │   ├── workflow/       # Workflow progress components
+│   ├── refinement/     # HTML refinement visualization components
 │   ├── slides/         # Slide viewing/editing components
+│   ├── modals/         # Reusable modal components
 │   ├── common/         # Shared utility components
 │   └── forms/          # Reusable form components
 ├── hooks/              # Custom React hooks (useSupabaseAuth, etc.)
@@ -327,17 +333,32 @@ All stores are fully typed with:
   - Projects list page with search, filtering, and status indicators
   - Individual project detail pages with workflow tracking
   - Real-time project updates via Supabase subscriptions
+  - Project CRUD operations with modals (Edit, Delete, Duplicate, Share)
+- **Phase 3.1**: Complete real-time workflow monitoring including:
+  - WorkflowProgress component with live status updates
+  - Real-time Supabase subscriptions for workflow states
+  - Error handling and retry mechanisms for failed stages
+  - WorkflowLogViewer with debug logs and data export
+  - Workflow management (cancel, restart, retry) functionality
+- **HTML Refinement System**: Complete refinement tracking and visualization:
+  - Backend integration with Supabase Storage for HTML/PNG file storage
+  - Database tracking for all refinement iterations with metadata
+  - RefinementViewer component with slide selection and iteration navigation
+  - Dual view modes (visual preview + HTML code inspection)
+  - Timeline visualization and download functionality
+  - Automatic integration in project detail pages
 - **Components**: Professional UI components with Ekona branding
 - **State Management**: Simplified authentication system without infinite loops
 - **Form Handling**: React Hook Form + Zod validation schemas
 - **Route Protection**: Smart middleware protecting all application routes
-- **Database Integration**: Complete Supabase setup with all required tables
-- **Real-time Features**: Project updates automatically sync across all pages
+- **Database Integration**: Complete Supabase setup with all required tables + refinement schema
+- **Real-time Features**: Project and workflow updates automatically sync across all pages
+- **File Management**: Supabase Storage integration for refinement files with organized structure
 
 #### 🚧 Next Steps
-- **Phase 3.1**: Backend API integration for workflow processing
-- **Phase 3.2**: Real-time workflow progress visualization
-- **Phase 4**: Slide content management and HTML rendering
+- **Phase 4.1**: Enhanced slide content management and editing capabilities
+- **Phase 4.2**: Interactive HTML editor with live preview
+- **Phase 5**: AI agent conversation interface for HTML optimization
 
 ## Learn More
 

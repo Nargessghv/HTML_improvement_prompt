@@ -34,6 +34,9 @@ requests>=2.28.0
 # SVG to PNG conversion
 cairosvg>=2.5.0
 
+# Image processing for DPI metadata
+Pillow>=10.0.0
+
 # Lucide Static Icons (commented out - not available in PyPI)
 # lucide-static  # For icon management
 

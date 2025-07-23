@@ -113,16 +113,24 @@ class SupabaseClient:
         """Initialize Supabase client with environment variables"""
         try:
             self.supabase_url = os.getenv("SUPABASE_URL")
-            self.supabase_key = os.getenv("SUPABASE_ANON_KEY")
+            # Prefer service role key for backend operations to bypass RLS
+            self.supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
             
             if not self.supabase_url or not self.supabase_key:
-                raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables")
+                raise ValueError("SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY must be set in environment variables")
             
             # Validate URL format
             if not self.supabase_url.startswith(('https://', 'http://')):
                 raise ValueError("SUPABASE_URL must be a valid HTTP/HTTPS URL")
             
+            # Log which key type is being used for debugging
+            key_type = "service_role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anon"
+            db_logger.info(f"Initializing Supabase client with {key_type} key")
+            
             self.client: Client = create_client(self.supabase_url, self.supabase_key)
+            
+            # Store whether we're using service role key
+            self.using_service_role = bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
             
             # Test connection on initialization
             db_logger.info("Initializing Supabase client...")
@@ -134,6 +142,24 @@ class SupabaseClient:
         except Exception as e:
             db_logger.error(f"❌ Failed to initialize Supabase client: {e}")
             raise DatabaseConnectionError(f"Supabase client initialization failed: {str(e)}", original_error=e)
+    
+    def create_user_client(self, jwt_token: str) -> Client:
+        """Create a Supabase client with user context for RLS operations"""
+        if self.using_service_role:
+            # When using service role, return the main client (bypasses RLS)
+            return self.client
+        else:
+            # Create a new client instance with the user's JWT token
+            from supabase.client import ClientOptions
+            
+            user_client = create_client(
+                self.supabase_url, 
+                os.getenv("SUPABASE_ANON_KEY"),
+                options=ClientOptions(
+                    headers={"Authorization": f"Bearer {jwt_token}"}
+                )
+            )
+            return user_client
     
     def _validate_uuid(self, value: str, field_name: str) -> None:
         """Validate UUID format"""
@@ -164,7 +190,7 @@ class SupabaseClient:
     
     # Project operations
     @log_database_operation("create_project", "projects")
-    def create_project(self, user_id: str, title: str, topic: str) -> Dict[str, Any]:
+    def create_project(self, user_id: str, title: str, topic: str, jwt_token: Optional[str] = None) -> Dict[str, Any]:
         """Create a new project with validation and error handling"""
         # Validate inputs
         self._validate_uuid(user_id, "user_id")
@@ -186,7 +212,10 @@ class SupabaseClient:
             "updated_at": datetime.now().isoformat()
         }
         
-        result = self.client.table("projects").insert(project_data).execute()
+        # Use appropriate client based on service role availability and JWT token
+        client_to_use = self.create_user_client(jwt_token) if jwt_token and not self.using_service_role else self.client
+        
+        result = client_to_use.table("projects").insert(project_data).execute()
         data = self._handle_supabase_response(result, "create_project", "projects")
         
         if not data:
@@ -195,14 +224,17 @@ class SupabaseClient:
         return data[0]
     
     @log_database_operation("get_project", "projects")
-    def get_project(self, project_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_project(self, project_id: str, user_id: Optional[str] = None, jwt_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get a project by ID, optionally filtered by user"""
         # Validate inputs
         self._validate_uuid(project_id, "project_id")
         if user_id:
             self._validate_uuid(user_id, "user_id")
         
-        query = self.client.table("projects").select("*").eq("id", project_id)
+        # Use appropriate client based on service role availability and JWT token
+        client_to_use = self.create_user_client(jwt_token) if jwt_token and not self.using_service_role else self.client
+        
+        query = client_to_use.table("projects").select("*").eq("id", project_id)
         
         if user_id:
             query = query.eq("user_id", user_id)
@@ -237,7 +269,7 @@ class SupabaseClient:
         return bool(data)
     
     @log_database_operation("get_user_projects", "projects")
-    def get_user_projects(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_user_projects(self, user_id: str, limit: int = 50, offset: int = 0, jwt_token: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all projects for a user with pagination validation"""
         # Validate inputs
         self._validate_uuid(user_id, "user_id")
@@ -248,7 +280,10 @@ class SupabaseClient:
         if offset < 0:
             raise DatabaseValidationError("Offset must be non-negative")
         
-        result = self.client.table("projects")\
+        # Use appropriate client based on service role availability and JWT token
+        client_to_use = self.create_user_client(jwt_token) if jwt_token and not self.using_service_role else self.client
+        
+        result = client_to_use.table("projects")\
             .select("*")\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
@@ -289,8 +324,8 @@ class SupabaseClient:
             raise DatabaseValidationError(f"Invalid workflow status '{status}'. Must be one of: {valid_statuses}")
         
         valid_agents = [
-            "layout_analysis", "presentation_planning", "content_generation", 
-            "html_content_generation", "html_refinement", "quality_review", "slide_assembly"
+            "layout_analysis", "planning", "content_generation", 
+            "html_generation", "refinement", "quality_review", "assembly"
         ]
         if agent_name not in valid_agents:
             db_logger.warning(f"Unusual agent name '{agent_name}' - expected one of: {valid_agents}")
@@ -490,6 +525,153 @@ class SupabaseClient:
         result = query.order("created_at", desc=True).execute()
         return result.data or []
     
+    # HTML Refinement operations
+    @log_database_operation("create_html_refinement", "html_refinements")
+    def create_html_refinement(self, project_id: str, slide_id: str, iteration_number: int,
+                              html_content: str, html_file_url: Optional[str] = None,
+                              image_file_url: Optional[str] = None, 
+                              refinement_feedback: Optional[str] = None,
+                              refinement_prompt: Optional[str] = None,
+                              is_final: bool = False) -> Dict[str, Any]:
+        """Create an HTML refinement record with validation"""
+        # Validate inputs
+        self._validate_uuid(project_id, "project_id")
+        self._validate_uuid(slide_id, "slide_id")
+        self._validate_required_fields({"html_content": html_content}, ["html_content"])
+        
+        if iteration_number < 1:
+            raise DatabaseValidationError("Iteration number must be positive")
+        
+        refinement_data = {
+            "id": str(uuid.uuid4()),
+            "project_id": project_id,
+            "slide_id": slide_id,
+            "iteration_number": iteration_number,
+            "html_content": html_content,
+            "is_final": is_final,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Add optional fields
+        if html_file_url:
+            refinement_data["html_file_url"] = html_file_url
+        if image_file_url:
+            refinement_data["image_file_url"] = image_file_url
+        if refinement_feedback:
+            refinement_data["refinement_feedback"] = refinement_feedback
+        if refinement_prompt:
+            refinement_data["refinement_prompt"] = refinement_prompt
+        
+        result = self.client.table("html_refinements").insert(refinement_data).execute()
+        data = self._handle_supabase_response(result, "create_html_refinement", "html_refinements")
+        
+        if not data:
+            raise DatabaseError("Failed to create HTML refinement - no data returned", "create_html_refinement", "html_refinements")
+        
+        return data[0]
+    
+    @log_database_operation("get_slide_refinements", "html_refinements")
+    def get_slide_refinements(self, slide_id: str, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all refinement iterations for a slide"""
+        self._validate_uuid(slide_id, "slide_id")
+        if project_id:
+            self._validate_uuid(project_id, "project_id")
+        
+        query = self.client.table("html_refinements").select("*").eq("slide_id", slide_id)
+        
+        if project_id:
+            query = query.eq("project_id", project_id)
+        
+        result = query.order("iteration_number", desc=False).execute()
+        data = self._handle_supabase_response(result, "get_slide_refinements", "html_refinements")
+        
+        return data or []
+    
+    @log_database_operation("get_latest_refinement", "html_refinements")
+    def get_latest_refinement(self, slide_id: str) -> Optional[Dict[str, Any]]:
+        """Get the latest (highest iteration) refinement for a slide"""
+        self._validate_uuid(slide_id, "slide_id")
+        
+        result = self.client.table("html_refinements")\
+            .select("*")\
+            .eq("slide_id", slide_id)\
+            .order("iteration_number", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "get_latest_refinement", "html_refinements")
+        return data[0] if data else None
+    
+    @log_database_operation("get_final_refinement", "html_refinements")
+    def get_final_refinement(self, slide_id: str) -> Optional[Dict[str, Any]]:
+        """Get the final (marked as final) refinement for a slide"""
+        self._validate_uuid(slide_id, "slide_id")
+        
+        result = self.client.table("html_refinements")\
+            .select("*")\
+            .eq("slide_id", slide_id)\
+            .eq("is_final", True)\
+            .order("iteration_number", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "get_final_refinement", "html_refinements")
+        return data[0] if data else None
+    
+    @log_database_operation("update_refinement_as_final", "html_refinements")
+    def update_refinement_as_final(self, refinement_id: str) -> bool:
+        """Mark a refinement as final and unmark all others for the same slide"""
+        self._validate_uuid(refinement_id, "refinement_id")
+        
+        # First get the refinement to find its slide_id
+        result = self.client.table("html_refinements").select("slide_id").eq("id", refinement_id).execute()
+        data = self._handle_supabase_response(result, "get_refinement_slide", "html_refinements")
+        
+        if not data:
+            return False
+        
+        slide_id = data[0]["slide_id"]
+        
+        # Unmark all other refinements for this slide as final
+        self.client.table("html_refinements")\
+            .update({"is_final": False})\
+            .eq("slide_id", slide_id)\
+            .execute()
+        
+        # Mark the specified refinement as final
+        result = self.client.table("html_refinements")\
+            .update({"is_final": True})\
+            .eq("id", refinement_id)\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "update_refinement_as_final", "html_refinements")
+        return bool(data)
+    
+    @log_database_operation("delete_refinement", "html_refinements")
+    def delete_refinement(self, refinement_id: str) -> bool:
+        """Delete an HTML refinement record"""
+        self._validate_uuid(refinement_id, "refinement_id")
+        
+        result = self.client.table("html_refinements").delete().eq("id", refinement_id).execute()
+        data = self._handle_supabase_response(result, "delete_refinement", "html_refinements")
+        
+        return bool(data)
+    
+    @log_database_operation("get_project_refinements", "html_refinements")
+    def get_project_refinements(self, project_id: str) -> List[Dict[str, Any]]:
+        """Get all refinements for a project, grouped by slide"""
+        self._validate_uuid(project_id, "project_id")
+        
+        result = self.client.table("html_refinements")\
+            .select("*, slides(slide_number, title)")\
+            .eq("project_id", project_id)\
+            .order("slide_id")\
+            .order("iteration_number")\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "get_project_refinements", "html_refinements")
+        return data or []
+
     # Utility methods
     @log_database_operation("health_check", "projects")
     def health_check(self) -> bool:

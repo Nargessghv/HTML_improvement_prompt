@@ -189,21 +189,25 @@ class SlideGenerationWorkflow:
         output_path: str,
         layout_indices: Optional[List[int]] = None,
         config: Optional[RunnableConfig] = None,
+        title: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute the complete slide generation workflow
 
         Args:
-            topic: Presentation topic
+            topic: Presentation topic description
             template_path: Path to PowerPoint template
             output_path: Output path for generated presentation
             layout_indices: Optional specific layouts to use
             config: Optional Langchain configuration
+            title: Optional presentation title
 
         Returns:
             Dictionary with workflow results and metadata
         """
         print("🚀 Starting AI-powered slide generation workflow...")
+        if title:
+            print(f"🎯 Title: {title}")
         print(f"📋 Topic: {topic}")
         print(f"📁 Template: {template_path}")
         print(f"💾 Output: {output_path}")
@@ -214,6 +218,7 @@ class SlideGenerationWorkflow:
             "template_path": template_path,
             "output_path": output_path,
             "layout_indices": layout_indices,
+            "title": title,
             "current_step": "starting",
             "error_message": None,
             "retry_count": 0,
@@ -233,6 +238,7 @@ class SlideGenerationWorkflow:
             "presentation_path": None,
             "success": False,
             "monitor_trace": None,
+            "project_id": self.project_id,  # Add project_id for Supabase tracking
         }
 
         # Setup configuration with Langfuse callback handler for unified tracing
@@ -359,7 +365,7 @@ class SlideGenerationWorkflow:
         return state
 
     def _create_initial_state(
-        self, topic: str, template_path: str, output_path: str
+        self, topic: str, template_path: str, output_path: str, title: Optional[str] = None
     ) -> SlideGenerationState:
         """Create initial workflow state"""
         initial_state: SlideGenerationState = {
@@ -367,6 +373,7 @@ class SlideGenerationWorkflow:
             "template_path": template_path,
             "output_path": output_path,
             "layout_indices": None,
+            "title": title,
             "current_step": "starting",
             "error_message": None,
             "retry_count": 0,
@@ -483,23 +490,23 @@ class SlideGenerationWorkflow:
     ) -> SlideGenerationState:
         """Presentation planning agent node with database tracking"""
         start_time = datetime.now()
-        self._update_workflow_state("presentation_planning", "in_progress", started_at=start_time.isoformat())
+        self._update_workflow_state("planning", "in_progress", started_at=start_time.isoformat())
         
         try:
             result = self.planning_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
             if result.get("error_message"):
-                self._update_workflow_state("presentation_planning", "failed",
+                self._update_workflow_state("planning", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
             else:
-                self._update_workflow_state("presentation_planning", "completed",
+                self._update_workflow_state("planning", "completed",
                                           execution_time_seconds=execution_time)
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
-            self._update_workflow_state("presentation_planning", "failed",
+            self._update_workflow_state("planning", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
             raise
@@ -507,102 +514,208 @@ class SlideGenerationWorkflow:
     def _content_generation_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """Content generation agent node"""
-        return self.content_agent.execute(state, config)
+        """Content generation agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("content_generation", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.content_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("content_generation", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("content_generation", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("content_generation", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _html_content_generation_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """HTML content generation agent node with configurable parallel processing"""
+        """HTML content generation agent node with configurable parallel processing and database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("html_generation", "in_progress", started_at=start_time.isoformat())
 
         # Check if parallel HTML content generation is enabled
         use_parallel = os.getenv("USE_PARALLEL_HTML_CONTENT", "true").lower() == "true"
 
-        if not use_parallel:
-            print("🔄 Using sequential HTML content generation")
-            return self.html_content_agent.execute(state, config)
-
-        # Try to use parallel HTML content generation
+        # Execute HTML content generation
         try:
-            # Check if we're already in an async context
-            try:
-                loop = asyncio.get_running_loop()
-                # If we're in an async context, we need to handle this differently
-                print(
-                    "⚠️ Running in async context, using sequential fallback for HTML content generation"
-                )
-                return self.html_content_agent.execute(state, config)
-            except RuntimeError:
-                # No running loop, we can safely use asyncio.run
-                print(
-                    "🚀 Using TRUE parallel HTML content generation for better performance"
-                )
-                return asyncio.run(
-                    self.html_content_agent.execute_parallel(state, config)
-                )
+            if not use_parallel:
+                print("🔄 Using sequential HTML content generation")
+                result = self.html_content_agent.execute(state, config)
+            else:
+                # Handle both sync and async contexts properly
+                try:
+                    loop = asyncio.get_running_loop()
+                    print("🚀 Using threadsafe parallel HTML content generation in existing event loop")
+                    
+                    # We're in an async context - use a thread pool to avoid blocking the main loop
+                    import concurrent.futures
+                    import threading
+                    
+                    # Create a new event loop in a separate thread
+                    def run_in_thread():
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            return new_loop.run_until_complete(
+                                self.html_content_agent.execute_parallel(state, config)
+                            )
+                        finally:
+                            new_loop.close()
+                    
+                    # Execute in thread pool
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(run_in_thread)
+                        result = future.result()
+                        
+                except RuntimeError:
+                    # No running loop, we can safely use asyncio.run
+                    print("🚀 Using standalone parallel HTML content generation")
+                    result = asyncio.run(
+                        self.html_content_agent.execute_parallel(state, config)
+                    )
+            
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("html_generation", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("html_generation", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
         except Exception as e:
-            print(f"❌ Parallel HTML content generation failed: {e}")
-            print("🔄 Falling back to sequential HTML content generation")
-            return self.html_content_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("html_generation", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _html_refinement_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """HTML refinement agent node with configurable parallel processing"""
-
-        if not self.use_parallel_html_refinement:
-            print("🔄 Using sequential HTML refinement")
-            return self.refinement_agent.execute(state, config)
-
-        # Try to use parallel refinement
+        """HTML refinement agent node with configurable parallel processing and database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("refinement", "in_progress", started_at=start_time.isoformat())
+        
         try:
-            # Check if we're already in an async context
-            try:
-                loop = asyncio.get_running_loop()
-                # If we're in an async context, we need to handle this differently
-                print(
-                    "⚠️ Running in async context, using sequential fallback for HTML refinement"
-                )
-                return self.refinement_agent.execute(state, config)
-            except RuntimeError:
-                # No running loop, we can safely use asyncio.run
-                print("🔄 Using parallel HTML refinement for better performance")
-                return asyncio.run(
-                    self.refinement_agent.execute_parallel(state, config)
-                )
+            # Check if we should use parallel processing
+            use_parallel_refinement = self.use_parallel_html_refinement
+            
+            if not use_parallel_refinement:
+                print("🔄 Using sequential HTML refinement")
+                result = self.refinement_agent.execute(state, config)
+            else:
+                # Handle both sync and async contexts properly
+                try:
+                    loop = asyncio.get_running_loop()
+                    print("🚀 Using threadsafe parallel HTML refinement in existing event loop")
+                    
+                    # We're in an async context - use a thread pool to avoid blocking the main loop
+                    import concurrent.futures
+                    
+                    # Create a new event loop in a separate thread
+                    def run_in_thread():
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        try:
+                            return new_loop.run_until_complete(
+                                self.refinement_agent.execute_parallel(state, config)
+                            )
+                        finally:
+                            new_loop.close()
+                    
+                    # Execute in thread pool
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(run_in_thread)
+                        result = future.result()
+                        
+                except RuntimeError:
+                    # No running loop, we can safely use asyncio.run
+                    print("🔄 Using standalone parallel HTML refinement")
+                    result = asyncio.run(
+                        self.refinement_agent.execute_parallel(state, config)
+                    )
+            
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("refinement", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("refinement", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
         except Exception as e:
-            print(f"❌ Parallel HTML refinement failed: {e}")
-            print("🔄 Falling back to sequential HTML refinement")
-            return self.refinement_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("refinement", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _quality_review_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
-        """Quality review agent node"""
-        return self.quality_agent.execute(state, config)
+        """Quality review agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("quality_review", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.quality_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("quality_review", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("quality_review", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("quality_review", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
 
     def _slide_assembly_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
         """Slide assembly agent node with database tracking"""
         start_time = datetime.now()
-        self._update_workflow_state("slide_assembly", "in_progress", started_at=start_time.isoformat())
+        self._update_workflow_state("assembly", "in_progress", started_at=start_time.isoformat())
         
         try:
             result = self.assembly_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
             if result.get("error_message"):
-                self._update_workflow_state("slide_assembly", "failed",
+                self._update_workflow_state("assembly", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
             else:
-                self._update_workflow_state("slide_assembly", "completed",
+                self._update_workflow_state("assembly", "completed",
                                           execution_time_seconds=execution_time)
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
-            self._update_workflow_state("slide_assembly", "failed",
+            self._update_workflow_state("assembly", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
             raise

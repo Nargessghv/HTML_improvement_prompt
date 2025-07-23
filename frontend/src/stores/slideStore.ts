@@ -84,7 +84,7 @@ interface SlideActions {
 
 export type SlideStore = SlideState & SlideActions
 
-const defaultViewport = { width: 1577, height: 603 } // PowerPoint slide dimensions
+const defaultViewport = { width: 1577, height: 603 } // Default PowerPoint slide dimensions for preview (actual dimensions are now dynamic)
 
 export const useSlideStore = create<SlideStore>()(
   subscribeWithSelector((set, get) => ({

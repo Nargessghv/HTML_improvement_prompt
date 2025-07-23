@@ -32,7 +32,7 @@ export const useSupabaseAuth = () => {
         if (mounted) {
           if (error) {
             console.error('Error getting session:', error)
-            authStore.setLoading(false)
+            authStore.authStore.setLoading(false)
             return
           }
 
@@ -41,7 +41,7 @@ export const useSupabaseAuth = () => {
       } catch (error) {
         console.error('Auth initialization error:', error)
         if (mounted) {
-          authStore.setLoading(false)
+          authStore.authStore.setLoading(false)
         }
       }
     }
@@ -111,7 +111,7 @@ export const useSupabaseAuth = () => {
   // Sign in with email and password
   const signInWithPassword = useCallback(async (email: string, password: string) => {
     try {
-      authStore.setLoading(true)
+      authStore.authStore.setLoading(true)
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -136,14 +136,14 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      authStore.setLoading(false)
+      authStore.authStore.setLoading(false)
     }
   }, [])
 
   // Sign up with email and password
   const signUpWithPassword = useCallback(async (email: string, password: string) => {
     try {
-      setLoading(true)
+      authStore.authStore.setLoading(true)
       
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -179,14 +179,14 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, addNotification])
+  }, [authStore.setLoading, addNotification])
 
   // Sign out
   const handleSignOut = useCallback(async () => {
     try {
-      setLoading(true)
+      authStore.setLoading(true)
       
       const { error } = await supabase.auth.signOut()
       
@@ -211,14 +211,14 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, signOut, addNotification])
+  }, [authStore.setLoading, signOut, addNotification])
 
   // Reset password
   const resetPassword = useCallback(async (email: string) => {
     try {
-      setLoading(true)
+      authStore.setLoading(true)
       
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`
@@ -248,14 +248,14 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, addNotification])
+  }, [authStore.setLoading, addNotification])
 
   // Update password
   const updatePassword = useCallback(async (password: string) => {
     try {
-      setLoading(true)
+      authStore.setLoading(true)
       
       const { error } = await supabase.auth.updateUser({ password })
 
@@ -283,9 +283,9 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, addNotification])
+  }, [authStore.setLoading, addNotification])
 
   // Update profile
   const updateProfile = useCallback(async (profileData: {
@@ -295,7 +295,7 @@ export const useSupabaseAuth = () => {
     avatar_url?: string
   }) => {
     try {
-      setLoading(true)
+      authStore.setLoading(true)
       
       const { error } = await supabase.auth.updateUser({
         data: profileData
@@ -325,9 +325,9 @@ export const useSupabaseAuth = () => {
       })
       return { success: false, error }
     } finally {
-      setLoading(false)
+      authStore.setLoading(false)
     }
-  }, [setLoading, addNotification])
+  }, [authStore.setLoading, addNotification])
 
   return {
     // State
