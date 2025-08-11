@@ -88,7 +88,7 @@ class HTMLContentGenerationAgent:
 
             # Use parallel HTML generation (workflow handles async context properly)
             processed_slides = self._process_slides_for_html_content(
-                slide_contents, state.get("topic", ""), config
+                slide_contents, state.get("topic", ""), state, config
             )
 
             # Update state with processed content
@@ -201,6 +201,7 @@ class HTMLContentGenerationAgent:
         self,
         slide_contents: List[SlideContent],
         topic: str,
+        state: dict,
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideContent]:
         """
@@ -219,6 +220,9 @@ class HTMLContentGenerationAgent:
 
         print(f"  🔍 Analyzing {len(slide_contents)} slides for HTML opportunities...")
 
+        # Get layouts info from state
+        layouts_info = state.get("layouts_info", {})
+
         for i, slide_content in enumerate(slide_contents, 1):
             print(f"  📄 Processing slide {i} (Layout {slide_content.layout_index})...")
 
@@ -228,7 +232,7 @@ class HTMLContentGenerationAgent:
 
             # Analyze content for HTML visualization opportunities
             enhanced_content = self._enhance_slide_with_html_content(
-                slide_content, topic, i, len(slide_contents), config
+                slide_content, topic, i, len(slide_contents), layouts_info, config
             )
 
             # Check if HTML was generated for this slide
@@ -252,12 +256,57 @@ class HTMLContentGenerationAgent:
 
         return processed_slides
 
+    def _get_placeholder_dimensions(self, layout_index: int, placeholder_name: str, layouts_info: dict) -> tuple[int, int]:
+        """
+        Get placeholder dimensions from layout information.
+        
+        Args:
+            layout_index: The layout index for the slide
+            placeholder_name: The name of the placeholder
+            layouts_info: Layout information dictionary
+            
+        Returns:
+            Tuple of (width, height) in pixels, or default values if not found
+        """
+        default_width, default_height = 1577, 603  # Fallback dimensions
+        
+        try:
+            layout_info = layouts_info.get(layout_index)
+            if not layout_info:
+                print(f"        ⚠️  Layout {layout_index} not found, using defaults")
+                return default_width, default_height
+                
+            placeholders = layout_info.get("placeholders", [])
+            for placeholder_info in placeholders:
+                if placeholder_info.get("name") == placeholder_name:
+                    width_px = placeholder_info.get("width_px", default_width)
+                    height_px = placeholder_info.get("height_px", default_height)
+                    print(f"        📐 Found dimensions for '{placeholder_name}': {width_px}x{height_px}px")
+                    return width_px, height_px
+                    
+            # If not found by name, try to find a suitable placeholder by type/size
+            # This handles cases where placeholder names might not match exactly
+            for placeholder_info in placeholders:
+                if placeholder_info.get("width_px", 0) > 500:  # Large enough for visualizations
+                    width_px = placeholder_info.get("width_px", default_width)
+                    height_px = placeholder_info.get("height_px", default_height)
+                    print(f"        📐 Using fallback placeholder dimensions: {width_px}x{height_px}px")
+                    return width_px, height_px
+                    
+            print(f"        ⚠️  No suitable placeholder found for '{placeholder_name}', using defaults")
+            return default_width, default_height
+            
+        except Exception as e:
+            print(f"        ❌ Error getting placeholder dimensions: {e}, using defaults")
+            return default_width, default_height
+
     def _enhance_slide_with_html_content(
         self,
         slide_content: SlideContent,
         topic: str,
         slide_number: int,
         total_slides: int,
+        layouts_info: Optional[dict] = None,
         config: Optional[RunnableConfig] = None,
     ) -> SlideContent:
         """
@@ -288,15 +337,20 @@ class HTMLContentGenerationAgent:
             if should_generate:
                 print(f"        🎨 Generating HTML for '{placeholder_name}'")
 
-                # Generate enhanced HTML content (without detailed specifications)
+                # Get actual placeholder dimensions from layout info
+                placeholder_width, placeholder_height = self._get_placeholder_dimensions(
+                    slide_content.layout_index, placeholder_name, layouts_info
+                )
+                
+                # Generate enhanced HTML content (using actual dimensions)
                 html_content = self._generate_html_visualization_content(
                     placeholder_name=placeholder_name,
                     original_content=content_text,
                     topic=topic,
                     slide_number=slide_number,
                     total_slides=total_slides,
-                    viewport_width=1577,  # TODO: Get actual placeholder width from slide
-                    viewport_height=603,  # TODO: Get actual placeholder height from slide
+                    viewport_width=placeholder_width,
+                    viewport_height=placeholder_height,
                     slide_spec=None,
                     config=config,
                 )

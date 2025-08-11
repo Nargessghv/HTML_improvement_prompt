@@ -64,12 +64,23 @@ class LayoutAnalyzer:
             # Extract instructional text from placeholder (if any)
             instructional_text = self._extract_placeholder_instructions(placeholder)
 
+            # Calculate placeholder dimensions in pixels
+            EMU_PER_INCH = 914400
+            DPI = 96
+            EMU_PER_PIXEL = EMU_PER_INCH / DPI
+            
+            width_px = int(placeholder.width.emu / EMU_PER_PIXEL)
+            height_px = int(placeholder.height.emu / EMU_PER_PIXEL)
+
             placeholder_info = {
                 "index": placeholder.placeholder_format.idx,
                 "type": placeholder.placeholder_format.type,
                 "name": custom_name,
                 "shape_type": placeholder.shape_type,
                 "instructions": instructional_text,  # Add instructional text
+                "width_px": width_px,  # Add pixel width
+                "height_px": height_px,  # Add pixel height
+                "aspect_ratio": round(width_px / height_px, 2) if height_px > 0 else 1.0,
             }
             layout_info["placeholders"].append(placeholder_info)
 
