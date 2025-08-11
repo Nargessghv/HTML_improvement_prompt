@@ -119,7 +119,7 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <Card className="bg-gradient-to-r from-red-50 to-gray-50 dark:from-red-950/20 dark:to-gray-800 border-red-200 dark:border-red-800/30 shadow-lg">
-          <CardHeader className="pb-6">
+          <CardHeader className="pb-4">
             <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <div className="p-1 rounded-md bg-red-100 dark:bg-red-900/30">
                 <Plus className="w-4 h-4 text-red-600 dark:text-red-400" />
@@ -131,7 +131,7 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <Button 
                 onClick={() => setShowNewProjectModal(true)}
                 variant="outline" 
@@ -145,6 +145,7 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400 text-left">Create a presentation from scratch</p>
               </Button>
+              
               <Link href="/projects">
                 <Button 
                   variant="outline" 
@@ -154,9 +155,24 @@ export default function DashboardPage() {
                     <div className="p-1 rounded-md bg-gray-100 dark:bg-gray-700 group-hover:bg-gray-200 dark:group-hover:bg-gray-600 transition-colors">
                       <FolderOpen className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </div>
-                    <span className="font-medium text-gray-900 dark:text-white">Browse Projects</span>
+                    <span className="font-medium text-gray-900 dark:text-white">All Projects</span>
                   </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 text-left">View all your presentations</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 text-left">Browse your presentations</p>
+                </Button>
+              </Link>
+              
+              <Link href="/workflow">
+                <Button 
+                  variant="outline" 
+                  className="h-auto p-4 flex flex-col items-start gap-2 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-950/20 w-full group"
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <div className="p-1 rounded-md bg-blue-100 dark:bg-blue-900/30 group-hover:bg-blue-200 dark:group-hover:bg-blue-900/50 transition-colors">
+                      <PlayCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <span className="font-medium text-gray-900 dark:text-white">Workflows</span>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 text-left">Monitor AI generation</p>
                 </Button>
               </Link>
             </div>
@@ -164,8 +180,8 @@ export default function DashboardPage() {
         </Card>
 
         {/* Recent Activity */}
-        <div className="grid gap-8 lg:grid-cols-2 px-2">
-          <Card className="bg-white dark:bg-gray-800 border-0 shadow-lg mx-2">
+        <div className="grid gap-8 lg:grid-cols-2">
+          <Card className="bg-white dark:bg-gray-800 border-0 shadow-lg">
             <CardHeader className="pb-6">
               <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                 <div className="p-1 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/30">
@@ -247,7 +263,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="bg-white dark:bg-gray-800 border-0 shadow-lg mx-2">
+          <Card className="bg-white dark:bg-gray-800 border-0 shadow-lg">
             <CardHeader className="pb-6">
               <CardTitle className="flex items-center gap-2 text-lg font-semibold">
                 <div className="p-1 rounded-md bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">

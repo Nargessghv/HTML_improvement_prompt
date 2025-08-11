@@ -26,15 +26,18 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
-import { Loader2, Sparkles } from 'lucide-react'
+import { Loader2, Sparkles, FileText, Lightbulb, Target, Users, Zap } from 'lucide-react'
 
 const projectSchema = z.object({
   title: z.string()
     .min(3, 'Title must be at least 3 characters')
     .max(100, 'Title must be less than 100 characters'),
   topic: z.string()
-    .min(10, 'Topic description must be at least 10 characters'),
+    .min(20, 'Topic description must be at least 20 characters')
+    .max(1000, 'Topic description must be less than 1000 characters'),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
@@ -112,14 +115,16 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[525px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-blue-600" />
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/30">
+              <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
             Create New Presentation
           </DialogTitle>
           <DialogDescription>
-            Describe your presentation topic and let our AI agents create a professional PowerPoint for you.
+            Let AI agents create a professional PowerPoint for you.
           </DialogDescription>
         </DialogHeader>
         
@@ -134,6 +139,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                   <FormControl>
                     <Input 
                       placeholder="e.g., Q4 Business Review, Marketing Strategy 2024"
+                      className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30"
                       {...field} 
                     />
                   </FormControl>
@@ -152,23 +158,26 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                 <FormItem>
                   <FormLabel>Topic Description</FormLabel>
                   <FormControl>
-                    <ScrollArea className="h-[120px]">
+                    <div className="relative">
                       <Textarea
-                        placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included..."
-                        className="min-h-[120px] max-h-none resize-none border-0 shadow-none focus-visible:ring-0"
+                        placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included."
+                        className="min-h-[120px] focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30 resize-none"
                         {...field}
                       />
-                    </ScrollArea>
+                      <div className="absolute bottom-2 right-2 text-xs text-gray-400 dark:text-gray-500">
+                        {field.value.length}/1000
+                      </div>
+                    </div>
                   </FormControl>
                   <FormDescription>
-                    Be specific about your content needs. The more detail you provide, the better our AI can tailor the presentation.
+                    Be specific about your content needs. More details help our AI create better presentations.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
             
-            <div className="flex justify-end space-x-3">
+            <div className="flex justify-end space-x-3 pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -180,7 +189,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
               <Button 
                 type="submit" 
                 disabled={isCreating}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-red-600 hover:bg-red-700 text-white"
               >
                 {isCreating ? (
                   <>
