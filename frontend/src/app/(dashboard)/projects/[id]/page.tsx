@@ -17,6 +17,7 @@ import {
   ShareProjectModal
 } from '@/components/modals'
 import { WorkflowProgress } from '@/components/workflow/WorkflowProgress'
+import { PresentationPlanner } from '@/components/chat'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -34,7 +35,8 @@ import {
   Download,
   FileText,
   Image,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -375,23 +377,33 @@ export default function ProjectDetailPage() {
             {statusConfig[project.status].label}
           </Badge>
           {project.status === 'draft' && (
-            <Button 
-              onClick={startProcessing}
-              disabled={isStarting}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {isStarting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <PlayCircle className="w-4 h-4 mr-2" />
-                  Start Processing
-                </>
-              )}
-            </Button>
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => router.push(`/projects/${projectId}/interactive`)}
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/10"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Interactive Planning
+              </Button>
+              <Button 
+                onClick={startProcessing}
+                disabled={isStarting}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {isStarting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="w-4 h-4 mr-2" />
+                    Quick Generate
+                  </>
+                )}
+              </Button>
+            </div>
           )}
           
           {/* Project Actions Menu */}

@@ -23,6 +23,7 @@ import httpx
 from supabase import create_client
 from .workflow import SlideGenerationWorkflow
 from .database import get_supabase_client, SupabaseClient, DatabaseError, DatabaseConnectionError, DatabaseValidationError, DatabasePermissionError
+from .chat_agent import PresentationPlanningAgent, PresentationOutline
 
 # Configure logging for API server
 logging.basicConfig(
@@ -43,7 +44,7 @@ app = FastAPI(
 # Add CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://*.vercel.app"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://*.vercel.app"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -303,6 +304,34 @@ class ProjectFileResponse(BaseModel):
     created_at: str
     download_url: str
 
+# Chat-related models
+class ChatStartRequest(BaseModel):
+    project_id: str
+    initial_topic: str
+
+class ChatMessageRequest(BaseModel):
+    session_id: str
+    message: str
+
+class ChatMessageResponse(BaseModel):
+    response: str
+    outline: Optional[Dict[str, Any]] = None
+    suggestions: List[str] = Field(default_factory=list)
+
+class ChatSessionResponse(BaseModel):
+    session_id: str
+    project_id: str
+    messages: List[Dict[str, Any]]
+    created_at: str
+    
+class ChatContextResponse(BaseModel):
+    chat_history: List[Dict[str, Any]]
+    key_points: List[str]
+    style_preferences: Dict[str, Any]
+    target_audience: Optional[str] = None
+    objectives: List[str]
+    presentation_outline: Optional[Dict[str, Any]] = None
+
 # Authentication helper
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Extract user from JWT token and set database context"""
@@ -448,7 +477,7 @@ async def health_check():
 
 @app.websocket("/ws/{project_id}")
 async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str):
-    """WebSocket endpoint for real-time project updates"""
+    """Enhanced WebSocket endpoint for real-time project updates and interactive features"""
     try:
         # Verify authentication
         user = db.client.auth.get_user(token)
@@ -466,28 +495,90 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str, token: str):
         
         await manager.connect(websocket, user_id, project_id)
         
-        # Send initial project status
+        # Send initial state including new interactive features
         workflow_states = db.get_project_workflow_states(project_id)
+        
+        # Get slide drafts if any
+        slide_drafts_result = db.client.table("slide_drafts").select("*").eq(
+            "project_id", project_id
+        ).order("slide_number").execute()
+        
+        # Get chat sessions
+        chat_sessions_result = db.client.table("chat_sessions").select("id, created_at").eq(
+            "project_id", project_id
+        ).order("created_at", desc=True).limit(1).execute()
+        
         await websocket.send_text(json.dumps({
             "event_type": "initial_state",
             "project_id": project_id,
             "workflow_states": workflow_states,
-            "project_status": project["status"]
+            "project_status": project["status"],
+            "slide_drafts": slide_drafts_result.data or [],
+            "has_chat_session": len(chat_sessions_result.data) > 0,
+            "chat_session_id": chat_sessions_result.data[0]["id"] if chat_sessions_result.data else None
         }))
         
         try:
             while True:
-                # Keep connection alive and handle incoming messages
+                # Handle incoming messages
                 data = await websocket.receive_text()
-                # Echo back for connection testing
-                await websocket.send_text(json.dumps({
-                    "event_type": "pong",
-                    "timestamp": datetime.now().isoformat()
-                }))
+                message = json.loads(data)
+                
+                # Handle different message types
+                if message.get("type") == "ping":
+                    await websocket.send_text(json.dumps({
+                        "event_type": "pong",
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                
+                elif message.get("type") == "generate_slide":
+                    # Queue slide generation
+                    slide_number = message.get("slide_number")
+                    await websocket.send_text(json.dumps({
+                        "event_type": "slide_generation_queued",
+                        "slide_number": slide_number,
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    # TODO: Trigger actual slide generation
+                
+                elif message.get("type") == "edit_slide":
+                    # Handle slide edit request
+                    slide_id = message.get("slide_id")
+                    edit_request = message.get("request")
+                    
+                    # Create edit request in database
+                    edit_result = db.client.table("slide_edit_requests").insert({
+                        "slide_draft_id": slide_id,
+                        "user_id": user_id,
+                        "request_type": edit_request.get("type", "content"),
+                        "request_details": edit_request,
+                        "status": "pending"
+                    }).execute()
+                    
+                    await websocket.send_text(json.dumps({
+                        "event_type": "edit_request_created",
+                        "edit_request_id": edit_result.data[0]["id"],
+                        "slide_id": slide_id,
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                
+                elif message.get("type") == "approve_slide":
+                    # Handle slide approval
+                    slide_id = message.get("slide_id")
+                    db.client.table("slide_drafts").update({
+                        "status": "approved"
+                    }).eq("id", slide_id).execute()
+                    
+                    await websocket.send_text(json.dumps({
+                        "event_type": "slide_approved",
+                        "slide_id": slide_id,
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    
         except WebSocketDisconnect:
             pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        api_logger.error(f"WebSocket error: {e}")
         await websocket.close(code=1011, reason="Internal error")
     finally:
         manager.disconnect(websocket, user_id, project_id)
@@ -999,6 +1090,183 @@ def _get_storage_bucket_for_type(file_type: str) -> str:
         "slide_images": "slide-images"
     }
     return bucket_mapping.get(file_type, "presentations")
+
+# Chat endpoints for interactive presentation planning
+
+# Initialize chat agent
+chat_agent = PresentationPlanningAgent()
+
+@app.post("/chat/start", response_model=ChatMessageResponse)
+async def start_chat_session(
+    request: ChatStartRequest,
+    user = Depends(get_current_user)
+):
+    """Start a new chat session for presentation planning"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(request.project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Start chat session
+        result = await chat_agent.start_session(
+            project_id=request.project_id,
+            initial_topic=request.initial_topic
+        )
+        
+        # Update project topic if different
+        if project["topic"] != request.initial_topic:
+            db.client.table("projects").update({
+                "topic": request.initial_topic
+            }).eq("id", request.project_id).execute()
+        
+        return ChatMessageResponse(
+            response=result["response"],
+            suggestions=result["suggestions"]
+        )
+        
+    except Exception as e:
+        api_logger.error(f"Error starting chat session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error starting chat session: {str(e)}")
+
+@app.post("/chat/message", response_model=ChatMessageResponse)
+async def send_chat_message(
+    request: ChatMessageRequest,
+    user = Depends(get_current_user)
+):
+    """Send a message to the chat agent"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id").eq(
+            "id", request.session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Process message
+        result = await chat_agent.send_message(
+            session_id=request.session_id,
+            message=request.message
+        )
+        
+        # Send real-time update if outline generated
+        if result.get("outline"):
+            await send_realtime_update(
+                project_id=project_id,
+                user_id=user.id,
+                event_type="outline_generated",
+                data={"outline": result["outline"]}
+            )
+        
+        return ChatMessageResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error processing chat message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+
+@app.get("/api/chat/{session_id}/context", response_model=ChatContextResponse)
+async def get_chat_context(
+    session_id: str,
+    user = Depends(get_current_user)
+):
+    """Get chat context for downstream agents"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id").eq(
+            "id", session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get context
+        context = await chat_agent.get_context(session_id)
+        return ChatContextResponse(**context)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error getting chat context: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting context: {str(e)}")
+
+@app.post("/chat/{session_id}/regenerate-outline", response_model=ChatMessageResponse)
+async def regenerate_outline(
+    session_id: str,
+    feedback: str = Form(...),
+    user = Depends(get_current_user)
+):
+    """Regenerate presentation outline based on feedback"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id").eq(
+            "id", session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Regenerate outline
+        result = await chat_agent.regenerate_outline(session_id, feedback)
+        
+        # Send real-time update
+        await send_realtime_update(
+            project_id=project_id,
+            user_id=user.id,
+            event_type="outline_updated",
+            data={"outline": result["outline"]}
+        )
+        
+        return ChatMessageResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error regenerating outline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error regenerating outline: {str(e)}")
+
+@app.get("/projects/{project_id}/chat-sessions", response_model=List[ChatSessionResponse])
+async def get_project_chat_sessions(
+    project_id: str,
+    user = Depends(get_current_user),
+    limit: int = 10
+):
+    """Get chat sessions for a project"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get chat sessions
+        result = db.client.table("chat_sessions").select("*").eq(
+            "project_id", project_id
+        ).order("created_at", desc=True).limit(limit).execute()
+        
+        return [ChatSessionResponse(**session) for session in result.data]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error getting chat sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting chat sessions: {str(e)}")
 
 # Background task function
 async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str):

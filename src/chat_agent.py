@@ -1,0 +1,530 @@
+"""
+Presentation Planning Chat Agent
+
+This module provides an interactive chat agent that helps users plan and structure
+their presentations through conversational AI. The agent maintains context and
+generates presentation outlines that can be used by downstream slide generation agents.
+"""
+
+import json
+import uuid
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+
+from langchain.schema import HumanMessage, AIMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langchain.memory import ConversationBufferMemory
+from pydantic import BaseModel, Field
+
+from .database import get_supabase_client, DatabaseError
+
+
+class SlideOutline(BaseModel):
+    """Structure for individual slide outline"""
+    slide_number: int
+    title: str
+    content_type: str  # 'text', 'visual', 'chart', 'timeline', 'comparison'
+    key_points: List[str]
+    suggested_layout: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PresentationOutline(BaseModel):
+    """Complete presentation outline structure"""
+    title: str
+    topic: str
+    target_audience: Optional[str] = None
+    objectives: List[str] = Field(default_factory=list)
+    key_themes: List[str] = Field(default_factory=list)
+    slides: List[SlideOutline] = Field(default_factory=list)
+    estimated_duration: Optional[int] = None  # in minutes
+    style_preferences: Dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass
+class ChatMessage:
+    """Chat message structure"""
+    role: str  # 'user' or 'assistant'
+    content: str
+    timestamp: str = None
+    metadata: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now().isoformat()
+        if self.metadata is None:
+            self.metadata = {}
+
+
+class PresentationPlanningAgent:
+    """
+    Interactive chat agent for presentation planning and structuring.
+    Maintains conversation context and generates structured outlines.
+    """
+    
+    def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.7):
+        """
+        Initialize the planning agent.
+        
+        Args:
+            model_name: OpenAI model to use
+            temperature: Model temperature for response generation
+        """
+        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
+        self.db = get_supabase_client()
+        
+        # System prompt for presentation planning
+        self.system_prompt = """You are an expert presentation planning assistant. Your role is to help users create well-structured, engaging presentations through conversational planning.
+
+Your responsibilities:
+1. Ask clarifying questions to understand the user's needs
+2. Suggest presentation structures and content organization
+3. Provide industry-specific insights and best practices
+4. Create detailed slide outlines with content suggestions
+5. Recommend visual elements (charts, timelines, diagrams) where appropriate
+
+Key principles:
+- Be conversational and friendly
+- Ask one or two questions at a time
+- Provide specific, actionable suggestions
+- Consider the target audience and context
+- Balance information density with visual appeal
+- Suggest 10-15 slides for most presentations
+
+When the user seems ready, generate a complete presentation outline in a structured format."""
+    
+    async def start_session(self, project_id: str, initial_topic: str) -> Dict[str, Any]:
+        """
+        Start a new chat session for presentation planning.
+        
+        Args:
+            project_id: Project ID to associate with the session
+            initial_topic: Initial topic provided by the user
+            
+        Returns:
+            Session info including session_id and initial response
+        """
+        try:
+            # Create chat session in database
+            session_data = {
+                "project_id": project_id,
+                "messages": [],
+                "context": {
+                    "initial_topic": initial_topic,
+                    "started_at": datetime.now().isoformat()
+                }
+            }
+            
+            result = self.db.client.table("chat_sessions").insert(session_data).execute()
+            session = result.data[0]
+            session_id = session["id"]
+            
+            # Generate initial response
+            initial_message = f"I'd be happy to help you create a presentation about '{initial_topic}'. To get started, could you tell me:\n\n1. Who is your target audience?\n2. What's the main goal or message you want to convey?\n3. How long do you expect the presentation to be (in minutes or number of slides)?"
+            
+            # Save messages
+            messages = [
+                ChatMessage(role="user", content=initial_topic),
+                ChatMessage(role="assistant", content=initial_message)
+            ]
+            
+            await self._save_messages(session_id, messages)
+            
+            return {
+                "session_id": session_id,
+                "response": initial_message,
+                "suggestions": self._generate_initial_suggestions(initial_topic)
+            }
+            
+        except DatabaseError as e:
+            raise Exception(f"Failed to start chat session: {str(e)}")
+    
+    async def send_message(self, session_id: str, message: str) -> Dict[str, Any]:
+        """
+        Process a user message and generate a response.
+        
+        Args:
+            session_id: Chat session ID
+            message: User's message
+            
+        Returns:
+            Response with agent's reply and any generated outline
+        """
+        try:
+            # Load chat history
+            session = await self._load_session(session_id)
+            messages = session["messages"]
+            
+            # Convert to LangChain messages
+            lc_messages = [SystemMessage(content=self.system_prompt)]
+            for msg in messages:
+                if msg["role"] == "user":
+                    lc_messages.append(HumanMessage(content=msg["content"]))
+                else:
+                    lc_messages.append(AIMessage(content=msg["content"]))
+            
+            # Add new user message
+            lc_messages.append(HumanMessage(content=message))
+            
+            # Generate response
+            response = await self.llm.ainvoke(lc_messages)
+            response_text = response.content
+            
+            # Check if we should generate an outline
+            outline = None
+            if self._should_generate_outline(message, response_text, len(messages)):
+                outline = await self._generate_outline(session_id, lc_messages)
+                if outline:
+                    response_text += f"\n\nBased on our discussion, I've created a presentation outline with {len(outline.slides)} slides. You can review it and let me know if you'd like any changes!"
+            
+            # Save new messages
+            new_messages = [
+                ChatMessage(role="user", content=message),
+                ChatMessage(role="assistant", content=response_text)
+            ]
+            await self._save_messages(session_id, new_messages)
+            
+            # Update presentation draft if outline generated
+            if outline:
+                await self._save_presentation_draft(session_id, outline)
+            
+            return {
+                "response": response_text,
+                "outline": outline.dict() if outline else None,
+                "suggestions": self._generate_suggestions(message, response_text)
+            }
+            
+        except Exception as e:
+            raise Exception(f"Failed to process message: {str(e)}")
+    
+    async def get_context(self, session_id: str) -> Dict[str, Any]:
+        """
+        Get the chat context for use by downstream agents.
+        
+        Args:
+            session_id: Chat session ID
+            
+        Returns:
+            Context dictionary with chat history and extracted information
+        """
+        try:
+            session = await self._load_session(session_id)
+            messages = session["messages"]
+            
+            # Extract key information from conversation
+            context = {
+                "chat_history": messages,
+                "key_points": self._extract_key_points(messages),
+                "style_preferences": self._extract_style_preferences(messages),
+                "target_audience": self._extract_target_audience(messages),
+                "objectives": self._extract_objectives(messages)
+            }
+            
+            # Get presentation outline if available
+            draft_result = self.db.client.table("presentation_drafts").select("*").eq(
+                "chat_session_id", session_id
+            ).execute()
+            
+            if draft_result.data:
+                context["presentation_outline"] = draft_result.data[0]["presentation_outline"]
+            
+            return context
+            
+        except Exception as e:
+            raise Exception(f"Failed to get context: {str(e)}")
+    
+    async def regenerate_outline(self, session_id: str, feedback: str) -> Dict[str, Any]:
+        """
+        Regenerate the presentation outline based on user feedback.
+        
+        Args:
+            session_id: Chat session ID
+            feedback: User's feedback on the current outline
+            
+        Returns:
+            Updated outline
+        """
+        # First process the feedback as a regular message
+        result = await self.send_message(session_id, f"Please update the outline: {feedback}")
+        
+        # Force outline regeneration
+        session = await self._load_session(session_id)
+        messages = session["messages"]
+        
+        lc_messages = [SystemMessage(content=self.system_prompt)]
+        for msg in messages:
+            if msg["role"] == "user":
+                lc_messages.append(HumanMessage(content=msg["content"]))
+            else:
+                lc_messages.append(AIMessage(content=msg["content"]))
+        
+        outline = await self._generate_outline(session_id, lc_messages, force=True)
+        await self._save_presentation_draft(session_id, outline)
+        
+        return {
+            "response": result["response"],
+            "outline": outline.dict()
+        }
+    
+    # Private helper methods
+    
+    async def _load_session(self, session_id: str) -> Dict[str, Any]:
+        """Load chat session from database"""
+        result = self.db.client.table("chat_sessions").select("*").eq("id", session_id).execute()
+        if not result.data:
+            raise ValueError(f"Session {session_id} not found")
+        return result.data[0]
+    
+    async def _save_messages(self, session_id: str, messages: List[ChatMessage]):
+        """Save messages to the session"""
+        # Load existing messages
+        session = await self._load_session(session_id)
+        existing_messages = session["messages"]
+        
+        # Append new messages
+        for msg in messages:
+            existing_messages.append(asdict(msg))
+        
+        # Update session
+        self.db.client.table("chat_sessions").update({
+            "messages": existing_messages
+        }).eq("id", session_id).execute()
+    
+    async def _save_presentation_draft(self, session_id: str, outline: PresentationOutline):
+        """Save or update presentation draft"""
+        session = await self._load_session(session_id)
+        project_id = session["project_id"]
+        
+        draft_data = {
+            "project_id": project_id,
+            "chat_session_id": session_id,
+            "presentation_outline": outline.dict(),
+            "skeleton_structure": self._generate_skeleton_structure(outline)
+        }
+        
+        # Check if draft exists
+        existing = self.db.client.table("presentation_drafts").select("id").eq(
+            "project_id", project_id
+        ).execute()
+        
+        if existing.data:
+            # Update existing
+            self.db.client.table("presentation_drafts").update(draft_data).eq(
+                "id", existing.data[0]["id"]
+            ).execute()
+        else:
+            # Create new
+            self.db.client.table("presentation_drafts").insert(draft_data).execute()
+    
+    def _should_generate_outline(self, message: str, response: str, message_count: int) -> bool:
+        """Determine if we should generate an outline"""
+        # Triggers for outline generation
+        triggers = [
+            "create the outline",
+            "generate the outline", 
+            "show me the structure",
+            "let's proceed",
+            "that sounds good",
+            "looks good",
+            "perfect"
+        ]
+        
+        message_lower = message.lower()
+        
+        # Check explicit triggers
+        if any(trigger in message_lower for trigger in triggers):
+            return True
+        
+        # Check if we have enough context (usually after 4-6 exchanges)
+        if message_count >= 8:
+            confirmation_words = ["yes", "okay", "sure", "great", "sounds good"]
+            if any(word in message_lower for word in confirmation_words):
+                return True
+        
+        return False
+    
+    async def _generate_outline(self, session_id: str, messages: List, force: bool = False) -> Optional[PresentationOutline]:
+        """Generate presentation outline based on conversation"""
+        outline_prompt = """Based on our conversation, create a detailed presentation outline. 
+        
+        Return the outline in this exact JSON format:
+        {
+            "title": "Presentation Title",
+            "topic": "Main topic",
+            "target_audience": "Target audience description",
+            "objectives": ["Objective 1", "Objective 2"],
+            "key_themes": ["Theme 1", "Theme 2"],
+            "slides": [
+                {
+                    "slide_number": 1,
+                    "title": "Slide Title",
+                    "content_type": "text|visual|chart|timeline|comparison",
+                    "key_points": ["Point 1", "Point 2"],
+                    "suggested_layout": "layout name",
+                    "notes": "Additional notes"
+                }
+            ],
+            "estimated_duration": 30,
+            "style_preferences": {
+                "tone": "professional|casual|academic",
+                "visual_style": "modern|classic|minimal",
+                "color_scheme": "suggestions"
+            }
+        }"""
+        
+        messages_with_prompt = messages + [HumanMessage(content=outline_prompt)]
+        
+        try:
+            response = await self.llm.ainvoke(messages_with_prompt)
+            
+            # Parse JSON from response
+            json_start = response.content.find('{')
+            json_end = response.content.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                outline_data = json.loads(response.content[json_start:json_end])
+                return PresentationOutline(**outline_data)
+            
+        except Exception as e:
+            print(f"Error generating outline: {e}")
+        
+        return None
+    
+    def _generate_skeleton_structure(self, outline: PresentationOutline) -> Dict[str, Any]:
+        """Generate skeleton structure for the presentation"""
+        return {
+            "total_slides": len(outline.slides),
+            "sections": self._identify_sections(outline.slides),
+            "visual_elements": self._count_visual_elements(outline.slides),
+            "estimated_generation_time": len(outline.slides) * 30  # seconds
+        }
+    
+    def _identify_sections(self, slides: List[SlideOutline]) -> List[Dict[str, Any]]:
+        """Identify logical sections in the presentation"""
+        sections = []
+        current_section = {"start": 0, "end": 0, "theme": "Introduction"}
+        
+        for i, slide in enumerate(slides):
+            # Simple section detection based on slide numbers and titles
+            if i == 0:
+                current_section["theme"] = "Introduction"
+            elif i == len(slides) - 1:
+                sections.append(current_section)
+                current_section = {"start": i, "end": i, "theme": "Conclusion"}
+            elif "overview" in slide.title.lower():
+                if current_section["end"] > current_section["start"]:
+                    sections.append(current_section)
+                current_section = {"start": i, "end": i, "theme": "Overview"}
+            elif any(word in slide.title.lower() for word in ["conclusion", "summary", "next steps"]):
+                if current_section["end"] > current_section["start"]:
+                    sections.append(current_section)
+                current_section = {"start": i, "end": i, "theme": "Conclusion"}
+            else:
+                current_section["end"] = i
+        
+        sections.append(current_section)
+        return sections
+    
+    def _count_visual_elements(self, slides: List[SlideOutline]) -> Dict[str, int]:
+        """Count different types of visual elements"""
+        counts = {
+            "charts": 0,
+            "timelines": 0,
+            "comparisons": 0,
+            "diagrams": 0,
+            "images": 0
+        }
+        
+        for slide in slides:
+            if slide.content_type == "chart":
+                counts["charts"] += 1
+            elif slide.content_type == "timeline":
+                counts["timelines"] += 1
+            elif slide.content_type == "comparison":
+                counts["comparisons"] += 1
+            elif slide.content_type == "visual":
+                counts["diagrams"] += 1
+        
+        return counts
+    
+    def _extract_key_points(self, messages: List[Dict]) -> List[str]:
+        """Extract key points from conversation"""
+        key_points = []
+        
+        for msg in messages:
+            if msg["role"] == "user":
+                # Look for explicitly stated points
+                content_lower = msg["content"].lower()
+                if any(phrase in content_lower for phrase in ["important", "key point", "main", "focus"]):
+                    key_points.append(msg["content"])
+        
+        return key_points[:5]  # Limit to top 5
+    
+    def _extract_style_preferences(self, messages: List[Dict]) -> Dict[str, Any]:
+        """Extract style preferences from conversation"""
+        preferences = {
+            "formality": "professional",  # default
+            "visual_density": "balanced",
+            "color_preferences": []
+        }
+        
+        # Analyze messages for style cues
+        all_text = " ".join([msg["content"].lower() for msg in messages])
+        
+        if any(word in all_text for word in ["casual", "friendly", "informal"]):
+            preferences["formality"] = "casual"
+        elif any(word in all_text for word in ["academic", "scientific", "research"]):
+            preferences["formality"] = "academic"
+        
+        if any(word in all_text for word in ["minimal", "simple", "clean"]):
+            preferences["visual_density"] = "minimal"
+        elif any(word in all_text for word in ["detailed", "comprehensive", "thorough"]):
+            preferences["visual_density"] = "detailed"
+        
+        return preferences
+    
+    def _extract_target_audience(self, messages: List[Dict]) -> Optional[str]:
+        """Extract target audience from conversation"""
+        for msg in messages:
+            content_lower = msg["content"].lower()
+            if any(phrase in content_lower for phrase in ["audience", "presenting to", "for"]):
+                # Simple extraction - can be made more sophisticated
+                return msg["content"]
+        return None
+    
+    def _extract_objectives(self, messages: List[Dict]) -> List[str]:
+        """Extract presentation objectives from conversation"""
+        objectives = []
+        
+        for msg in messages:
+            content_lower = msg["content"].lower()
+            if any(phrase in content_lower for phrase in ["goal", "objective", "aim", "purpose"]):
+                objectives.append(msg["content"])
+        
+        return objectives[:3]  # Limit to top 3
+    
+    def _generate_initial_suggestions(self, topic: str) -> List[str]:
+        """Generate initial suggestions based on topic"""
+        return [
+            f"Consider starting with a compelling story or statistic about {topic}",
+            "Think about what your audience already knows and what they need to learn",
+            "Aim for 10-15 slides for a 20-30 minute presentation",
+            "Include visual elements to support your key messages"
+        ]
+    
+    def _generate_suggestions(self, message: str, response: str) -> List[str]:
+        """Generate contextual suggestions"""
+        suggestions = []
+        
+        # Context-based suggestions
+        if "audience" in message.lower():
+            suggestions.append("Consider tailoring examples to your audience's industry or experience")
+        
+        if "technical" in message.lower():
+            suggestions.append("Balance technical details with clear explanations for non-experts")
+        
+        if "visual" in message.lower():
+            suggestions.append("Use charts for data, timelines for processes, and diagrams for concepts")
+        
+        return suggestions if suggestions else ["Let me know if you need any clarification or have specific requirements"]
