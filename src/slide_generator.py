@@ -974,8 +974,58 @@ class SlideGenerator:
                 # Delete the placeholder
                 shapes._spTree.remove(placeholder._element)
 
-                # Add the image in the same position and size
-                picture = shapes.add_picture(image_path, left, top, width, height)
+                # Add the image with DPI-aware sizing
+                # First, let PowerPoint auto-size based on image DPI, then adjust if needed
+                picture = shapes.add_picture(image_path, left, top)
+                
+                # Check if auto-sizing worked correctly
+                auto_width = picture.width
+                auto_height = picture.height
+                
+                # Compare auto-sized dimensions with placeholder dimensions
+                EMU_PER_INCH = 914400
+                tolerance = EMU_PER_INCH * 0.2  # Increased to 0.2 inch tolerance (~19px)
+                
+                width_diff = abs(auto_width.emu - width.emu)
+                height_diff = abs(auto_height.emu - height.emu)
+                
+                auto_width_px = auto_width.emu // 9525
+                auto_height_px = auto_height.emu // 9525
+                target_width_px = width.emu // 9525
+                target_height_px = height.emu // 9525
+                
+                print(f"  - Auto-sized to: {auto_width_px}x{auto_height_px}px")
+                print(f"  - Placeholder: {target_width_px}x{target_height_px}px")
+                
+                if width_diff > tolerance or height_diff > tolerance:
+                    print(f"  - Auto-sizing difference too large, using placeholder-proportional sizing")
+                    
+                    # Instead of forcing exact dimensions (which causes distortion),
+                    # scale proportionally to fit within placeholder bounds
+                    auto_aspect = auto_width_px / auto_height_px if auto_height_px > 0 else 1
+                    target_aspect = target_width_px / target_height_px if target_height_px > 0 else 1
+                    
+                    if abs(auto_aspect - target_aspect) < 0.01:  # Aspect ratios match
+                        # Just use placeholder dimensions since aspect ratios match
+                        picture.width = width
+                        picture.height = height
+                        print(f"  - Aspect ratios match, using exact placeholder dimensions")
+                    else:
+                        # Proportional scaling to fit within placeholder
+                        scale_width = target_width_px / auto_width_px
+                        scale_height = target_height_px / auto_height_px
+                        scale = min(scale_width, scale_height)  # Scale to fit
+                        
+                        new_width_px = int(auto_width_px * scale)
+                        new_height_px = int(auto_height_px * scale)
+                        
+                        # Convert back to EMU
+                        picture.width = new_width_px * 9525
+                        picture.height = new_height_px * 9525
+                        print(f"  - Scaled proportionally to: {new_width_px}x{new_height_px}px")
+                else:
+                    print(f"  - Auto-sizing worked correctly, keeping auto dimensions")
+                
                 picture.name = f"{name}_visualization"
 
                 print("✅ Replaced placeholder with visualization image")

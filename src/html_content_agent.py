@@ -166,8 +166,9 @@ class HTMLContentGenerationAgent:
             )
 
             # Use truly parallel HTML generation
+            layouts_info = state.get("layouts_info", {})
             processed_slides = await self._process_planned_html_slides_parallel(
-                slide_contents, presentation_plan, state.get("topic", ""), config
+                slide_contents, presentation_plan, state.get("topic", ""), layouts_info, config
             )
 
             # Update state with processed content
@@ -271,7 +272,8 @@ class HTMLContentGenerationAgent:
         default_width, default_height = 1577, 603  # Fallback dimensions
         
         try:
-            layout_info = layouts_info.get(layout_index)
+            # Handle both string and integer keys in layout info
+            layout_info = layouts_info.get(layout_index) or layouts_info.get(str(layout_index))
             if not layout_info:
                 print(f"        ⚠️  Layout {layout_index} not found, using defaults")
                 return default_width, default_height
@@ -382,6 +384,7 @@ class HTMLContentGenerationAgent:
         slide_contents: List[SlideContent],
         presentation_plan: List[Any],  # List[SlideSpec]
         topic: str,
+        layouts_info: Optional[dict] = None,
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideContent]:
         """
@@ -424,7 +427,7 @@ class HTMLContentGenerationAgent:
             if is_html_planned:
                 # Convert descriptive content to HTML for slides planned as HTML
                 enhanced_content = self._enhance_planned_html_slide(
-                    slide_content, slide_spec, topic, i, len(slide_contents), config
+                    slide_content, slide_spec, topic, i, len(slide_contents), layouts_info, config
                 )
 
                 # Check if HTML was actually generated for this slide
@@ -466,6 +469,7 @@ class HTMLContentGenerationAgent:
         topic: str,
         slide_number: int,
         total_slides: int,
+        layouts_info: Optional[dict] = None,
         config: Optional[RunnableConfig] = None,
     ) -> SlideContent:
         """
@@ -497,15 +501,20 @@ class HTMLContentGenerationAgent:
             if should_generate:
                 print(f"        🎨 Generating HTML for '{placeholder_name}'")
 
-                # Generate enhanced HTML content with detailed specifications
+                # Get actual placeholder dimensions from layout info
+                placeholder_width, placeholder_height = self._get_placeholder_dimensions(
+                    slide_content.layout_index, placeholder_name, layouts_info or {}
+                )
+                
+                # Generate enhanced HTML content with actual dimensions
                 html_content = self._generate_html_visualization_content(
                     placeholder_name=placeholder_name,
                     original_content=content_text,
                     topic=topic,
                     slide_number=slide_number,
                     total_slides=total_slides,
-                    viewport_width=1577,  # TODO: Get actual placeholder width from slide
-                    viewport_height=603,  # TODO: Get actual placeholder height from slide
+                    viewport_width=placeholder_width,
+                    viewport_height=placeholder_height,
                     slide_spec=slide_spec,
                     config=config,
                 )
@@ -1550,19 +1559,73 @@ See the mandatory D3.js timeline example above - use this exact pattern for all 
         )
 
     def _get_html_generation_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
-        """Get system prompt for HTML generation"""
+        """Get system prompt for HTML generation with adaptive layout guidance"""
+        
+        # Determine layout guidance based on viewport dimensions
+        aspect_ratio = viewport_width / viewport_height if viewport_height > 0 else 1.0
+        is_short_placeholder = viewport_height < 500  # Less than 500px height (includes standard 456px placeholders)
+        is_narrow_placeholder = viewport_width < 800   # Less than 800px width
+        
+        # Adaptive layout guidance
+        if is_short_placeholder and aspect_ratio > 2.5:
+            layout_guidance = f"""
+**CRITICAL LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:**
+- Height is SEVERELY LIMITED ({viewport_height}px) - content WILL BE CROPPED if too tall
+- Use COMPACT HORIZONTAL layouts only: prefer single row designs
+- For metric cards: Use 2-3 columns maximum with minimal padding (p-2 to p-4)
+- For content with text lists: Use single column or very compact 2-column layouts
+- REDUCE all spacing: gap-2 or gap-3 instead of gap-6, mb-2 instead of mb-4
+- Use smaller text sizes: text-sm for body, text-base for headings
+- AVOID complex multi-element layouts (detailed steps, long descriptions)
+- PRIORITIZE showing key information only - trim secondary content
+- For diagrams: Make them very compact or move text outside
+- Example: <div class="flex flex-row gap-3 h-full items-center"> instead of complex grids
+"""
+        elif is_short_placeholder:
+            layout_guidance = f"""
+**LAYOUT ADAPTATION - CRITICALLY SHORT VIEWPORT ({viewport_height}px):**
+- ⚠️ EXTREME HEIGHT LIMITATION: Any content taller than {viewport_height}px will be COMPLETELY INVISIBLE
+- ❌ FORBIDDEN: Multiple rows of cards, long text lists, detailed descriptions
+- ✅ REQUIRED: Use single horizontal row layouts ONLY
+- ✅ REQUIRED: Minimal padding (p-2 to p-3 maximum)
+- ✅ REQUIRED: Small text (text-sm body, text-lg headings maximum)  
+- ✅ REQUIRED: Compact spacing (gap-2 maximum)
+- ✅ REQUIRED: Calculate total height = padding + content + gaps < {viewport_height}px
+- EXAMPLE CALCULATION: p-3 (24px) + 2 text lines (48px) + gaps (16px) = 88px total
+- For 3 columns: Use flex-row with equal widths, not grid
+- For diagrams: Keep extremely simple or use horizontal flow charts only
+"""
+        elif is_narrow_placeholder:
+            layout_guidance = f"""
+**LAYOUT ADAPTATION - NARROW VIEWPORT:**
+- Width is LIMITED ({viewport_width}px) - use vertical layouts
+- Prefer single column or 2-column maximum layouts
+- Stack elements vertically with flex-col
+"""
+        else:
+            layout_guidance = """
+**STANDARD LAYOUT GUIDANCE:**
+- Viewport allows flexible layouts including multi-column grids
+- Use full creative freedom within the viewport constraints
+"""
+        
         return f"""You are an expert web developer and data visualization specialist.
+
+**🚨 CRITICAL HEIGHT CONSTRAINT FOR {viewport_height}px VIEWPORT 🚨**
+You MUST generate HTML that fits EXACTLY within {viewport_width}x{viewport_height}px.
+Any content exceeding {viewport_height}px height will be CROPPED and INVISIBLE.
+
+{layout_guidance}
+
+**MANDATORY PRE-GENERATION CALCULATION:**
+Before writing ANY HTML, calculate: padding + content + gaps < {viewport_height}px
+Example for {viewport_height}px: p-3(24px) + content(~300px) + gaps(~50px) = ~374px ✅
+
 Your mission is to convert descriptive content into visually compelling HTML 
 visualizations that perfectly fill a {viewport_width}x{viewport_height}px container for business presentations.
 
 **Your Role:** You receive descriptive content about what should be visualized 
 (timelines, processes, comparisons, etc.) and convert it into functional HTML code.
-
-**CRITICAL VIEWPORT CONSTRAINT:** 
-- The **ENTIRE HTML `<body>`** is the `{viewport_width}x{viewport_height}px` container (NO SCROLLING ALLOWED)
-- ALL content MUST fit within this fixed viewport without any overflow
-- ANY content extending beyond {viewport_height}px height will be CROPPED and LOST
-- Use `overflow: hidden` on containers to prevent unwanted scrollbars
 
 **MANDATORY DAISYUI CARD STRUCTURE:**
 - **ALWAYS** wrap ALL content in DaisyUI card components for proper containment
@@ -2231,6 +2294,7 @@ CRITICAL REQUIREMENTS:
         slide_contents: List[SlideContent],
         presentation_plan: List[Any],
         topic: str,
+        layouts_info: Optional[dict] = None,
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideContent]:
         """
@@ -2247,7 +2311,7 @@ CRITICAL REQUIREMENTS:
             if is_html_planned:
                 tasks.append(
                     self._enhance_planned_html_slide_async(
-                        slide_content, slide_spec, topic, i, len(slide_contents), config
+                        slide_content, slide_spec, topic, i, len(slide_contents), layouts_info, config
                     )
                 )
             else:
@@ -2266,6 +2330,7 @@ CRITICAL REQUIREMENTS:
         topic: str,
         slide_number: int,
         total_slides: int,
+        layouts_info: Optional[dict] = None,
         config: Optional[RunnableConfig] = None,
     ) -> SlideContent:
         """
@@ -2279,6 +2344,11 @@ CRITICAL REQUIREMENTS:
                 placeholder_name, content_text
             )
             if should_generate:
+                # Get actual placeholder dimensions from layout info
+                placeholder_width, placeholder_height = self._get_placeholder_dimensions(
+                    slide_content.layout_index, placeholder_name, layouts_info or {}
+                )
+                
                 tasks.append(
                     self._generate_html_visualization_content_async(
                         placeholder_name=placeholder_name,
@@ -2286,6 +2356,8 @@ CRITICAL REQUIREMENTS:
                         topic=topic,
                         slide_number=slide_number,
                         total_slides=total_slides,
+                        viewport_width=placeholder_width,
+                        viewport_height=placeholder_height,
                         slide_spec=slide_spec,
                         config=config,
                     )

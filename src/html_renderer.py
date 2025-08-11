@@ -284,15 +284,46 @@ class HTMLRenderer:
 
             # Check if we're in an async context
             if self._is_async_context():
-                print("🔄 Async context detected, avoiding Playwright sync API...")
-                # In async context, avoid Playwright or use async version
+                print("🔄 Async context detected, using async-compatible rendering...")
+                # In async context, use async Playwright renderer
                 if self.active_method == "playwright":
-                    print(
-                        "  - Attempting to render HTML with selenium (async-safe fallback)..."
-                    )
-                    return self._render_with_selenium(
-                        prepared_html, output_path, width, height, **kwargs
-                    )
+                    print("  - Using async Playwright renderer...")
+                    import asyncio
+                    try:
+                        # Try to run in existing event loop
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Create a new event loop in a thread for async operations
+                            import concurrent.futures
+                            import threading
+                            
+                            def run_async():
+                                new_loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(new_loop)
+                                try:
+                                    return new_loop.run_until_complete(
+                                        self._render_with_playwright_async(
+                                            prepared_html, output_path, width, height, **kwargs
+                                        )
+                                    )
+                                finally:
+                                    new_loop.close()
+                            
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(run_async)
+                                return future.result()
+                        else:
+                            return asyncio.run(self._render_with_playwright_async(
+                                prepared_html, output_path, width, height, **kwargs
+                            ))
+                    except Exception as e:
+                        print(f"  - Async Playwright failed with error: {type(e).__name__}: {e}")
+                        import traceback
+                        print(f"  - Stack trace: {traceback.format_exc()}")
+                        print(f"  - Falling back to enhanced Selenium renderer...")
+                        return self._render_with_selenium(
+                            prepared_html, output_path, width, height, **kwargs
+                        )
                 # For other methods, proceed normally as they're sync-safe
                 if self.active_method == "selenium":
                     return self._render_with_selenium(
@@ -459,13 +490,33 @@ class HTMLRenderer:
                 # Set content and wait for rendering
                 page.set_content(html_content, wait_until="networkidle")
 
-                # Take screenshot with high quality settings
-                page.screenshot(
-                    path=output_path,
-                    type="png",
-                    full_page=False,
-                    clip={"x": 0, "y": 0, "width": width // 2, "height": height // 2},
-                )
+                # Check actual content dimensions to prevent cropping
+                content_width = page.evaluate("document.body.scrollWidth")
+                content_height = page.evaluate("document.body.scrollHeight")
+                
+                viewport_width = width // 2
+                viewport_height = height // 2
+                
+                if content_height > viewport_height or content_width > viewport_width:
+                    print(f"  - Content ({content_width}x{content_height}px) > Viewport ({viewport_width}x{viewport_height}px)")
+                    print(f"  - Using full page screenshot to prevent cropping")
+                    
+                    # Use full page screenshot when content exceeds viewport
+                    page.screenshot(
+                        path=output_path,
+                        type="png",
+                        full_page=True,
+                    )
+                else:
+                    print(f"  - Content fits in viewport, using clipped screenshot")
+                    
+                    # Use clipped screenshot when content fits
+                    page.screenshot(
+                        path=output_path,
+                        type="png",
+                        full_page=False,
+                        clip={"x": 0, "y": 0, "width": viewport_width, "height": viewport_height},
+                    )
 
                 browser.close()
                 return os.path.exists(output_path)
@@ -507,8 +558,31 @@ class HTMLRenderer:
 
                 # Wait for page to load completely
                 driver.implicitly_wait(2)
+                
+                # Check actual content dimensions to prevent cropping
+                content_width = driver.execute_script("return document.body.scrollWidth")
+                content_height = driver.execute_script("return document.body.scrollHeight")
+                
+                viewport_width = width // 2
+                viewport_height = height // 2
+                
+                if content_height > viewport_height or content_width > viewport_width:
+                    print(f"  - Content ({content_width}x{content_height}px) > Viewport ({viewport_width}x{viewport_height}px)")
+                    print(f"  - Resizing browser window to fit full content")
+                    
+                    # Resize window to accommodate full content
+                    new_width = max(content_width, viewport_width)
+                    new_height = max(content_height, viewport_height)
+                    driver.set_window_size(new_width, new_height)
+                    
+                    # Wait a moment for resize
+                    driver.implicitly_wait(1)
+                    
+                    print(f"  - Resized to: {new_width}x{new_height}px")
+                else:
+                    print(f"  - Content fits in viewport, using standard screenshot")
 
-                # Take screenshot
+                # Take screenshot (full page to capture all content)
                 driver.save_screenshot(output_path)
                 driver.quit()
 
@@ -617,13 +691,33 @@ class HTMLRenderer:
                 # Set content and wait for rendering
                 await page.set_content(html_content, wait_until="networkidle")
 
-                # Take screenshot with high quality settings
-                await page.screenshot(
-                    path=output_path,
-                    type="png",
-                    full_page=False,
-                    clip={"x": 0, "y": 0, "width": width // 2, "height": height // 2},
-                )
+                # Check actual content dimensions to prevent cropping
+                content_width = await page.evaluate("document.body.scrollWidth")
+                content_height = await page.evaluate("document.body.scrollHeight")
+                
+                viewport_width = width // 2
+                viewport_height = height // 2
+                
+                if content_height > viewport_height or content_width > viewport_width:
+                    print(f"  - Content ({content_width}x{content_height}px) > Viewport ({viewport_width}x{viewport_height}px)")
+                    print(f"  - Using full page screenshot to prevent cropping")
+                    
+                    # Use full page screenshot when content exceeds viewport
+                    await page.screenshot(
+                        path=output_path,
+                        type="png",
+                        full_page=True,
+                    )
+                else:
+                    print(f"  - Content fits in viewport, using clipped screenshot")
+                    
+                    # Use clipped screenshot when content fits
+                    await page.screenshot(
+                        path=output_path,
+                        type="png",
+                        full_page=False,
+                        clip={"x": 0, "y": 0, "width": viewport_width, "height": viewport_height},
+                    )
 
                 await browser.close()
                 return os.path.exists(output_path)

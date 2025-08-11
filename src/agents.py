@@ -1765,8 +1765,12 @@ class HTMLRefinementAgent:
         print(f"  - Rendered HTML to image and uploaded to: {image_url}")
 
         try:
+            # Get refinement history for this slide
+            refinement_history_key = f"html_refinement_history_{current_slide_index}"
+            refinement_history = state.get(refinement_history_key, [])
+            
             correction_response = self._get_html_correction(
-                html_content, image_url, slide_purpose, config
+                html_content, image_url, slide_purpose, refinement_history, config
             )
             if (
                 correction_response
@@ -1778,6 +1782,10 @@ class HTMLRefinementAgent:
                 for change in correction_response.changes_applied:
                     print(f"    - {change}")
 
+                # Track refinement history for this slide to prevent flip-flopping
+                refinement_history.extend(correction_response.changes_applied)
+                state[refinement_history_key] = refinement_history
+
                 state["slide_contents"] = self._update_slide_content(
                     slide_contents, current_slide_index, correction_response.html_code
                 )
@@ -1787,9 +1795,12 @@ class HTMLRefinementAgent:
                 print(
                     "  - No significant changes suggested. Refinement for this slide is complete."
                 )
-                # This slide is done. The next execution will pick the next slide from the queue.
+                # This slide is done. Clear its refinement history and move to next.
                 state["html_refinement_slide_index"] = None
                 state["html_refinement_iteration"] = 0
+                # Clear refinement history for completed slide
+                if refinement_history_key in state:
+                    del state[refinement_history_key]
 
                 # Check if there are more slides in the queue.
                 is_queue_empty = not state.get("html_slides_to_refine_queue")
@@ -2039,9 +2050,13 @@ class HTMLRefinementAgent:
                 )
                 return current_html
 
+            # Get refinement history for this slide
+            refinement_history_key = f"html_refinement_history_{slide_index}"
+            refinement_history = refinement_histories.get(slide_index, [])
+            
             # Get LLM correction
             correction_response = await self._get_html_correction_async(
-                current_html, image_url, slide_purpose, config
+                current_html, image_url, slide_purpose, refinement_history, config
             )
             
             # Track this refinement iteration in Supabase
@@ -2063,6 +2078,9 @@ class HTMLRefinementAgent:
                     f"      🔄 Slide {slide_number}, Iteration {iteration}: LLM suggested changes. Continuing loop."
                 )
                 current_html = correction_response.html_code
+                # Track changes in history to prevent flip-flopping
+                if hasattr(correction_response, 'changes_applied'):
+                    refinement_history.extend(correction_response.changes_applied)
                 
                 # Track the updated HTML in Supabase
                 if project_id and slide_id:
@@ -2254,6 +2272,7 @@ class HTMLRefinementAgent:
         html_content: str,
         image_url: str,
         slide_purpose: str,
+        refinement_history: Optional[list[str]] = None,
         config: Optional[RunnableConfig] = None,
     ) -> Optional[RefinedHTML]:
         """
@@ -2262,7 +2281,7 @@ class HTMLRefinementAgent:
         import concurrent.futures
 
         system_prompt = self._get_system_prompt()
-        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose)
+        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose, refinement_history)
 
         # Run the LLM call in a thread executor for true parallelism
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -2282,13 +2301,14 @@ class HTMLRefinementAgent:
         html_content: str,
         image_url: str,
         slide_purpose: str,
+        refinement_history: Optional[list[str]] = None,
         config: Optional[RunnableConfig] = None,
     ) -> Optional[RefinedHTML]:
         """
         Synchronous version (kept for compatibility with sequential processing)
         """
         system_prompt = self._get_system_prompt()
-        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose)
+        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose, refinement_history)
 
         response = self.llm_client.generate_structured_vision_content(
             system_prompt,
@@ -2319,8 +2339,23 @@ class HTMLRefinementAgent:
                 updated_contents.append(slide)
         return updated_contents
 
+    def _format_refinement_history_context(self, refinement_history: Optional[list[str]]) -> str:
+        """Format refinement history to provide context to avoid flip-flopping"""
+        if not refinement_history:
+            return ""
+        
+        history_text = "\n".join([f"• {change}" for change in refinement_history[-3:]])  # Last 3 changes
+        
+        return f"""**🔄 PREVIOUS REFINEMENT ATTEMPTS (AVOID REPEATING):**
+The following changes were already tried in previous iterations. DO NOT reverse these decisions:
+{history_text}
+
+**⚠️ CRITICAL: Do not undo previous fixes or flip-flop between solutions.**
+**Focus on NEW issues not yet addressed, or build upon previous improvements.**
+"""
+
     def _create_user_prompt(
-        self, html_content: str, image_url: str, slide_purpose: str
+        self, html_content: str, image_url: str, slide_purpose: str, refinement_history: Optional[list[str]] = None
     ) -> list[dict[str, Any]]:
         return [
             {
@@ -2331,6 +2366,8 @@ class HTMLRefinementAgent:
 **TASK:** Evaluate if the HTML code below successfully fulfills the slide's purpose and requirements. 
 The attached image shows how this HTML currently renders.
 If any content is missing in the image it means it is either outside the boundary or not rendering properly.
+
+{self._format_refinement_history_context(refinement_history)}
 
 **EVALUATION CRITERIA:**
 • Does the visualization effectively communicate the slide's purpose?
@@ -2369,12 +2406,14 @@ Do NOT provide any other text, explanations, or markdown.
 
 **CRITICAL EVALUATION PRIORITIES:**
 
-**1. VIEWPORT CONSTRAINT ANALYSIS (TOP PRIORITY):**
-- **Detect Content Cropping**: Is ANY content cut off or extending beyond the viewport?
-- **Check Overflow**: Are there scrollbars or content flowing outside the visible area?
-- **Validate Container Heights**: Are diagrams, cards, or text blocks exceeding the available space?
-- **Verify Complete Visibility**: Can you see ALL content elements in their entirety?
-- **IMMEDIATE FIX REQUIRED**: If content is cropped, this MUST be addressed first
+**1. 🚨 CRITICAL HEIGHT CONSTRAINT ANALYSIS (ABSOLUTE TOP PRIORITY) 🚨:**
+- **DETECT MISSING CONTENT**: If ANY content is missing from the bottom of the image, the HTML HEIGHT is TOO LARGE and content is CROPPED
+- **CHECK VIEWPORT DIMENSIONS**: Extract w-[NNNpx] h-[NNNpx] from body class - this is the ABSOLUTE MAXIMUM allowed size
+- **CALCULATE TOTAL HEIGHT**: body padding + card padding + content + gaps MUST be < viewport height
+- **MERMAID DIAGRAM OVERFLOW**: If Mermaid diagrams are cut off, they are exceeding viewport height - CRITICAL FIX NEEDED  
+- **IMMEDIATE ACTION REQUIRED**: If bottom content is missing, reduce padding, text sizes, or content to fit within height limit
+- **HEIGHT MATH**: For h-[456px]: p-4(32px) + card-body p-4(32px) + content + gaps MUST be < 456px
+- **VALIDATION**: If rendered content is taller than specified h-[NNNpx], it WILL be cropped and invisible
 
 **2. MANDATORY DAISYUI CARD STRUCTURE:**
 - **Card Usage**: Is ALL content properly wrapped in DaisyUI card components?
@@ -2413,12 +2452,14 @@ Do NOT provide any other text, explanations, or markdown.
 7. **Professional Quality**: Design should be polished and business-appropriate with consistent branding
 8. **Space Utilization**: Effective use of the viewport
 
-**VIEWPORT CONSTRAINT SOLUTIONS:**
-- **Content Overflow**: Use `overflow: hidden` on containers, reduce content size, or reorganize layout
-- **Text Too Large**: Reduce font sizes from `text-3xl` to `text-xl` or `text-2xl`
-- **Diagram Too Tall**: Add `max-h-[400px]` to Mermaid containers, use horizontal layouts
-- **Too Many Elements**: Prioritize essential content, use compact layouts
-- **Card Overflow**: Reduce padding from `p-8` to `p-6` or `p-4`, use `flex-shrink`
+**🔧 CRITICAL HEIGHT OVERFLOW SOLUTIONS (APPLY IMMEDIATELY):**
+- **Missing Bottom Content**: REDUCE padding: p-8→p-4, p-6→p-3, gap-6→gap-3
+- **Text Too Large**: REDUCE font sizes: text-3xl→text-lg, text-2xl→text-base, text-xl→text-sm
+- **Mermaid Diagram Cut Off**: ADD max-h-[300px] to .mermaid containers, reduce diagram complexity
+- **Too Many Elements**: REMOVE secondary content, prioritize only essential information
+- **Card Body Overflow**: REDUCE card-body padding: p-6→p-4→p-3, use flex-shrink
+- **Grid Gaps Too Large**: REDUCE gaps: gap-6→gap-4→gap-2 for grid layouts
+- **CALCULATION CHECK**: Sum all padding + content height < viewport h-[NNNpx]
 
 **MANDATORY CARD PATTERNS TO ENFORCE:**
 ```html
