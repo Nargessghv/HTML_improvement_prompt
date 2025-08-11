@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import {
   Avatar,
@@ -65,31 +66,55 @@ export function Header({ className }: HeaderProps) {
   return (
     <header className={`bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 ${className}`}>
       <div className="flex items-center justify-between h-16 px-4 lg:px-6">
-        {/* Mobile Menu */}
-        <div className="flex items-center lg:hidden">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>Navigation</SheetTitle>
-              </SheetHeader>
-              <Sidebar />
-            </SheetContent>
-          </Sheet>
+        {/* Logo and Mobile Menu */}
+        <div className="flex items-center space-x-4">
+          {/* Mobile Menu */}
+          <div className="lg:hidden">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-64 p-0">
+                <SheetHeader className="sr-only">
+                  <SheetTitle>Navigation</SheetTitle>
+                </SheetHeader>
+                <Sidebar />
+              </SheetContent>
+            </Sheet>
+          </div>
+          
+          {/* Logo */}
+          <Link href="/dashboard" className="flex items-center space-x-3 group">
+            <div className="w-10 h-10 lg:w-12 lg:h-12 flex items-center justify-center">
+              <Image 
+                src="/ekona_logo_transparent.png" 
+                alt="Ekona Logo" 
+                width={48} 
+                height={48}
+                className="object-contain group-hover:scale-105 transition-transform duration-200"
+              />
+            </div>
+            <div className="hidden sm:block">
+              <div className="h-8 w-px bg-gray-300 dark:bg-gray-600 mx-3"></div>
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm lg:text-base font-light text-gray-700 dark:text-gray-300 tracking-wide">
+                Slide Creator
+              </p>
+            </div>
+          </Link>
         </div>
 
         {/* Search Bar */}
-        <div className="flex-1 max-w-lg mx-4">
+        <div className="flex-1 max-w-lg mx-6 lg:mx-8">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search projects, slides..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-red-500 focus:border-transparent shadow-sm hover:shadow-md transition-shadow duration-200"
             />
           </div>
         </div>

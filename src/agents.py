@@ -2050,9 +2050,8 @@ class HTMLRefinementAgent:
                 )
                 return current_html
 
-            # Get refinement history for this slide
-            refinement_history_key = f"html_refinement_history_{slide_index}"
-            refinement_history = refinement_histories.get(slide_index, [])
+            # Get refinement history for this slide (starts empty for each slide)
+            refinement_history = []
             
             # Get LLM correction
             correction_response = await self._get_html_correction_async(

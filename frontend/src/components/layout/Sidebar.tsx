@@ -2,10 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui'
+import { Button, Badge } from '@/components/ui'
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipProvider, 
+  TooltipTrigger 
+} from '@/components/ui/tooltip'
 import { NewProjectModal } from '@/components/modals/NewProjectModal'
 import {
   LayoutDashboard,
@@ -14,7 +19,9 @@ import {
   PlayCircle,
   Plus,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -62,155 +69,139 @@ export function Sidebar({ className }: SidebarProps) {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
 
   return (
-    <aside 
-      className={cn(
-        'bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 transition-all duration-300',
-        isCollapsed ? 'w-16' : 'w-64',
-        className
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-800">
-        {!isCollapsed && (
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 flex items-center justify-center">
-              <Image 
-                src="/ekona_logo_transparent.png" 
-                alt="Ekona Logo" 
-                width={40} 
-                height={40}
-                className="object-contain"
-              />
-            </div>
-            <div>
-              <h2 className="text-lg font-light text-neutral-900 dark:text-white">
-                Ekona
-              </h2>
-              <p className="text-xs text-neutral-600 dark:text-neutral-400 font-light">
-                Slide Creator
-              </p>
-            </div>
-          </div>
+    <TooltipProvider>
+      <aside 
+        className={cn(
+          'bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 h-full flex flex-col relative',
+          isCollapsed ? 'w-16' : 'w-64',
+          className
         )}
-        {isCollapsed && (
-          <div className="w-8 h-8 flex items-center justify-center">
-            <Image 
-              src="/ekona_logo_transparent.png" 
-              alt="Ekona Logo" 
-              width={32} 
-              height={32}
-              className="object-contain"
-            />
+      >
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-4">
+          {/* Collapse Toggle */}
+          <div className="px-3 mb-6 flex justify-end">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsCollapsed(!isCollapsed)}
+                  className="h-8 w-8 p-0 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {isCollapsed ? (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftClose className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              </TooltipContent>
+            </Tooltip>
           </div>
-        )}
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-        >
-          {isCollapsed ? (
-            <ChevronRight className="w-4 h-4 text-neutral-500" />
-          ) : (
-            <ChevronLeft className="w-4 h-4 text-neutral-500" />
-          )}
-        </button>
-      </div>
 
-      {/* Navigation */}
-      <nav className="p-2">
-        {/* Quick Action */}
-        <div className="mb-4">
-          <button
-            onClick={() => setShowNewProjectModal(true)}
-            className={cn(
-              'w-full flex items-center gap-3 px-3 py-2 rounded-md transition-colors font-light',
-              'bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm',
-              isCollapsed && 'justify-center'
-            )}
-          >
-            <Plus className="w-4 h-4" />
-            {!isCollapsed && <span className="text-sm font-medium">New Project</span>}
-          </button>
-        </div>
+          {/* Quick Action */}
+          <div className="px-3 mb-6">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => setShowNewProjectModal(true)}
+                  className={cn(
+                    'w-full bg-red-600 hover:bg-red-700 text-white shadow-lg hover:shadow-xl transition-all duration-300',
+                    isCollapsed ? 'px-0' : 'justify-start'
+                  )}
+                >
+                  <Plus className="h-4 w-4" />
+                  {!isCollapsed && <span className="ml-2 font-medium">New Project</span>}
+                </Button>
+              </TooltipTrigger>
+              {isCollapsed && (
+                <TooltipContent side="right">
+                  New Project
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </div>
 
-        {/* Main Navigation */}
-        <div className="space-y-1">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-            const Icon = item.icon
+          {/* Main Navigation */}
+          <div className="px-3 space-y-1">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+              const Icon = item.icon
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md transition-colors group font-light',
-                  isActive
-                    ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-primary'
-                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800',
-                  isCollapsed && 'justify-center'
-                )}
-              >
-                <Icon className={cn(
-                  'w-4 h-4 flex-shrink-0',
-                  isActive ? 'text-primary dark:text-primary' : 'text-neutral-500 dark:text-neutral-400'
-                )} />
-                {!isCollapsed && (
-                  <>
-                    <span className="text-sm font-medium flex-1">{item.title}</span>
-                    {item.badge && (
-                      <Badge variant="secondary" className="text-xs">
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </>
-                )}
-                
-                {/* Tooltip for collapsed state */}
-                {isCollapsed && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                    {item.title}
-                    {item.description && (
-                      <div className="text-neutral-300 dark:text-neutral-600">
-                        {item.description}
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      className={cn(
+                        'w-full transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800',
+                        isActive 
+                          ? 'bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/30' 
+                          : 'text-gray-700 dark:text-gray-300',
+                        isCollapsed ? 'px-0' : 'justify-start'
+                      )}
+                    >
+                      <Link href={item.href}>
+                        <Icon className={cn(
+                          'h-4 w-4',
+                          isActive ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
+                        )} />
+                        {!isCollapsed && (
+                          <>
+                            <span className="ml-3 font-medium">{item.title}</span>
+                            {item.badge && (
+                              <Badge variant="secondary" className="ml-auto text-xs">
+                                {item.badge}
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  {isCollapsed && (
+                    <TooltipContent side="right">
+                      <div>
+                        <div className="font-medium">{item.title}</div>
+                        {item.description && (
+                          <div className="text-xs text-gray-400 mt-1">{item.description}</div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
-              </Link>
-            )
-          })}
-        </div>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              )
+            })}
+          </div>
 
-        {/* Recent Projects Section */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <h3 className="px-3 text-xs font-light text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">
-              Recent Projects
-            </h3>
-            <div className="space-y-1">
-              {/* Placeholder for recent projects - will be populated dynamically */}
-              <div className="px-3 py-2 text-sm text-neutral-500 dark:text-neutral-400 italic font-light">
-                No recent projects
+          {/* Recent Projects Section */}
+          {!isCollapsed && (
+            <div className="px-3 mt-8">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Recent Projects
+                </h3>
+              </div>
+              <div className="space-y-1">
+                <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 italic">
+                  No recent projects
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </nav>
+          )}
+        </nav>
 
-      {/* Footer */}
-      {!isCollapsed && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-200 dark:border-neutral-800">
-          <div className="text-xs text-neutral-500 dark:text-neutral-400 text-center font-light">
-            © 2024 Ekona Technologies
-          </div>
-        </div>
-      )}
-      
-      {/* New Project Modal */}
-      <NewProjectModal 
-        open={showNewProjectModal}
-        onOpenChange={setShowNewProjectModal}
-      />
-    </aside>
+        {/* New Project Modal */}
+        <NewProjectModal 
+          open={showNewProjectModal}
+          onOpenChange={setShowNewProjectModal}
+        />
+      </aside>
+    </TooltipProvider>
   )
 }

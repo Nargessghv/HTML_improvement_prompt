@@ -34,7 +34,7 @@ export const useSupabaseAuth = () => {
           router.push('/dashboard')
         } else if (event === 'SIGNED_OUT') {
           toast.success('You have been successfully signed out')
-          router.push('/login')
+          router.push('/')
         } else if (event === 'USER_UPDATED') {
           toast.success('Your profile has been successfully updated')
         }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -42,9 +42,10 @@ type ProjectFormData = z.infer<typeof projectSchema>
 interface NewProjectModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  initialTopic?: string
 }
 
-export function NewProjectModal({ open, onOpenChange }: NewProjectModalProps) {
+export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProjectModalProps) {
   const router = useRouter()
   const { user, supabase } = useSupabaseAuth()
   const [isCreating, setIsCreating] = useState(false)
@@ -53,9 +54,16 @@ export function NewProjectModal({ open, onOpenChange }: NewProjectModalProps) {
     resolver: zodResolver(projectSchema),
     defaultValues: {
       title: '',
-      topic: '',
+      topic: initialTopic || '',
     },
   })
+
+  // Update form when initialTopic changes
+  React.useEffect(() => {
+    if (initialTopic) {
+      form.setValue('topic', initialTopic)
+    }
+  }, [initialTopic, form])
 
   const onSubmit = async (data: ProjectFormData) => {
     if (!user) {
