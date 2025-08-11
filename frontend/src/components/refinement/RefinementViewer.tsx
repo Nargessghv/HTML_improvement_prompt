@@ -78,13 +78,13 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
         .createSignedUrl(filePath, 3600)
       
       if (error) {
-        console.error('Failed to refresh signed URL:', error)
+        // Failed to refresh signed URL
         return null
       }
       
       return data?.signedUrl || null
-    } catch (error) {
-      console.error('Error refreshing signed URL:', error)
+    } catch {
+      // Error refreshing signed URL
       return null
     }
   }
@@ -101,7 +101,7 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
         .order('slide_number', { ascending: true })
 
       if (slidesError) {
-        console.error('Error fetching slides:', slidesError)
+        // Error fetching slides
         toast.error('Failed to load slides')
         return
       }
@@ -116,7 +116,7 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
         .order('iteration_number', { ascending: true })
 
       if (refinementsError) {
-        console.error('Error fetching refinements:', refinementsError)
+        // Error fetching refinements
         toast.error('Failed to load refinements')
         return
       }
@@ -139,8 +139,8 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
         setSelectedSlide(firstSlideWithRefinements.id)
       }
 
-    } catch (error) {
-      console.error('Error fetching refinement data:', error)
+    } catch {
+      // Error fetching refinement data
       toast.error('Failed to load refinement data')
     } finally {
       setIsLoading(false)
@@ -434,7 +434,7 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
                         alt={`Thumbnail iteration ${currentRefinement.iteration_number}`}
                         className="w-full h-full object-contain"
                         onError={(e) => {
-                          console.error('Native img load error:', currentRefinement.image_file_url);
+                          // Native img load error
                           e.currentTarget.style.display = 'none';
                         }}
                       />
@@ -444,19 +444,19 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
                         alt={`Thumbnail iteration ${currentRefinement.iteration_number}`}
                         fill
                         className="object-contain"
-                        onError={async (e) => {
-                          console.error('Next.js Image load error:', currentRefinement.image_file_url);
+                        onError={async () => {
+                          // Image load failed - attempt URL refresh
                           
                           // Try to extract the file path from the URL for refreshing signed URL
                           try {
                             const urlParts = currentRefinement.image_file_url.split('/storage/v1/object/sign/html-refinements/')[1];
                             if (urlParts) {
                               const filePath = urlParts.split('?')[0]; // Remove query params
-                              console.log('Attempting to refresh signed URL for:', filePath);
+                              // Attempting to refresh signed URL
                               
                               const newSignedUrl = await refreshSignedUrl(currentRefinement.id, filePath);
                               if (newSignedUrl) {
-                                console.log('Got new signed URL:', newSignedUrl);
+                                // Got new signed URL
                                 // Update the refinement data with new URL
                                 setRefinements(prev => {
                                   const updated = { ...prev };
@@ -470,11 +470,11 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
                                 return;
                               }
                             }
-                          } catch (refreshError) {
-                            console.error('Failed to refresh signed URL:', refreshError);
+                          } catch {
+                            // Failed to refresh signed URL
                           }
                           
-                          console.error('Switching to native img tag...');
+                          // Switching to native img tag
                           setUseNativeImg(true);
                         }}
                       />
@@ -532,11 +532,7 @@ export function RefinementViewer({ projectId, className }: RefinementViewerProps
                   {/* Debug button to view raw HTML */}
                   <button
                     onClick={() => {
-                      console.log('=== HTML CONTENT DEBUG ===');
-                      console.log('HTML Length:', currentRefinement.html_content.length);
-                      console.log('HTML Content:', currentRefinement.html_content.substring(0, 1000));
-                      console.log('Full HTML:', currentRefinement.html_content);
-                      console.log('=== END DEBUG ===');
+                      // HTML content debugging information available
                     }}
                     className="absolute top-2 right-2 text-xs bg-blue-500 text-white px-2 py-1 rounded"
                   >

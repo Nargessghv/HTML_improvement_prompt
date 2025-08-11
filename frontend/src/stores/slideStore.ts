@@ -104,7 +104,7 @@ export const useSlideStore = create<SlideStore>()(
 
     // Slide CRUD actions
     setSlides: (slides) =>
-      set((state) => ({
+      set(() => ({
         slides: slides.sort((a, b) => a.slide_number - b.slide_number)
       })),
 
@@ -172,7 +172,7 @@ export const useSlideStore = create<SlideStore>()(
 
     // Current slide actions
     setCurrentSlide: (slide) =>
-      set((state) => ({
+      set(() => ({
         currentSlide: slide,
         selectedElements: [], // Clear selection when changing slides
         isEditing: false
@@ -186,27 +186,27 @@ export const useSlideStore = create<SlideStore>()(
 
     // Editor actions
     startEditing: () =>
-      set((state) => ({
+      set(() => ({
         isEditing: true
       })),
 
     stopEditing: () =>
-      set((state) => ({
+      set(() => ({
         isEditing: false,
         selectedElements: []
       })),
 
     selectElement: (selection) =>
-      set((state) => ({
+      set(() => ({
         selectedElements: [selection]
       })),
 
     clearSelection: () =>
-      set((state) => ({
+      set(() => ({
         selectedElements: []
       })),
 
-    updateSelectedElement: (updates) =>
+    updateSelectedElement: (_updates) =>
       set((state) => {
         if (!state.currentSlide || state.selectedElements.length === 0) return state
 
@@ -363,39 +363,39 @@ export const useSlideStore = create<SlideStore>()(
       }),
 
     setActiveConversation: (conversationId) =>
-      set((state) => ({
+      set(() => ({
         activeConversation: conversationId
       })),
 
     // View controls
     setViewMode: (mode) =>
-      set((state) => ({
+      set(() => ({
         viewMode: mode
       })),
 
     setZoom: (zoom) =>
-      set((state) => ({
+      set(() => ({
         zoom: Math.max(0.1, Math.min(5, zoom))
       })),
 
     setViewport: (width, height) =>
-      set((state) => ({
+      set(() => ({
         viewport: { width, height }
       })),
 
     // Utility actions
     setLoading: (loading) =>
-      set((state) => ({
+      set(() => ({
         isLoading: loading
       })),
 
     setError: (error) =>
-      set((state) => ({
+      set(() => ({
         error
       })),
 
     resetSlideEditor: () =>
-      set((state) => ({
+      set(() => ({
         currentSlide: null,
         isEditing: false,
         selectedElements: [],

@@ -1,6 +1,6 @@
 // Custom hook for Supabase authentication integration with Zustand
 import { useEffect, useCallback, useState } from 'react'
-import { useAuthStore, useAuthActions, useNotifications } from '@/stores'
+import { useAuthStore, useNotifications } from '@/stores'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 

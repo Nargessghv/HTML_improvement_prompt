@@ -17,7 +17,6 @@ import {
   ShareProjectModal
 } from '@/components/modals'
 import { WorkflowProgress } from '@/components/workflow/WorkflowProgress'
-import { PresentationPlanner } from '@/components/chat'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -222,8 +221,7 @@ export default function ProjectDetailPage() {
           throw new Error(`Backend API error: ${response.status}`)
         }
 
-        const result = await response.json()
-        console.log('Backend workflow started:', result)
+        await response.json()
         toast.success('AI workflow has been initiated!')
         
       } catch (backendError) {

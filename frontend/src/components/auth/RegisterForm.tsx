@@ -40,7 +40,7 @@ export function RegisterForm() {
       setRegistrationSuccess(true)
     } else if (result.error) {
       setError('root', {
-        message: (result.error as any)?.message || 'An error occurred during registration'
+        message: (result.error as Error)?.message || 'An error occurred during registration'
       })
     }
   }

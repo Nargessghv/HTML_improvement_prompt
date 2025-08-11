@@ -43,7 +43,7 @@ interface PresentationOutline {
   key_themes: string[]
   slides: SlideOutline[]
   estimated_duration?: number
-  style_preferences: Record<string, any>
+  style_preferences: Record<string, unknown>
 }
 
 interface OutlineBuilderProps {
@@ -150,7 +150,7 @@ export function OutlineBuilder({
 
   const startEditingSlide = (index: number) => {
     setEditingSlide(index)
-    setEditingTitle(outline!.slides[index].title)
+    setEditingTitle(outline.slides[index].title)
   }
 
   const saveSlideEdit = () => {

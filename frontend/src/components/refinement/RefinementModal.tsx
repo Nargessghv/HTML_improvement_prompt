@@ -270,7 +270,7 @@ export function RefinementModal({ open, onOpenChange, projectId }: RefinementMod
                 urlsToRefresh.push({id: refinement.id, url: refinement.image_file_url})
               }
             }
-          } catch (error) {
+          } catch {
             // Ignore URL parsing errors
           }
         }

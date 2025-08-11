@@ -36,7 +36,7 @@ export function ResetPasswordForm() {
       setResetSent(true)
     } else if (result.error) {
       setError('root', {
-        message: (result.error as any)?.message || 'An error occurred while sending reset email'
+        message: (result.error as Error)?.message || 'An error occurred while sending reset email'
       })
     }
   }

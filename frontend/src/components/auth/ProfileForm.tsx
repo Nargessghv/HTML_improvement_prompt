@@ -59,7 +59,7 @@ export function ProfileForm({ onSuccess }: ProfileFormProps) {
         setSuccess('Profile updated successfully!')
         onSuccess?.()
       } else {
-        setError((result.error as any)?.message || 'Failed to update profile')
+        setError((result.error as Error)?.message || 'Failed to update profile')
       }
     } catch (err) {
       console.error('Profile update error:', err)

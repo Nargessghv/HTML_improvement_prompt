@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { useWorkflowManagement } from '@/hooks/useWorkflowManagement'
 import { useWorkflowNotifications } from '@/hooks/useWorkflowNotifications'
@@ -159,6 +159,33 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
     checkRefinements()
   }, [project?.id, user, supabase, project.status])
 
+  const calculateEstimatedTime = useCallback((states: WorkflowState[]) => {
+    if (project.status !== 'processing') {
+      setEstimatedTimeRemaining(null)
+      return
+    }
+
+    // Calculate remaining stages
+    const remainingStages = WORKFLOW_STAGES.filter(stage => {
+      const stageState = states.find(s => 
+        s.agent_name === stage.name || 
+        (s.agent_name === 'presentation_planner' && stage.name === 'planning') ||
+        (s.agent_name === 'content_generator' && stage.name === 'content_generation') ||
+        (s.agent_name === 'html_content_generator' && stage.name === 'html_generation') ||
+        (s.agent_name === 'html_refinement_agent' && stage.name === 'refinement') ||
+        (s.agent_name === 'slide_assembler' && stage.name === 'assembly')
+      )
+      return !stageState || stageState.status !== 'completed'
+    })
+    
+    const totalEstimatedMinutes = remainingStages.reduce(
+      (sum, stage) => sum + stage.estimatedTimeMinutes, 
+      0
+    )
+    
+    setEstimatedTimeRemaining(totalEstimatedMinutes)
+  }, [project.status])
+
   useEffect(() => {
     if (!project?.id || !user) return
 
@@ -228,31 +255,7 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [project?.id, user, supabase, workflowStates])
-
-  const calculateEstimatedTime = (states: WorkflowState[]) => {
-    if (project.status !== 'processing') {
-      setEstimatedTimeRemaining(null)
-      return
-    }
-
-    const completedStages = states.filter(state => state.status === 'completed')
-    const currentStageIndex = completedStages.length
-    
-    if (currentStageIndex >= WORKFLOW_STAGES.length) {
-      setEstimatedTimeRemaining(0)
-      return
-    }
-
-    // Calculate remaining time based on stages not yet completed
-    const remainingStages = WORKFLOW_STAGES.slice(currentStageIndex)
-    const totalEstimatedMinutes = remainingStages.reduce(
-      (sum, stage) => sum + stage.estimatedTimeMinutes, 
-      0
-    )
-    
-    setEstimatedTimeRemaining(totalEstimatedMinutes)
-  }
+  }, [project?.id, user, supabase, workflowStates, calculateEstimatedTime])
 
   const getWorkflowStateForStage = (stageName: string): WorkflowState | null => {
     // Helper function to get the most recent state for an agent name

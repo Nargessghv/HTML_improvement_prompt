@@ -51,7 +51,7 @@ export function LoginForm() {
       // Note: If no redirectTo, the useSupabaseAuth hook will handle the default redirect
     } else if (result.error) {
       setError('root', {
-        message: (result.error as any)?.message || 'An error occurred during sign in'
+        message: (result.error as Error)?.message || 'An error occurred during sign in'
       })
     }
   }

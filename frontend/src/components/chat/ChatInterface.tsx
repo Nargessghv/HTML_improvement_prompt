@@ -22,7 +22,7 @@ interface ChatInterfaceProps {
   sessionId?: string
   projectId: string
   initialTopic?: string
-  onOutlineGenerated?: (outline: any) => void
+  onOutlineGenerated?: (outline: unknown) => void
   className?: string
 }
 
@@ -54,6 +54,7 @@ export function ChatInterface({
     if (initialTopic && !sessionId) {
       startChatSession(initialTopic)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTopic])
 
   const startChatSession = async (topic: string) => {

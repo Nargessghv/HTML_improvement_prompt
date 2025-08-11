@@ -1,11 +1,10 @@
 'use client'
 
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { PresentationPlanner } from '@/components/chat'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
@@ -57,8 +56,7 @@ export default function InteractivePlanningPage() {
     fetchProject()
   }, [projectId, user, supabase, router])
 
-  const handleApproveOutline = async (outline: any) => {
-    console.log('Approved outline:', outline)
+  const handleApproveOutline = async (_outline: unknown) => {
     setIsGenerating(true)
     
     try {

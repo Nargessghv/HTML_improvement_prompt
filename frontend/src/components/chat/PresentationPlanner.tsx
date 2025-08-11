@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 interface PresentationPlannerProps {
   projectId: string
   initialTopic?: string
-  onApproveOutline?: (outline: any) => void
+  onApproveOutline?: (outline: unknown) => void
 }
 
 export function PresentationPlanner({ 
@@ -19,17 +19,17 @@ export function PresentationPlanner({
   initialTopic,
   onApproveOutline 
 }: PresentationPlannerProps) {
-  const [outline, setOutline] = useState<any>(null)
+  const [outline, setOutline] = useState<unknown>(null)
   const [activeTab, setActiveTab] = useState('chat')
   const [isApproved, setIsApproved] = useState(false)
 
-  const handleOutlineGenerated = (newOutline: any) => {
+  const handleOutlineGenerated = (newOutline: unknown) => {
     setOutline(newOutline)
     // Automatically switch to outline tab when generated
     setActiveTab('outline')
   }
 
-  const handleOutlineUpdate = (updatedOutline: any) => {
+  const handleOutlineUpdate = (updatedOutline: unknown) => {
     setOutline(updatedOutline)
   }
 

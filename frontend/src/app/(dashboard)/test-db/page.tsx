@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,7 +14,7 @@ export default function TestDbPage() {
     
     try {
       // Test 1: Check if we can connect to Supabase
-      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser()
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
       setTestResult(prev => prev + `✓ User connection: ${currentUser?.email || 'No user'}\n`)
 
       // Test 2: Try to query projects table
