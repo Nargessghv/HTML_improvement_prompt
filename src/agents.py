@@ -894,8 +894,9 @@ class SlideAssemblyAgent:
             with redirect_stdout(captured_output), redirect_stderr(captured_errors):
                 # Create presentation using existing working method
                 # The SlideGenerator already has icon support built-in
+                generated_images = state.get("generated_images", {})
                 presentation = slide_generator._create_powerpoint_presentation(
-                    slide_contents
+                    slide_contents, generated_images
                 )
 
             # Extract icon errors from captured output
@@ -3074,6 +3075,10 @@ class ImageGenerationAgent:
             
             # Process results and save images
             generated_images = {}
+            
+            # Create a mapping from slide_index to slide_info for quick lookup
+            slide_info_map = {info["slide_index"]: info for info in image_slides}
+            
             for slide_index, image_data in results:
                 if image_data:
                     # Save image to debug directory
@@ -3081,10 +3086,14 @@ class ImageGenerationAgent:
                     image_path = self.temp_dir / image_filename
                     
                     if self.image_client.save_image_to_file(image_data, str(image_path)):
+                        # Get the slide info for this slide index
+                        slide_info = slide_info_map.get(slide_index)
+                        placeholder_name = slide_info["placeholder"]["name"] if slide_info else "Picture 16:9"
+                        
                         generated_images[slide_index] = {
                             "image_data": image_data,
                             "image_path": str(image_path),
-                            "placeholder_name": image_slides[slide_index]["placeholder"]["name"]
+                            "placeholder_name": placeholder_name
                         }
                         print(f"✅ Generated and saved image for slide {slide_index + 1}")
                     else:

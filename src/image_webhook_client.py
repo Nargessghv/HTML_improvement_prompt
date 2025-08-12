@@ -115,8 +115,11 @@ class ImageWebhookClient:
             # Prepare webhook payload according to GPT-image-1 API spec
             output_format = "png"  # Using PNG for PowerPoint compatibility
             
+            # Clean and escape the prompt to prevent JSON issues
+            cleaned_prompt = prompt.replace('\n', ' ').replace('\r', ' ').replace('"', '\\"').strip()
+            
             payload = {
-                "prompt": prompt,
+                "prompt": cleaned_prompt,
                 "model": self.image_model,
                 "size": image_size,
                 "quality": quality,
@@ -132,6 +135,11 @@ class ImageWebhookClient:
                 payload["output_compression"] = 90
 
             print(f"🎨 Generating image with size {image_size} for prompt: {prompt[:100]}...")
+            
+            # Debug: Log the payload being sent (excluding the full prompt for brevity)
+            debug_payload = payload.copy()
+            debug_payload["prompt"] = debug_payload["prompt"][:100] + "..." if len(debug_payload["prompt"]) > 100 else debug_payload["prompt"]
+            print(f"🔍 Payload being sent: {json.dumps(debug_payload, indent=2)}")
 
             # Make webhook request with timeout
             timeout = aiohttp.ClientTimeout(total=self.timeout)

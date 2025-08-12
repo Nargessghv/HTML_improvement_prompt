@@ -308,13 +308,14 @@ class SlideGenerator:
                 )
 
     def _create_powerpoint_presentation(
-        self, slide_contents: List[SlideContent]
+        self, slide_contents: List[SlideContent], generated_images: dict = None
     ) -> Any:
         """
         Create the actual PowerPoint presentation
 
         Args:
             slide_contents: List of slide content objects
+            generated_images: Dictionary of generated images by slide index
 
         Returns:
             PowerPoint presentation object
@@ -324,8 +325,8 @@ class SlideGenerator:
 
         # Create slides for each content without clearing existing slides
         # This avoids XML manipulation issues
-        for slide_content in slide_contents:
-            self._add_slide_to_presentation(presentation, slide_content)
+        for i, slide_content in enumerate(slide_contents):
+            self._add_slide_to_presentation(presentation, slide_content, generated_images, i)
 
         return presentation
 
@@ -387,7 +388,7 @@ class SlideGenerator:
             )
 
     def _add_slide_to_presentation(
-        self, presentation: Any, slide_content: SlideContent
+        self, presentation: Any, slide_content: SlideContent, generated_images: dict = None, slide_index: int = 0
     ) -> None:
         """
         Add a single slide to the presentation
@@ -395,6 +396,8 @@ class SlideGenerator:
         Args:
             presentation: PowerPoint presentation object
             slide_content: Content for this slide
+            generated_images: Dictionary of generated images by slide index
+            slide_index: Index of the current slide
         """
         # Get the layout
         layout = presentation.slide_layouts[slide_content.layout_index]
@@ -417,6 +420,46 @@ class SlideGenerator:
                 f"  → Slide created with {len(actual_placeholders)} placeholders, "
                 "no content"
             )
+        
+        # Handle generated images if available (using same approach as HTML method)
+        if generated_images is not None and slide_index in generated_images:
+            image_info = generated_images[slide_index]
+            image_path = image_info.get("image_path")
+            
+            if image_path:
+                # Use same approach as HTML method: check all picture placeholders on this slide
+                for placeholder in slide.placeholders:
+                    if (
+                        hasattr(placeholder, "placeholder_format")
+                        and placeholder.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+                    ):
+                        # Get placeholder name (same as HTML method)
+                        placeholder_name = getattr(placeholder, "name", "")
+                        
+                        # For generated images, we want Picture placeholders (not icons or HTML)
+                        if "picture" in placeholder_name.lower() and "icon" not in placeholder_name.lower():
+                            try:
+                                # Set proper DPI metadata on the image to ensure correct sizing in PowerPoint
+                                # This matches the HTML image insertion approach
+                                try:
+                                    from PIL import Image
+                                    # Open the image and save with explicit DPI
+                                    img = Image.open(image_path)
+                                    # Generated images should use standard 96 DPI (they're already correct size)
+                                    img.save(image_path, dpi=(96, 96))
+                                    print(f"  - Set image DPI to 96 for proper PowerPoint display")
+                                except Exception as e:
+                                    print(f"  - Warning: Could not set DPI metadata: {e}")
+                                    
+                                self._replace_placeholder_with_image(
+                                    placeholder, image_path, f"Generated Image {slide_index + 1}"
+                                )
+                                print(f"✅ Inserted generated image for slide {slide_index + 1}")
+                                break
+                            except Exception as e:
+                                print(f"❌ Failed to insert generated image: {e}")
+                else:
+                    print(f"⚠️ No suitable picture placeholder found for generated image on slide {slide_index + 1}")
 
     def _get_actual_placeholder_info(self, slide) -> Dict[str, Dict[str, Any]]:
         """
