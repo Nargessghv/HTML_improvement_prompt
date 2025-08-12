@@ -25,6 +25,22 @@ logging.basicConfig(
 db_logger = logging.getLogger('slide_creator.database')
 
 
+class SlideStatusTracker:
+    """Helper class for tracking slide processing status"""
+    
+    PENDING = "pending"
+    PLANNING = "planning"
+    CONTENT_GENERATION = "content_generation"
+    HTML_GENERATION = "html_generation"
+    HTML_REFINEMENT = "html_refinement"
+    IMAGE_PROMPT_GENERATION = "image_prompt_generation"
+    IMAGE_GENERATION = "image_generation"
+    IMAGE_REFINEMENT = "image_refinement"
+    QUALITY_REVIEW = "quality_review"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class DatabaseError(Exception):
     """Custom exception for database operations"""
     def __init__(self, message: str, operation: str = None, table: str = None, original_error: Exception = None):
@@ -670,6 +686,190 @@ class SupabaseClient:
             .execute()
         
         data = self._handle_supabase_response(result, "get_project_refinements", "html_refinements")
+        return data or []
+
+    # Slide Status Management Methods
+    @log_database_operation("update_slide_status", "slides")
+    def update_slide_status(
+        self, 
+        slide_id: str, 
+        status: str, 
+        agent_name: Optional[str] = None,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Update slide status with automatic timestamp management"""
+        self._validate_uuid(slide_id, "slide_id")
+        
+        # Use the database function for consistent status updates
+        try:
+            result = self.client.rpc(
+                'update_slide_status',
+                {
+                    'p_slide_id': slide_id,
+                    'p_status': status,
+                    'p_agent_name': agent_name,
+                    'p_error_message': error_message
+                }
+            ).execute()
+            
+            return bool(result.data)
+            
+        except Exception as e:
+            db_logger.error(f"Failed to update slide status via function: {e}")
+            
+            # Fallback to direct update if function fails
+            update_data = {
+                "status": status,
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            if agent_name:
+                update_data["current_agent"] = agent_name
+            if error_message:
+                update_data["error_message"] = error_message
+            if metadata:
+                update_data["processing_metadata"] = metadata
+            
+            result = self.client.table("slides").update(update_data).eq("id", slide_id).execute()
+            data = self._handle_supabase_response(result, "update_slide_status", "slides")
+            return bool(data)
+
+    @log_database_operation("get_project_slide_progress", "slides")
+    def get_project_slide_progress(self, project_id: str) -> Dict[str, Any]:
+        """Get comprehensive slide progress for a project"""
+        self._validate_uuid(project_id, "project_id")
+        
+        try:
+            # Use the database function for consistent progress calculation
+            result = self.client.rpc(
+                'get_project_slide_progress',
+                {'p_project_id': project_id}
+            ).execute()
+            
+            if result.data and len(result.data) > 0:
+                progress_data = result.data[0]
+                return {
+                    "total_slides": progress_data.get("total_slides", 0),
+                    "completed_slides": progress_data.get("completed_slides", 0),
+                    "failed_slides": progress_data.get("failed_slides", 0),
+                    "in_progress_slides": progress_data.get("in_progress_slides", 0),
+                    "pending_slides": progress_data.get("pending_slides", 0),
+                    "completion_percentage": float(progress_data.get("completion_percentage", 0))
+                }
+            else:
+                return {
+                    "total_slides": 0,
+                    "completed_slides": 0,
+                    "failed_slides": 0,
+                    "in_progress_slides": 0,
+                    "pending_slides": 0,
+                    "completion_percentage": 0.0
+                }
+                
+        except Exception as e:
+            db_logger.error(f"Failed to get slide progress via function: {e}")
+            
+            # Fallback to manual calculation
+            result = self.client.table("slides")\
+                .select("status")\
+                .eq("project_id", project_id)\
+                .execute()
+            
+            slides_data = self._handle_supabase_response(result, "get_project_slide_progress", "slides")
+            if not slides_data:
+                return {
+                    "total_slides": 0,
+                    "completed_slides": 0,
+                    "failed_slides": 0,
+                    "in_progress_slides": 0,
+                    "pending_slides": 0,
+                    "completion_percentage": 0.0
+                }
+            
+            total = len(slides_data)
+            completed = sum(1 for slide in slides_data if slide["status"] == SlideStatusTracker.COMPLETED)
+            failed = sum(1 for slide in slides_data if slide["status"] == SlideStatusTracker.FAILED)
+            pending = sum(1 for slide in slides_data if slide["status"] == SlideStatusTracker.PENDING)
+            in_progress = total - completed - failed - pending
+            
+            return {
+                "total_slides": total,
+                "completed_slides": completed,
+                "failed_slides": failed,
+                "in_progress_slides": in_progress,
+                "pending_slides": pending,
+                "completion_percentage": round((completed / max(total, 1)) * 100, 2)
+            }
+
+    @log_database_operation("get_slide_details", "slides")
+    def get_slide_details(self, slide_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed slide information including processing status"""
+        self._validate_uuid(slide_id, "slide_id")
+        
+        result = self.client.table("slides")\
+            .select("*")\
+            .eq("id", slide_id)\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "get_slide_details", "slides")
+        return data[0] if data else None
+
+    @log_database_operation("get_project_slides_with_status", "slides")
+    def get_project_slides_with_status(self, project_id: str) -> List[Dict[str, Any]]:
+        """Get all slides for a project with detailed status information"""
+        self._validate_uuid(project_id, "project_id")
+        
+        result = self.client.table("slides")\
+            .select("*")\
+            .eq("project_id", project_id)\
+            .order("slide_number")\
+            .execute()
+        
+        data = self._handle_supabase_response(result, "get_project_slides_with_status", "slides")
+        return data or []
+
+    @log_database_operation("create_slide_event", "slide_events")
+    def create_slide_event(
+        self,
+        slide_id: str,
+        project_id: str,
+        event_type: str,
+        agent_name: Optional[str] = None,
+        event_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Create a slide processing event record"""
+        self._validate_uuid(slide_id, "slide_id")
+        self._validate_uuid(project_id, "project_id")
+        
+        event_record = {
+            "slide_id": slide_id,
+            "project_id": project_id,
+            "event_type": event_type,
+            "agent_name": agent_name,
+            "event_data": event_data or {}
+        }
+        
+        result = self.client.table("slide_events").insert(event_record).execute()
+        data = self._handle_supabase_response(result, "create_slide_event", "slide_events")
+        
+        return data[0] if data else {}
+
+    @log_database_operation("get_slide_events", "slide_events")
+    def get_slide_events(self, slide_id: str, event_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Get processing events for a specific slide"""
+        self._validate_uuid(slide_id, "slide_id")
+        
+        query = self.client.table("slide_events")\
+            .select("*")\
+            .eq("slide_id", slide_id)
+        
+        if event_types:
+            query = query.in_("event_type", event_types)
+        
+        result = query.order("created_at", {"ascending": False}).execute()
+        
+        data = self._handle_supabase_response(result, "get_slide_events", "slide_events")
         return data or []
 
     # Utility methods

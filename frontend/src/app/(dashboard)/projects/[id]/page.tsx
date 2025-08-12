@@ -17,6 +17,7 @@ import {
   ShareProjectModal
 } from '@/components/modals'
 import { WorkflowProgress } from '@/components/workflow/WorkflowProgress'
+import { SlidesGrid } from '@/components/slides/SlidesGrid'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -482,6 +483,16 @@ export default function ProjectDetailPage() {
           {/* Workflow Progress */}
           <div className="mt-6">
             <WorkflowProgress project={project} />
+          </div>
+
+          {/* Individual Slides Grid */}
+          <div className="mt-6">
+            <SlidesGrid 
+              projectId={project.id}
+              projectStatus={project.status}
+              isParallelProcessing={process.env.NEXT_PUBLIC_USE_PARALLEL_SLIDE_PROCESSING === 'true'}
+              expectedSlideCount={0} // This could be determined from the approved outline
+            />
           </div>
 
 {/* HTML Refinement Viewer - Now accessed via modal button in WorkflowProgress */}

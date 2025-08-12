@@ -29,6 +29,7 @@ from .agents import (
 )
 from .html_content_agent import HTMLContentGenerationAgent
 from .monitoring import slide_monitor
+from .parallel_workflow import ParallelSlideWorkflow
 
 
 class SlideGenerationWorkflow:
@@ -203,6 +204,100 @@ class SlideGenerationWorkflow:
         workflow.add_edge("error_handler", END)
 
         return workflow.compile()
+
+    async def run_parallel_for_approved_outline(
+        self,
+        topic: str,
+        template_path: str,
+        output_path: str,
+        approved_outline: Dict[str, Any],
+        title: Optional[str] = None,
+        config: Optional[RunnableConfig] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run parallel workflow for approved outlines - processes slides in parallel
+        
+        This workflow processes each slide independently in parallel for faster generation
+        with real-time feedback as slides are completed.
+        """
+        print("🚀 Starting parallel workflow for approved outline...")
+        print(f"🎯 Title: {title}")
+        print(f"📋 Topic: {topic}")
+        print(f"📁 Template: {template_path}")
+        print(f"💾 Output: {output_path}")
+        print(f"📄 Approved slides count: {len(approved_outline.get('slides', []))}")
+
+        try:
+            # Initialize parallel workflow
+            parallel_workflow = ParallelSlideWorkflow(max_concurrent_slides=3)
+            
+            # Set database callback if available
+            if self.database_callback and self.project_id:
+                parallel_workflow.set_database_callback(self.database_callback)
+            
+            # Execute parallel processing
+            result = await parallel_workflow.process_presentation_parallel(
+                topic=topic,
+                template_path=template_path,
+                output_path=output_path,
+                project_id=self.project_id,
+                approved_outline=approved_outline,
+                title=title,
+                config=config,
+            )
+            
+            # Update project status based on result
+            if self.project_id:
+                if result["success"]:
+                    await self._update_project_status_async(self.project_id, "completed")
+                else:
+                    await self._update_project_status_async(self.project_id, "failed", result.get("error"))
+            
+            return result
+
+        except Exception as e:
+            print(f"❌ Parallel workflow failed: {e}")
+            if self.project_id:
+                await self._update_project_status_async(self.project_id, "failed", str(e))
+            
+            slide_monitor.flush()
+            return {
+                "success": False,
+                "error": str(e),
+                "presentation_path": None,
+                "slides_completed": 0,
+                "slides_failed": len(approved_outline.get('slides', [])),
+                "metadata": {
+                    "topic": topic,
+                    "template_path": template_path,
+                    "output_path": output_path,
+                    "parallel_processing": True,
+                },
+            }
+
+    async def _update_project_status_async(self, project_id: str, status: str, error_message: Optional[str] = None):
+        """Update project status in database (async version)"""
+        try:
+            from .database import get_supabase_client
+            supabase = get_supabase_client()
+            
+            update_data = {
+                "status": status,
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            if status == "completed":
+                update_data["completed_at"] = datetime.now().isoformat()
+            elif status == "failed" and error_message:
+                update_data["metadata"] = {"error": error_message}
+            
+            result = supabase.table("projects").update(update_data).eq("id", project_id).execute()
+            
+            if not result.data:
+                print(f"⚠️ Failed to update project {project_id} status to {status}")
+                
+        except Exception as e:
+            print(f"⚠️ Database error updating project status: {e}")
 
     def run_streamlined_for_approved_outline(
         self,
@@ -403,8 +498,16 @@ class SlideGenerationWorkflow:
         print(f"📁 Template: {template_path}")
         print(f"💾 Output: {output_path}")
 
+        # Use parallel workflow if approved outline is provided and parallel processing is enabled
+        if approved_outline and os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true":
+            print("🚀 Using parallel slide processing workflow for approved outline")
+            return asyncio.run(
+                self.run_parallel_for_approved_outline(
+                    topic, template_path, output_path, approved_outline, title, config
+                )
+            )
         # Use streamlined workflow if approved outline is provided
-        if approved_outline:
+        elif approved_outline:
             print("🎯 Using streamlined workflow for approved outline")
             return self.run_streamlined_for_approved_outline(
                 topic, template_path, output_path, approved_outline, title, config

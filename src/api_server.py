@@ -1317,14 +1317,29 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         if approved_outline:
             api_logger.info(f"Approved outline slides count: {len(approved_outline.get('slides', []))}")
         
-        # Run workflow
-        result = workflow.run(
-            topic=actual_topic,
-            template_path=template_path,
-            output_path=output_path,
-            title=project.get("title"),
-            approved_outline=approved_outline
-        )
+        # Check if parallel processing is enabled
+        use_parallel_processing = os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true"
+        
+        if approved_outline and use_parallel_processing:
+            api_logger.info("🚀 Using parallel slide processing for approved outline")
+            # Run parallel workflow
+            result = await workflow.run_parallel_for_approved_outline(
+                topic=actual_topic,
+                template_path=template_path,
+                output_path=output_path,
+                approved_outline=approved_outline,
+                title=project.get("title")
+            )
+        else:
+            # Run standard workflow
+            api_logger.info("🔄 Using standard sequential workflow")
+            result = workflow.run(
+                topic=actual_topic,
+                template_path=template_path,
+                output_path=output_path,
+                title=project.get("title"),
+                approved_outline=approved_outline
+            )
         
         if result.get("success"):
             # Update project as completed
