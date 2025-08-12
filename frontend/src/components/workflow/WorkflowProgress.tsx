@@ -83,6 +83,24 @@ const WORKFLOW_STAGES = [
     estimatedTimeMinutes: 3
   },
   {
+    name: 'image_prompt_generation',
+    label: 'Image Prompt Generation',
+    description: 'Creating detailed prompts for image generation',
+    estimatedTimeMinutes: 2
+  },
+  {
+    name: 'image_generation',
+    label: 'Image Generation',
+    description: 'Generating AI-powered images for slides',
+    estimatedTimeMinutes: 4
+  },
+  {
+    name: 'image_refinement',
+    label: 'Image Refinement',
+    description: 'Optimizing and refining generated images',
+    estimatedTimeMinutes: 2
+  },
+  {
     name: 'quality_review',
     label: 'Quality Review',
     description: 'Reviewing and validating quality',

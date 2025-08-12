@@ -312,22 +312,43 @@ class SlideGenerationWorkflow:
             if refinement_iteration > 0:
                 print(f"✅ HTML refinement completed after {refinement_iteration} iterations")
 
-            # Step 6: Quality review (use node wrapper)
-            print("⚡ Step 6: Performing quality review...")
-            quality_state = self._quality_review_node(html_state, config)
+            # Step 6: Image prompt generation (use node wrapper)
+            print("⚡ Step 6: Generating image prompts...")
+            image_prompt_state = self._image_prompt_generation_node(html_state, config)
+            
+            if image_prompt_state.get("error_message"):
+                raise Exception(image_prompt_state["error_message"])
+
+            # Step 7: Image generation (use node wrapper)
+            print("⚡ Step 7: Generating images...")
+            image_gen_state = self._image_generation_node(image_prompt_state, config)
+            
+            if image_gen_state.get("error_message"):
+                raise Exception(image_gen_state["error_message"])
+
+            # Step 8: Image refinement (use node wrapper)
+            print("⚡ Step 8: Refining images...")
+            image_refined_state = self._image_refinement_node(image_gen_state, config)
+            
+            if image_refined_state.get("error_message"):
+                raise Exception(image_refined_state["error_message"])
+
+            # Step 9: Quality review (use node wrapper)
+            print("⚡ Step 9: Performing quality review...")
+            quality_state = self._quality_review_node(image_refined_state, config)
             
             if quality_state.get("error_message"):
                 raise Exception(quality_state["error_message"])
 
-            # Step 7: Slide assembly (use node wrapper)
-            print("⚡ Step 7: Assembling final presentation...")
+            # Step 10: Slide assembly (use node wrapper)
+            print("⚡ Step 10: Assembling final presentation...")
             final_state = self._slide_assembly_node(quality_state, config)
             
             if final_state.get("error_message"):
                 raise Exception(final_state["error_message"])
 
-            # Step 8: Icon validation (direct call is fine, no database tracking needed)
-            print("⚡ Step 8: Validating icons...")
+            # Step 11: Icon validation (direct call is fine, no database tracking needed)
+            print("⚡ Step 11: Validating icons...")
             validated_state = self.icon_validator.execute(final_state, config)
 
             print("✅ Streamlined workflow completed successfully!")
