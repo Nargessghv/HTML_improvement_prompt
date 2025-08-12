@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { SlidePreviewModal } from './SlidePreviewModal'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -38,6 +39,7 @@ interface Slide {
 
 interface SlideCardProps {
   slide: Slide | null  // null indicates loading/skeleton state
+  projectId?: string   // Required for preview functionality
   isParallelProcessing?: boolean
 }
 
@@ -110,34 +112,44 @@ const statusConfig = {
   }
 }
 
-export function SlideCard({ slide, isParallelProcessing = false }: SlideCardProps) {
+export function SlideCard({ slide, projectId, isParallelProcessing = false }: SlideCardProps) {
+  const [showPreview, setShowPreview] = useState(false)
   // Show skeleton if slide is null (loading state)
   if (!slide) {
     return (
-      <Card className="relative">
+      <Card className="relative min-h-[240px] overflow-hidden">
+        <div className="absolute -top-2 -left-2 w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
+          <Skeleton className="w-3 h-3" />
+        </div>
+        
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Skeleton className="w-8 h-8 rounded-full" />
-              <div>
-                <Skeleton className="w-24 h-4 mb-2" />
-                <Skeleton className="w-32 h-3" />
-              </div>
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Skeleton className="w-4 h-4 rounded" />
+              <Skeleton className="w-16 h-4 rounded-full" />
             </div>
-            <Skeleton className="w-16 h-5 rounded-full" />
+            <Skeleton className="w-24 h-5" />
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
-          <div className="space-y-3">
-            <div>
-              <Skeleton className="w-20 h-3 mb-2" />
-              <Skeleton className="w-full h-2" />
+        
+        <CardContent className="pt-0 space-y-3">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Skeleton className="w-12 h-3" />
+              <Skeleton className="w-8 h-3" />
             </div>
-            <div className="space-y-2">
-              <Skeleton className="w-full h-3" />
-              <Skeleton className="w-3/4 h-3" />
-              <Skeleton className="w-1/2 h-3" />
-            </div>
+            <Skeleton className="w-full h-2 rounded" />
+          </div>
+          
+          <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg space-y-2">
+            <Skeleton className="w-full h-3" />
+            <Skeleton className="w-2/3 h-3" />
+            <Skeleton className="w-1/3 h-3" />
+          </div>
+          
+          <div className="pt-2 space-y-1">
+            <Skeleton className="w-full h-2" />
+            <Skeleton className="w-3/4 h-2" />
           </div>
         </CardContent>
       </Card>
@@ -152,78 +164,87 @@ export function SlideCard({ slide, isParallelProcessing = false }: SlideCardProp
   const isFailed = status === 'failed'
 
   return (
-    <Card className={`relative transition-all duration-300 ${
-      isActive ? 'border-primary/20 bg-primary/5 shadow-md' : 
-      isCompleted ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950' :
-      isFailed ? 'border-destructive/20 bg-destructive/5' : 
-      'border-neutral-200 dark:border-neutral-800'
-    }`}>
+    <Card className={`relative transition-all duration-300 min-h-[240px] hover:shadow-lg group cursor-pointer ${
+      isActive ? 'border-primary/30 bg-primary/5 shadow-md ring-1 ring-primary/20' : 
+      isCompleted ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950 hover:border-emerald-300' :
+      isFailed ? 'border-destructive/30 bg-destructive/5 hover:border-destructive/40' : 
+      'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'
+    }`} onClick={() => isCompleted && projectId && setShowPreview(true)}>
       {/* Slide number badge */}
       <div className="absolute -top-2 -left-2 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-semibold">
         {slide.slide_number}
       </div>
       
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="flex-shrink-0">
-              <StatusIcon className={`w-5 h-5 ${
+      <CardHeader className="pb-4">
+        <div className="space-y-3">
+          {/* Status and icon row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <StatusIcon className={`w-5 h-5 flex-shrink-0 ${
                 isActive ? 'animate-spin text-primary' :
                 isCompleted ? 'text-emerald-600' :
                 isFailed ? 'text-destructive' :
                 'text-neutral-400'
               }`} />
+              <Badge className={`${config.color} text-xs`}>
+                {config.label}
+              </Badge>
             </div>
             
-            <div className="min-w-0 flex-1">
-              <h4 className={`font-medium text-sm truncate ${
-                isActive ? 'text-primary dark:text-primary' :
-                isCompleted ? 'text-emerald-900 dark:text-emerald-300' :
-                isFailed ? 'text-destructive dark:text-destructive' :
-                'text-neutral-700 dark:text-neutral-300'
-              }`}>
-                {slide.title || 'Untitled Slide'}
-              </h4>
-              
-              <div className="flex items-center space-x-2 mt-1">
-                <Badge className={`${config.color} text-xs`}>
-                  {config.label}
-                </Badge>
-                
-                {slide.current_agent && isActive && (
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {slide.current_agent}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {/* Action buttons for completed slides */}
-          {isCompleted && (
-            <div className="flex space-x-1">
-              {slide.html_content && (
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+            {/* Action buttons for completed slides - show on hover */}
+            {isCompleted && projectId && (
+              <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+                  onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                  title="Preview slide"
+                >
                   <Eye className="w-3 h-3" />
                 </Button>
-              )}
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                <Download className="w-3 h-3" />
-              </Button>
-            </div>
-          )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+                  onClick={(e) => { e.stopPropagation(); window.open(`/api/projects/${projectId}/slides/${slide.id}/download`, '_blank'); }}
+                  title="Download slide"
+                >
+                  <Download className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          {/* Title row */}
+          <div>
+            <h4 className={`font-medium text-sm leading-tight line-clamp-2 ${
+              isActive ? 'text-primary dark:text-primary' :
+              isCompleted ? 'text-emerald-900 dark:text-emerald-300' :
+              isFailed ? 'text-destructive dark:text-destructive' :
+              'text-neutral-700 dark:text-neutral-300'
+            }`}>
+              {slide.title || 'Untitled Slide'}
+            </h4>
+            
+            {slide.current_agent && isActive && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 truncate">
+                {slide.current_agent}
+              </p>
+            )}
+          </div>
         </div>
       </CardHeader>
       
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 flex-1 flex flex-col">
         {/* Progress bar for active/processing slides */}
         {isParallelProcessing && (isActive || isCompleted) && (
-          <div className="space-y-2 mb-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-neutral-600 dark:text-neutral-400">
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-neutral-600 dark:text-neutral-400 font-medium">
                 Progress
               </span>
-              <span className={`font-medium ${
+              <span className={`font-semibold ${
                 isCompleted ? 'text-emerald-600' : 'text-primary'
               }`}>
                 {config.progress}%
@@ -231,7 +252,7 @@ export function SlideCard({ slide, isParallelProcessing = false }: SlideCardProp
             </div>
             <Progress 
               value={config.progress} 
-              className={`h-2 ${
+              className={`h-3 ${
                 isCompleted ? 'bg-emerald-100 dark:bg-emerald-900' : ''
               }`} 
             />
@@ -239,69 +260,84 @@ export function SlideCard({ slide, isParallelProcessing = false }: SlideCardProp
         )}
         
         {/* Content preview or generation message */}
-        <div className="space-y-2">
+        <div className="space-y-3 flex-1">
           {isActive && (
-            <p className="text-sm text-primary/70">
-              <Loader2 className="w-3 h-3 inline mr-1 animate-spin" />
-              {getProcessingMessage(status)}
-            </p>
+            <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg">
+              <p className="text-sm text-primary flex items-center">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin flex-shrink-0" />
+                <span className="leading-tight">{getProcessingMessage(status)}</span>
+              </p>
+            </div>
           )}
           
           {isCompleted && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {slide.processing_time_seconds && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                  ✓ Completed in {slide.processing_time_seconds}s
-                </p>
+                <div className="flex items-center text-sm text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0" />
+                  <span>Completed in {slide.processing_time_seconds}s</span>
+                </div>
               )}
               
               {/* Show a preview of the slide content */}
-              <div className="p-2 bg-neutral-50 dark:bg-neutral-900 rounded text-xs text-neutral-600 dark:text-neutral-400 max-h-16 overflow-hidden">
-                {getSlidePreview(slide)}
+              <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
+                <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed overflow-hidden" style={{display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical'}}>
+                  {getSlidePreview(slide)}
+                </p>
               </div>
             </div>
           )}
           
           {isFailed && slide.error_message && (
-            <div className="p-2 bg-destructive/5 border border-destructive/20 rounded text-xs">
-              <div className="flex items-start space-x-1">
-                <AlertTriangle className="w-3 h-3 text-destructive mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium text-destructive">Error:</p>
-                  <p className="text-destructive/80 mt-1">{slide.error_message}</p>
+            <div className="p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
+              <div className="flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 text-destructive mt-1 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-destructive text-sm">Error occurred</p>
+                  <p className="text-destructive/80 text-sm mt-1 overflow-hidden" style={{display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'}}>{slide.error_message}</p>
                 </div>
               </div>
             </div>
           )}
           
           {status === 'pending' && (
-            <div className="flex items-center space-x-2 text-sm text-neutral-500 dark:text-neutral-400">
-              <Play className="w-3 h-3" />
-              <span>Waiting to start...</span>
+            <div className="flex items-center space-x-3 text-neutral-500 dark:text-neutral-400 p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
+              <Play className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm">Waiting to start processing...</span>
             </div>
           )}
         </div>
         
         {/* Timestamps for completed slides */}
         {(slide.started_at || slide.completed_at) && (
-          <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800">
-            <div className="grid grid-cols-2 gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+            <div className="grid grid-cols-1 gap-2 text-xs text-neutral-500 dark:text-neutral-400">
               {slide.started_at && (
-                <div>
-                  <span className="block font-medium">Started</span>
-                  <span>{new Date(slide.started_at).toLocaleTimeString()}</span>
+                <div className="flex justify-between">
+                  <span className="font-medium">Started:</span>
+                  <span>{new Date(slide.started_at).toLocaleString()}</span>
                 </div>
               )}
               {slide.completed_at && (
-                <div>
-                  <span className="block font-medium">Completed</span>
-                  <span>{new Date(slide.completed_at).toLocaleTimeString()}</span>
+                <div className="flex justify-between">
+                  <span className="font-medium">Completed:</span>
+                  <span>{new Date(slide.completed_at).toLocaleString()}</span>
                 </div>
               )}
             </div>
           </div>
         )}
       </CardContent>
+
+      {/* Preview Modal */}
+      {projectId && (
+        <SlidePreviewModal
+          slide={slide}
+          projectId={projectId}
+          isOpen={showPreview}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
     </Card>
   )
 }
@@ -334,3 +370,6 @@ function getSlidePreview(slide: Slide): string {
   }
   return 'Slide ready'
 }
+
+// Add the modal at the end of the SlideCard component by updating the return statement
+// The modal should be added right before the closing Card tag

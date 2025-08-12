@@ -449,6 +449,12 @@ class PresentationPlanningAgent:
 
 {title_section}{topic_label}: "{topic}"
 
+🚨 CRITICAL: This is a quickstart generation. Carefully analyze the project description above and create an outline that EXACTLY matches what was requested. If the description specifies a certain number of slides, specific content, or particular requirements, you MUST follow them precisely. Pay special attention to:
+• Specific slide count requirements (e.g., "one slide only", "3 slides", "5-slide presentation")
+• Particular content types requested
+• Specific topics or sections mentioned
+• Any constraints or limitations specified
+
 🎯 AVAILABLE LAYOUTS:
 {layouts_text}
 
@@ -739,7 +745,7 @@ class ContentGenerationAgent:
     def _generate_contextual_presentation_content(
         self,
         topic: str,
-        presentation_plan: List[SlideSpec],
+        presentation_plan,  # Can be either List[SlideSpec] or PresentationPlan object
         layouts_info: Dict[int, Dict[str, Any]],
         dynamic_models: Dict[int, Any],
         approved_outline: Optional[Dict[str, Any]] = None,
@@ -751,26 +757,33 @@ class ContentGenerationAgent:
 
         Args:
             topic: Presentation topic
-            presentation_plan: Complete presentation plan with HTML flags
+            presentation_plan: Complete presentation plan with HTML flags (can be List[SlideSpec] or PresentationPlan)
             layouts_info: Layout information for all slides
             dynamic_models: Dynamic models for content generation
 
         Returns:
             List of generated slide content with HTML-awareness
         """
+        # Handle both List[SlideSpec] and PresentationPlan object
+        from .llm_models import PresentationPlan
+        if isinstance(presentation_plan, PresentationPlan):
+            slides_to_process = presentation_plan.slides
+        else:
+            slides_to_process = presentation_plan
+            
         print("  📋 Presentation Outline:")
-        for i, slide_spec in enumerate(presentation_plan, 1):
+        for i, slide_spec in enumerate(slides_to_process, 1):
             html_indicator = " (HTML)" if slide_spec.is_html else ""
             print(f"    {i}. {slide_spec.slide_title}{html_indicator}")
 
         print(
-            f"  🔄 Generating ALL {len(presentation_plan)} slides with HTML-awareness..."
+            f"  🔄 Generating ALL {len(slides_to_process)} slides with HTML-awareness..."
         )
 
         # Use unified generation for better context and coherence with HTML flags
         slide_contents = self.llm_client.generate_unified_presentation_content(
             topic=topic,
-            presentation_plan=presentation_plan,
+            presentation_plan=slides_to_process,  # Pass the slides list
             layouts_info=layouts_info,
             config=config,
         )
@@ -781,13 +794,13 @@ class ContentGenerationAgent:
         print("  ⚠️ Unified generation failed, falling back to individual generation")
         # Fallback to individual generation if unified fails
         return self._generate_individual_slide_content(
-            topic, presentation_plan, layouts_info, dynamic_models, config
+            topic, slides_to_process, layouts_info, dynamic_models, config
         )
 
     def _generate_individual_slide_content(
         self,
         topic: str,
-        presentation_plan: List[SlideSpec],
+        presentation_plan,  # Can be either List[SlideSpec] or slides to process
         layouts_info: Dict[int, Dict[str, Any]],
         dynamic_models: Dict[int, Any],
         config: Optional[RunnableConfig] = None,
@@ -799,11 +812,14 @@ class ContentGenerationAgent:
         slide_contents = []
 
         print("  🔄 Fallback: Generating slides individually...")
+        
+        # Ensure we have a list of slides to process
+        slides_to_process = presentation_plan if isinstance(presentation_plan, list) else presentation_plan.slides
 
         # Generate content for all slides with awareness of the full presentation
-        for i, slide_spec in enumerate(presentation_plan, 1):
+        for i, slide_spec in enumerate(slides_to_process, 1):
             slide_title = slide_spec.slide_title
-            print(f"  📝 Generating slide {i}/{len(presentation_plan)}: {slide_title}")
+            print(f"  📝 Generating slide {i}/{len(slides_to_process)}: {slide_title}")
 
             # Get layout information
             layout_info = layouts_info.get(slide_spec.layout_index)
@@ -820,7 +836,7 @@ class ContentGenerationAgent:
                 topic=topic,
                 slide_spec=slide_spec,
                 slide_number=i,
-                total_slides=len(presentation_plan),
+                total_slides=len(slides_to_process),
                 dynamic_model=dynamic_model,
                 config=config,
             )
@@ -2748,6 +2764,13 @@ class ImagePromptAgent:
         presentation_plan = state.get("presentation_plan", [])
         topic = state.get("topic", "")
         
+        # Handle both List[SlideSpec] and PresentationPlan object
+        from .llm_models import PresentationPlan
+        if isinstance(presentation_plan, PresentationPlan):
+            slides_list = presentation_plan.slides
+        else:
+            slides_list = presentation_plan
+        
         for i, slide_content in enumerate(slide_contents):
             # Get layout info
             layout_index = getattr(slide_content, 'layout_index', None)
@@ -2767,7 +2790,7 @@ class ImagePromptAgent:
                 continue
                 
             # Get slide context
-            slide_spec = presentation_plan[i] if i < len(presentation_plan) else None
+            slide_spec = slides_list[i] if i < len(slides_list) else None
             slide_title = getattr(slide_spec, 'slide_title', 'Slide') if slide_spec else 'Slide'
             
             # Create detailed prompt using LLM
@@ -3105,6 +3128,19 @@ class ImageGenerationAgent:
             state["generated_images"] = generated_images
             state["needs_image_refinement"] = len(generated_images) > 0
             
+            # Update slide contents with image paths
+            slide_contents = state.get("slide_contents", [])
+            for slide_index, image_info in generated_images.items():
+                if slide_index < len(slide_contents):
+                    slide_content = slide_contents[slide_index]
+                    placeholder_name = image_info["placeholder_name"]
+                    image_path = image_info["image_path"]
+                    
+                    # Update the slide content with the image path
+                    if hasattr(slide_content, 'content'):
+                        slide_content.content[placeholder_name] = image_path
+                        print(f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}")
+            
             print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
             return state
             
@@ -3175,6 +3211,19 @@ class ImageGenerationAgent:
         # Update state with generated images
         state["generated_images"] = generated_images
         state["needs_image_refinement"] = len(generated_images) > 0
+        
+        # Update slide contents with image paths
+        slide_contents = state.get("slide_contents", [])
+        for slide_index, image_info in generated_images.items():
+            if slide_index < len(slide_contents):
+                slide_content = slide_contents[slide_index]
+                placeholder_name = image_info["placeholder_name"]
+                image_path = image_info["image_path"]
+                
+                # Update the slide content with the image path
+                if hasattr(slide_content, 'content'):
+                    slide_content.content[placeholder_name] = image_path
+                    print(f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}")
         
         print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
         return state

@@ -48,6 +48,7 @@ interface Project {
 
 interface WorkflowProgressProps {
   project: Project
+  autoRefreshEnabled?: boolean
 }
 
 // Define the AI agent workflow stages in order
@@ -56,61 +57,29 @@ const WORKFLOW_STAGES = [
     name: 'layout_analysis',
     label: 'Layout Analysis',
     description: 'Analyzing presentation structure and requirements',
-    estimatedTimeMinutes: 2
+    estimatedTimeMinutes: 2,
+    isGlobal: true
   },
   {
     name: 'planning',
     label: 'Content Planning', 
     description: 'Planning slide content and structure',
-    estimatedTimeMinutes: 3
+    estimatedTimeMinutes: 3,
+    isGlobal: true
   },
   {
-    name: 'content_generation',
-    label: 'Content Generation',
-    description: 'Generating slide content and text',
-    estimatedTimeMinutes: 5
-  },
-  {
-    name: 'html_generation',
-    label: 'HTML Generation',
-    description: 'Creating HTML visualizations for slides',
-    estimatedTimeMinutes: 4
-  },
-  {
-    name: 'refinement',
-    label: 'Content Refinement',
-    description: 'Refining and optimizing content',
-    estimatedTimeMinutes: 3
-  },
-  {
-    name: 'image_prompt_generation',
-    label: 'Image Prompt Generation',
-    description: 'Creating detailed prompts for image generation',
-    estimatedTimeMinutes: 2
-  },
-  {
-    name: 'image_generation',
-    label: 'Image Generation',
-    description: 'Generating AI-powered images for slides',
-    estimatedTimeMinutes: 4
-  },
-  {
-    name: 'image_refinement',
-    label: 'Image Refinement',
-    description: 'Optimizing and refining generated images',
-    estimatedTimeMinutes: 2
-  },
-  {
-    name: 'quality_review',
-    label: 'Quality Review',
-    description: 'Reviewing and validating quality',
-    estimatedTimeMinutes: 2
+    name: 'slide_creation',
+    label: 'Creating Slides',
+    description: 'Generating individual slides in parallel',
+    estimatedTimeMinutes: 8,
+    isGlobal: true
   },
   {
     name: 'assembly',
     label: 'Final Assembly',
     description: 'Assembling final presentation',
-    estimatedTimeMinutes: 3
+    estimatedTimeMinutes: 3,
+    isGlobal: true
   }
 ]
 
@@ -137,7 +106,7 @@ const statusConfig = {
   }
 }
 
-export function WorkflowProgress({ project }: WorkflowProgressProps) {
+export function WorkflowProgress({ project, autoRefreshEnabled = true }: WorkflowProgressProps) {
   const { supabase, user } = useSupabaseAuth()
   const { 
     retryFailedStages, 
@@ -153,6 +122,7 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<number | null>(null)
   const [showRefinementModal, setShowRefinementModal] = useState(false)
   const [hasRefinements, setHasRefinements] = useState(false)
+  const [slideProgress, setSlideProgress] = useState<any>(null)
 
   // Check for available refinements
   useEffect(() => {
@@ -175,6 +145,40 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
     }
 
     checkRefinements()
+  }, [project?.id, user, supabase, project.status])
+
+  // Fetch slide progress for parallel processing projects
+  useEffect(() => {
+    if (!project?.id || !user) return
+
+    const fetchSlideProgress = async () => {
+      try {
+        const { data, error } = await supabase
+          .rpc('get_project_slide_progress', { p_project_id: project.id })
+
+        if (error) {
+          console.error('Error fetching slide progress:', error)
+          return
+        }
+
+        if (data && data.length > 0) {
+          setSlideProgress(data[0])
+        }
+      } catch (error) {
+        console.error('Error fetching slide progress:', error)
+      }
+    }
+
+    if (project.status === 'processing' || project.status === 'completed') {
+      fetchSlideProgress()
+
+      // Set up polling for slide progress
+      const slideProgressInterval = setInterval(fetchSlideProgress, 15000)
+      
+      return () => {
+        clearInterval(slideProgressInterval)
+      }
+    }
   }, [project?.id, user, supabase, project.status])
 
   const calculateEstimatedTime = useCallback((states: WorkflowState[]) => {
@@ -207,73 +211,112 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
   useEffect(() => {
     if (!project?.id || !user) return
 
-    const fetchWorkflowStates = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('workflow_states')
-          .select('*')
-          .eq('project_id', project.id)
-          .order('created_at', { ascending: true })
+    let pollInterval: NodeJS.Timeout | null = null
+    let isSubscribed = true
 
-        if (error) {
-          console.error('Error fetching workflow states:', error)
-          toast.error('Failed to load workflow progress')
+    const fetchWorkflowStates = async () => {
+      if (!isSubscribed) return
+      
+      try {
+        // Get the session to access the JWT token
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          console.warn('No valid session found for workflow states')
           return
         }
 
-        setWorkflowStates(data || [])
-        calculateEstimatedTime(data || [])
+        const response = await fetch(`/api/projects/${project.id}/workflow-states`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch workflow states: ${response.status}`)
+        }
+
+        const data = await response.json()
+        if (isSubscribed) {
+          setWorkflowStates(data || [])
+          calculateEstimatedTime(data || [])
+        }
       } catch (error) {
-        console.error('Unexpected error:', error)
-        toast.error('An unexpected error occurred')
+        console.error('Error fetching workflow states:', error)
+        // Don't show toast on every error to avoid spam
       } finally {
-        setIsLoading(false)
+        if (isSubscribed) {
+          setIsLoading(false)
+        }
       }
     }
 
+    // Initial fetch
     fetchWorkflowStates()
 
-    // Set up real-time subscription for workflow states
-    const subscription = supabase
-      .channel(`workflow-states-${project.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'workflow_states',
-          filter: `project_id=eq.${project.id}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setWorkflowStates(prev => [...prev, payload.new as WorkflowState])
-          } else if (payload.eventType === 'UPDATE') {
-            setWorkflowStates(prev => 
-              prev.map(state => 
-                state.id === payload.new.id ? payload.new as WorkflowState : state
-              )
-            )
-          } else if (payload.eventType === 'DELETE') {
-            setWorkflowStates(prev => prev.filter(state => state.id !== payload.old.id))
-          }
+    // Set up polling as fallback (every 10 seconds)
+    // Only poll if project is still processing and auto-refresh is enabled
+    if (project.status === 'processing' && autoRefreshEnabled) {
+      pollInterval = setInterval(() => {
+        fetchWorkflowStates()
+      }, 10000) // Poll every 10 seconds instead of continuous requests
+    }
 
-          // Recalculate estimated time when workflow states change
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const currentStates = payload.eventType === 'INSERT' 
-              ? [...workflowStates, payload.new as WorkflowState]
-              : workflowStates.map(state => 
+    // Try to set up real-time subscription (but don't rely on it)
+    let subscription: any = null
+    try {
+      subscription = supabase
+        .channel(`workflow-states-${project.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'workflow_states',
+            filter: `project_id=eq.${project.id}`
+          },
+          (payload) => {
+            if (!isSubscribed) return
+            
+            // Clear polling interval since real-time is working
+            if (pollInterval) {
+              clearInterval(pollInterval)
+              pollInterval = null
+            }
+
+            setWorkflowStates(prev => {
+              let newStates = prev
+              
+              if (payload.eventType === 'INSERT') {
+                newStates = [...prev, payload.new as WorkflowState]
+              } else if (payload.eventType === 'UPDATE') {
+                newStates = prev.map(state => 
                   state.id === payload.new.id ? payload.new as WorkflowState : state
                 )
-            calculateEstimatedTime(currentStates)
+              } else if (payload.eventType === 'DELETE') {
+                newStates = prev.filter(state => state.id !== payload.old.id)
+              }
+              
+              // Recalculate estimated time
+              calculateEstimatedTime(newStates)
+              return newStates
+            })
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    } catch (error) {
+      console.warn('Real-time subscription failed, using polling fallback')
+    }
 
     return () => {
-      subscription.unsubscribe()
+      isSubscribed = false
+      if (pollInterval) {
+        clearInterval(pollInterval)
+      }
+      if (subscription) {
+        subscription.unsubscribe()
+      }
     }
-  }, [project?.id, user, supabase, workflowStates, calculateEstimatedTime])
+  }, [project?.id, user, project.status, supabase, autoRefreshEnabled])
 
   const getWorkflowStateForStage = (stageName: string): WorkflowState | null => {
     // Helper function to get the most recent state for an agent name
@@ -287,32 +330,30 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
       )[0]
     }
     
-    // First try exact match
-    let state = getMostRecentState(stageName)
-    
-    // If no exact match, try legacy agent name mappings for backward compatibility
-    if (!state) {
-      const legacyNameMap: Record<string, string[]> = {
-        'planning': ['presentation_planning'],
-        'html_generation': ['html_content_generation'],  
-        'refinement': ['html_refinement'],
-        'assembly': ['slide_assembly']
-      }
-      
-      const alternativeNames = legacyNameMap[stageName] || []
-      for (const altName of alternativeNames) {
-        state = getMostRecentState(altName)
-        if (state) break
-      }
+    // Map UI stage names to actual backend agent names
+    const stageToAgentMap: Record<string, string> = {
+      'layout_analysis': 'layout_analysis',
+      'planning': 'planning', 
+      'slide_creation': 'content_generation', // Use content_generation for slide creation stage
+      'assembly': 'assembly'
     }
     
-    return state || null
+    const agentName = stageToAgentMap[stageName]
+    if (!agentName) return null
+    
+    return getMostRecentState(agentName)
   }
 
   const getOverallProgress = (): number => {
     const totalStages = WORKFLOW_STAGES.length
     const completedStages = WORKFLOW_STAGES.filter(stage => {
       const state = getWorkflowStateForStage(stage.name)
+      
+      // Special handling for slide_creation stage - check slide progress
+      if (stage.name === 'slide_creation') {
+        return slideProgress?.completion_percentage === 100
+      }
+      
       return state?.status === 'completed'
     }).length
     
@@ -456,18 +497,27 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
                 const isCompleted = status === 'completed'
                 const isFailed = status === 'failed'
 
+                // Special handling for slide creation stage
+                const isSlideCreationStage = stage.name === 'slide_creation'
+                const slideCreationStatus = slideProgress ? 
+                  (slideProgress.completion_percentage === 100 ? 'completed' : 
+                   slideProgress.in_progress_slides > 0 ? 'in_progress' : 'pending') : 'pending'
+
+                const finalStatus = isSlideCreationStage ? slideCreationStatus : status
+                const FinalStatusIcon = isSlideCreationStage ? statusConfig[slideCreationStatus].icon : StatusIcon
+
                 return (
                   <div key={stage.name} className={`flex items-center space-x-3 p-3 rounded-lg border ${
                     isActive ? 'border-primary/20 bg-primary/5' : 
-                    isCompleted ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950' :
-                    isFailed ? 'border-destructive/20 bg-destructive/5' : 
+                    (isCompleted || finalStatus === 'completed') ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950' :
+                    (isFailed || finalStatus === 'failed') ? 'border-destructive/20 bg-destructive/5' : 
                     'border-neutral-200 dark:border-neutral-800'
                   }`}>
                     <div className="flex-shrink-0">
-                      <StatusIcon className={`w-5 h-5 ${
-                        status === 'in_progress' ? 'animate-spin text-primary' :
-                        status === 'completed' ? 'text-emerald-600' :
-                        status === 'failed' ? 'text-destructive' :
+                      <FinalStatusIcon className={`w-5 h-5 ${
+                        finalStatus === 'in_progress' ? 'animate-spin text-primary' :
+                        finalStatus === 'completed' ? 'text-emerald-600' :
+                        finalStatus === 'failed' ? 'text-destructive' :
                         'text-neutral-400'
                       }`} />
                     </div>
@@ -476,42 +526,79 @@ export function WorkflowProgress({ project }: WorkflowProgressProps) {
                       <div className="flex items-center space-x-2">
                         <span className={`font-medium ${
                           isActive ? 'text-primary dark:text-primary' :
-                          isCompleted ? 'text-emerald-900 dark:text-emerald-300' :
-                          isFailed ? 'text-destructive dark:text-destructive' :
+                          (isCompleted || finalStatus === 'completed') ? 'text-emerald-900 dark:text-emerald-300' :
+                          (isFailed || finalStatus === 'failed') ? 'text-destructive dark:text-destructive' :
                           'text-neutral-700 dark:text-neutral-300'
                         }`}>
                           {stage.label}
                         </span>
-                        <Badge className={statusConfig[status].color}>
-                          {statusConfig[status].label}
+                        <Badge className={statusConfig[finalStatus].color}>
+                          {statusConfig[finalStatus].label}
                         </Badge>
                       </div>
                       
                       <p className={`text-sm mt-1 ${
                         isActive ? 'text-primary/70' :
-                        isCompleted ? 'text-emerald-600 dark:text-emerald-400' :
-                        isFailed ? 'text-destructive/70' :
+                        (isCompleted || finalStatus === 'completed') ? 'text-emerald-600 dark:text-emerald-400' :
+                        (isFailed || finalStatus === 'failed') ? 'text-destructive/70' :
                         'text-neutral-500 dark:text-neutral-400'
                       }`}>
                         {stage.description}
                       </p>
 
+                      {/* Show slide progress for slide creation stage */}
+                      {isSlideCreationStage && slideProgress && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span>Individual Slides</span>
+                            <span>{slideProgress.completed_slides} of {slideProgress.total_slides} completed</span>
+                          </div>
+                          <Progress value={slideProgress.completion_percentage} className="h-2" />
+                          <div className="flex flex-wrap gap-1">
+                            {slideProgress.completed_slides > 0 && (
+                              <Badge variant="secondary" className="text-xs bg-emerald-100 text-emerald-800">
+                                <CheckCircle2 className="w-2 h-2 mr-1" />
+                                {slideProgress.completed_slides} Done
+                              </Badge>
+                            )}
+                            {slideProgress.in_progress_slides > 0 && (
+                              <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
+                                <Loader2 className="w-2 h-2 mr-1 animate-spin" />
+                                {slideProgress.in_progress_slides} Processing
+                              </Badge>
+                            )}
+                            {slideProgress.pending_slides > 0 && (
+                              <Badge variant="secondary" className="text-xs bg-neutral-100 text-neutral-800">
+                                <Clock className="w-2 h-2 mr-1" />
+                                {slideProgress.pending_slides} Pending
+                              </Badge>
+                            )}
+                            {slideProgress.failed_slides > 0 && (
+                              <Badge variant="secondary" className="text-xs bg-destructive/10 text-destructive">
+                                <XCircle className="w-2 h-2 mr-1" />
+                                {slideProgress.failed_slides} Failed
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Show execution time for completed stages */}
-                      {state?.execution_time_seconds && status === 'completed' && (
+                      {state?.execution_time_seconds && finalStatus === 'completed' && !isSlideCreationStage && (
                         <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
                           Completed in {state.execution_time_seconds}s
                         </p>
                       )}
 
                       {/* Show error message for failed stages */}
-                      {state?.error_message && status === 'failed' && showDetails && (
+                      {state?.error_message && finalStatus === 'failed' && showDetails && (
                         <div className="mt-2 p-2 bg-destructive/5 border border-destructive/20 rounded text-sm text-destructive">
                           <strong>Error:</strong> {state.error_message}
                         </div>
                       )}
 
                       {/* Show detailed data when details are visible */}
-                      {showDetails && state && (status === 'completed' || status === 'in_progress') && (
+                      {showDetails && state && (finalStatus === 'completed' || finalStatus === 'in_progress') && !isSlideCreationStage && (
                         <div className="mt-2 space-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                           {state.started_at && (
                             <p>Started: {new Date(state.started_at).toLocaleTimeString()}</p>

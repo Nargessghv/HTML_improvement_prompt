@@ -31,6 +31,7 @@ from .html_content_agent import HTMLContentGenerationAgent
 from .monitoring import slide_monitor
 from .database import get_supabase_client, DatabaseError
 from .llm_client import SlideContent
+from .individual_slide_generator import IndividualSlideGenerator
 
 
 class SlideStatus:
@@ -111,6 +112,9 @@ class ParallelSlideWorkflow:
         # Database and callbacks
         self.database_callback: Optional[Callable] = None
         self.supabase = get_supabase_client()
+        
+        # Individual slide generator
+        self.slide_generator = IndividualSlideGenerator()
 
     def set_database_callback(self, callback: Callable):
         """Set database callback for real-time updates"""
@@ -283,7 +287,7 @@ class ParallelSlideWorkflow:
                 "layout_type": slide_spec.get("layout_type"),
             }
             
-            result = self.supabase.table("slides").insert(slide_data).execute()
+            result = self.supabase.client.table("slides").insert(slide_data).execute()
             
             if not result.data:
                 raise DatabaseError("Failed to insert slide record")
@@ -297,38 +301,66 @@ class ParallelSlideWorkflow:
         layout_state: SlideGenerationState,
         config: Optional[RunnableConfig]
     ) -> List[IndividualSlideState]:
-        """Process slides in parallel with controlled concurrency"""
+        """Process slides in parallel with controlled concurrency, starting in outline order"""
         completed_slides = []
         failed_slides = []
         
-        # Create semaphore to limit concurrent processing
-        semaphore = asyncio.Semaphore(self.max_concurrent_slides)
+        # Sort slides by slide number to ensure outline order
+        sorted_slides = sorted(slide_states, key=lambda s: s.slide_number)
+        total_slides = len(sorted_slides)
+        print(f"📋 Processing {total_slides} slides in outline order (slides {sorted_slides[0].slide_number}-{sorted_slides[-1].slide_number})")
+        
+        # Track running tasks and remaining slides
+        running_tasks = {}  # task -> slide_state mapping
+        remaining_slides = list(sorted_slides)
         
         async def process_single_slide(slide_state: IndividualSlideState):
-            async with semaphore:
-                return await self._process_individual_slide(
-                    slide_state, layout_state, config
-                )
+            return await self._process_individual_slide(
+                slide_state, layout_state, config
+            )
         
-        # Start all slide processing tasks
-        tasks = [process_single_slide(slide_state) for slide_state in slide_states]
+        # Start initial batch of slides (up to max_concurrent)
+        print(f"📋 Starting initial batch of {min(self.max_concurrent_slides, len(remaining_slides))} slides in outline order...")
+        while len(running_tasks) < self.max_concurrent_slides and remaining_slides:
+            slide_state = remaining_slides.pop(0)
+            task = asyncio.create_task(process_single_slide(slide_state))
+            running_tasks[task] = slide_state
+            print(f"🚀 Started processing slide {slide_state.slide_number}: {slide_state.slide_spec.get('title', 'Untitled')}")
         
-        # Process slides as they complete
-        for task in asyncio.as_completed(tasks):
-            try:
-                result = await task
-                if result.status == SlideStatus.COMPLETED:
-                    completed_slides.append(result)
-                    print(f"✅ Slide {result.slide_number} completed")
-                else:
-                    failed_slides.append(result)
-                    print(f"❌ Slide {result.slide_number} failed: {result.error_message}")
-                    
-            except Exception as e:
-                print(f"❌ Unexpected error processing slide: {e}")
-                failed_slides.append(None)  # Track failed count
+        print(f"⚡ Processing {len(running_tasks)} slides concurrently, {len(remaining_slides)} queued...")
+        
+        # Process slides as they complete, starting new ones immediately
+        while running_tasks:
+            # Wait for any task to complete
+            done, pending = await asyncio.wait(running_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+            
+            for completed_task in done:
+                slide_state = running_tasks.pop(completed_task)
+                
+                try:
+                    result = await completed_task
+                    if result.status == SlideStatus.COMPLETED:
+                        completed_slides.append(result)
+                        print(f"✅ Slide {result.slide_number} completed")
+                    else:
+                        failed_slides.append(result)
+                        print(f"❌ Slide {result.slide_number} failed: {result.error_message}")
+                        
+                except Exception as e:
+                    print(f"❌ Unexpected error processing slide {slide_state.slide_number}: {e}")
+                    failed_slides.append(slide_state)
+                
+                # Start next slide if any remaining
+                if remaining_slides:
+                    next_slide = remaining_slides.pop(0)
+                    new_task = asyncio.create_task(process_single_slide(next_slide))
+                    running_tasks[new_task] = next_slide
+                    print(f"🚀 Started processing slide {next_slide.slide_number}: {next_slide.slide_spec.get('title', 'Untitled')} ({len(remaining_slides)} slides remaining in queue)")
         
         print(f"📊 Parallel processing complete: {len(completed_slides)} succeeded, {len(failed_slides)} failed")
+        
+        # Sort completed slides by slide number to maintain outline order
+        completed_slides.sort(key=lambda s: s.slide_number)
         return completed_slides
 
     async def _process_individual_slide(
@@ -361,14 +393,23 @@ class ParallelSlideWorkflow:
             if slide_state.status == SlideStatus.FAILED:
                 return slide_state
             
-            # Step 3: HTML Refinement (if needed)
-            if slide_state.html_content:
+            # Step 3: HTML Refinement (if needed - check the workflow flag)
+            html_generation_result = getattr(slide_state, 'html_generation_result', {})
+            needs_refinement = html_generation_result.get("needs_html_refinement", False)
+            
+            print(f"🔍 Checking HTML refinement need for slide {slide_state.slide_number}:")
+            print(f"  - needs_html_refinement flag: {needs_refinement}")
+            print(f"  - html_content exists: {bool(slide_state.html_content)}")
+            
+            if needs_refinement and slide_state.html_content:
                 await self._update_slide_status(slide_state, SlideStatus.HTML_REFINEMENT)
                 slide_state = await self._run_slide_html_refinement(
                     slide_state, layout_state, config
                 )
                 if slide_state.status == SlideStatus.FAILED:
                     return slide_state
+            else:
+                print(f"⚠️ Skipping HTML refinement for slide {slide_state.slide_number} - needs_refinement: {needs_refinement}, has_html: {bool(slide_state.html_content)}")
             
             # Step 4: Image Processing
             await self._update_slide_status(slide_state, SlideStatus.IMAGE_PROMPT_GENERATION)
@@ -383,6 +424,9 @@ class ParallelSlideWorkflow:
             slide_state = await self._run_slide_quality_review(
                 slide_state, layout_state, config
             )
+            
+            # Generate individual PPTX file
+            await self._generate_individual_slide_file(slide_state, layout_state)
             
             # Mark as completed
             slide_state.status = SlideStatus.COMPLETED
@@ -406,7 +450,10 @@ class ParallelSlideWorkflow:
     ):
         """Update slide status in database"""
         try:
-            update_data = {"updated_at": datetime.now().isoformat()}
+            update_data = {
+                "status": status,
+                "updated_at": datetime.now().isoformat()
+            }
             
             # Add status-specific fields
             if status == SlideStatus.COMPLETED:
@@ -420,7 +467,7 @@ class ParallelSlideWorkflow:
                 current_content["error"] = slide_state.error_message
                 update_data["content"] = current_content
             
-            result = self.supabase.table("slides").update(update_data).eq("id", slide_state.slide_id).execute()
+            result = self.supabase.client.table("slides").update(update_data).eq("id", slide_state.slide_id).execute()
             
             if not result.data:
                 print(f"⚠️ Failed to update slide {slide_state.slide_number} status to {status}")
@@ -433,14 +480,52 @@ class ParallelSlideWorkflow:
     ) -> IndividualSlideState:
         """Run content generation for individual slide"""
         try:
-            # Create a minimal workflow state for this slide
+            # Convert slide_spec dict to proper SlideSpec object if needed
+            from .llm_models import SlideSpec, PresentationPlan
+            
+            if isinstance(slide_state.slide_spec, dict):
+                # Determine appropriate layout based on content type
+                layout_index = self._select_appropriate_layout(slide_state.slide_spec, layout_state)
+                
+                # Convert dictionary to SlideSpec object
+                slide_spec_obj = SlideSpec(
+                    layout_index=layout_index,
+                    slide_title=slide_state.slide_spec.get("title", "Untitled"),
+                    slide_purpose=f"Create content for: {slide_state.slide_spec.get('title', 'Untitled')}",
+                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
+                    content_structure=slide_state.slide_spec.get("content_type", "text"),
+                    html_requirements=slide_state.slide_spec.get("notes"),
+                    key_information=slide_state.slide_spec.get("key_points", [])
+                )
+            else:
+                slide_spec_obj = slide_state.slide_spec
+            
+            # Create a proper PresentationPlan object with full context
+            # This is what the content agent actually expects
+            presentation_plan = PresentationPlan(
+                total_slides=1,
+                slides=[slide_spec_obj],
+                presentation_flow=f"Single slide presentation: {slide_state.slide_spec.get('title', 'Untitled')}",
+                reasoning=f"Generating content for individual slide: {slide_state.slide_spec.get('title', 'Untitled')}"
+            )
+            
+            # Create a proper workflow state with all required fields
             workflow_state: SlideGenerationState = {
                 **layout_state,
-                "presentation_plan": {"slides": [slide_state.slide_spec]},
+                "presentation_plan": presentation_plan,  # Pass the full plan object
+                "selected_layouts": [layout_index],  # Content agent may need this
                 "current_step": "content_generation"
             }
             
-            result = self.content_agent.execute(workflow_state, config)
+            # Content generation - run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.content_agent.execute,
+                workflow_state,
+                config
+            )
             
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
@@ -449,6 +534,9 @@ class ParallelSlideWorkflow:
                 slide_contents = result.get("slide_contents", [])
                 if slide_contents:
                     slide_state.slide_content = slide_contents[0]  # Should be only one slide
+                    print(f"✅ content_generator: Generated content for slide {slide_state.slide_number}")
+                else:
+                    print(f"⚠️ content_generator: No content generated for slide {slide_state.slide_number}")
                 
             return slide_state
             
@@ -467,13 +555,42 @@ class ParallelSlideWorkflow:
                 slide_state.error_message = "No slide content available for HTML generation"
                 return slide_state
             
+            # Create a proper PresentationPlan object for context
+            from .llm_models import PresentationPlan, SlideSpec
+            
+            # Extract layout index from slide_content
+            layout_index = slide_state.slide_content.layout_index if hasattr(slide_state.slide_content, 'layout_index') else 0
+            
+            # Create a presentation plan with the single slide
+            presentation_plan = PresentationPlan(
+                total_slides=1,
+                slides=[SlideSpec(
+                    layout_index=layout_index,
+                    slide_title=slide_state.slide_spec.get("title", "Untitled"),
+                    slide_purpose=f"HTML generation for: {slide_state.slide_spec.get('title', 'Untitled')}",
+                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
+                    content_structure=slide_state.slide_spec.get("content_type", "text"),
+                    html_requirements=slide_state.slide_spec.get("notes"),
+                    key_information=slide_state.slide_spec.get("key_points", [])
+                )],
+                presentation_flow=f"HTML generation for slide: {slide_state.slide_spec.get('title', 'Untitled')}",
+                reasoning=f"Generating HTML visualization for: {slide_state.slide_spec.get('title', 'Untitled')}"
+            )
+            
             workflow_state: SlideGenerationState = {
                 **layout_state,
                 "slide_contents": [slide_state.slide_content],
-                "current_step": "html_generation"
+                "presentation_plan": presentation_plan,  # Include presentation plan for context
+                "current_step": "html_generation",
+                "project_id": slide_state.project_id,  # Add project_id for tracking
+                "slide_ids": [slide_state.slide_id]  # Add slide_id for tracking
             }
             
             result = await self.html_content_agent.execute_parallel(workflow_state, config)
+            
+            # Store the HTML generation result for refinement decision
+            slide_state.html_generation_result = result
             
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
@@ -482,12 +599,34 @@ class ParallelSlideWorkflow:
                 # Extract HTML content from result
                 slide_contents = result.get("slide_contents", [])
                 if slide_contents and hasattr(slide_contents[0], 'content'):
-                    # Look for HTML in the slide content
+                    # Update the slide content with any HTML generated
+                    slide_state.slide_content = slide_contents[0]
+                    
+                    # Look for HTML in the slide content (check multiple patterns)
                     content = slide_contents[0].content
+                    html_found = False
                     for key, value in content.items():
-                        if key.endswith('_html') and value:
-                            slide_state.html_content = value
-                            break
+                        if isinstance(value, str) and value.strip():
+                            # Check for HTML patterns
+                            if (key.endswith('_html') or 
+                                ('<' in value and '>' in value and value.strip().startswith('<')) or
+                                ('html' in key.lower())):
+                                slide_state.html_content = value
+                                print(f"✅ html_content_generator: Found HTML content in '{key}' for slide {slide_state.slide_number}")
+                                print(f"🔍 HTML content preview: {value[:100]}...")
+                                html_found = True
+                                break
+                    
+                    if not html_found:
+                        print(f"⚠️ html_content_generator: No HTML content found for slide {slide_state.slide_number}")
+                        print(f"🔍 Available content keys: {list(content.keys())}")
+                        for key, value in content.items():
+                            if isinstance(value, str):
+                                print(f"  - {key}: {value[:50]}...")
+                
+                # Check the needs_html_refinement flag from the result
+                needs_refinement = result.get("needs_html_refinement", False)
+                print(f"🔍 HTML generation result: needs_html_refinement = {needs_refinement}")
                 
             return slide_state
             
@@ -499,39 +638,59 @@ class ParallelSlideWorkflow:
     async def _run_slide_html_refinement(
         self, slide_state: IndividualSlideState, layout_state: SlideGenerationState, config: Optional[RunnableConfig]
     ) -> IndividualSlideState:
-        """Run HTML refinement for individual slide if needed"""
+        """Run HTML refinement for individual slide using the complete refinement process"""
         try:
             # Skip refinement if no HTML content
             if not slide_state.html_content:
+                print(f"⚠️ Skipping HTML refinement for slide {slide_state.slide_number} - no HTML content found")
+                print(f"🔍 slide_state.html_content: {slide_state.html_content}")
+                if hasattr(slide_state, 'slide_content') and slide_state.slide_content:
+                    print(f"🔍 Available slide content keys: {list(slide_state.slide_content.content.keys()) if hasattr(slide_state.slide_content, 'content') else 'No content attr'}")
                 return slide_state
             
-            workflow_state: SlideGenerationState = {
-                **layout_state,
-                "slide_contents": [slide_state.slide_content],
-                "html_slides_to_refine_queue": [0],  # Only refine this one slide
-                "current_step": "html_refinement"
-            }
+            print(f"🎨 Starting HTML refinement for slide {slide_state.slide_number}...")
             
-            result = await self.refinement_agent.execute_parallel(workflow_state, config)
+            # Generate a refinement ID for this slide
+            import uuid
+            refinement_id = str(uuid.uuid4())
             
-            if result.get("error_message"):
-                slide_state.status = SlideStatus.FAILED
-                slide_state.error_message = result["error_message"]
-            else:
-                # Extract refined HTML
-                slide_contents = result.get("slide_contents", [])
-                if slide_contents and hasattr(slide_contents[0], 'content'):
-                    content = slide_contents[0].content
-                    for key, value in content.items():
-                        if key.endswith('_html') and value:
-                            slide_state.refined_html = value
+            # Get slide purpose for refinement context
+            slide_purpose = f"Refining HTML visualization for: {slide_state.slide_spec.get('title', 'Untitled')}"
+            if slide_state.slide_spec.get('key_points'):
+                slide_purpose += f". Key points: {', '.join(slide_state.slide_spec.get('key_points', []))}"
+            
+            # Call the individual slide refinement method directly (max 5 iterations)
+            refined_html = await self.refinement_agent._refine_one_slide_fully_async(
+                slide_index=0,  # Since this is a single slide, use index 0
+                initial_html_content=slide_state.html_content,
+                slide_purpose=slide_purpose,
+                refinement_id=refinement_id,
+                project_id=slide_state.project_id,
+                slide_content=slide_state.slide_content,
+                config=config,
+                max_iterations=5  # Max 5 iterations as requested
+            )
+            
+            if refined_html:
+                slide_state.refined_html = refined_html
+                print(f"✅ HTML refinement completed for slide {slide_state.slide_number}")
+                
+                # Update the slide content with refined HTML
+                if hasattr(slide_state.slide_content, 'content'):
+                    # Find the HTML placeholder and update it
+                    for key, value in slide_state.slide_content.content.items():
+                        if isinstance(value, str) and ("<" in value and ">" in value):
+                            slide_state.slide_content.content[key] = refined_html
                             break
+            else:
+                print(f"⚠️ HTML refinement returned no content for slide {slide_state.slide_number}")
                 
             return slide_state
             
         except Exception as e:
             slide_state.status = SlideStatus.FAILED
             slide_state.error_message = f"HTML refinement failed: {str(e)}"
+            print(f"❌ HTML refinement failed for slide {slide_state.slide_number}: {e}")
             return slide_state
 
     async def _run_slide_image_processing(
@@ -542,28 +701,69 @@ class ParallelSlideWorkflow:
             if not slide_state.slide_content:
                 return slide_state
             
+            # Create a proper PresentationPlan object for context
+            from .llm_models import PresentationPlan, SlideSpec
+            
+            # Extract layout index from slide_content
+            layout_index = slide_state.slide_content.layout_index if hasattr(slide_state.slide_content, 'layout_index') else 0
+            
+            # Create a presentation plan with the single slide
+            presentation_plan = PresentationPlan(
+                total_slides=1,
+                slides=[SlideSpec(
+                    layout_index=layout_index,
+                    slide_title=slide_state.slide_spec.get("title", "Untitled"),
+                    slide_purpose=f"Image processing for: {slide_state.slide_spec.get('title', 'Untitled')}",
+                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
+                    content_structure=slide_state.slide_spec.get("content_type", "text"),
+                    html_requirements=slide_state.slide_spec.get("notes"),
+                    key_information=slide_state.slide_spec.get("key_points", [])
+                )],
+                presentation_flow=f"Image processing for slide: {slide_state.slide_spec.get('title', 'Untitled')}",
+                reasoning=f"Processing images for: {slide_state.slide_spec.get('title', 'Untitled')}"
+            )
+            
             workflow_state: SlideGenerationState = {
                 **layout_state,
                 "slide_contents": [slide_state.slide_content],
+                "presentation_plan": presentation_plan,  # Include presentation plan for context
                 "current_step": "image_processing"
             }
             
-            # Image prompt generation
-            result = self.image_prompt_agent.execute(workflow_state, config)
+            # Image prompt generation - run in executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.image_prompt_agent.execute,
+                workflow_state,
+                config
+            )
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
                 slide_state.error_message = result["error_message"]
                 return slide_state
             
-            # Image generation
-            result = self.image_generation_agent.execute(result, config)
+            # Image generation - run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,  # Use default executor
+                self.image_generation_agent.execute,
+                result,
+                config
+            )
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
                 slide_state.error_message = result["error_message"]
                 return slide_state
             
-            # Image refinement
-            result = self.image_refinement_agent.execute(result, config)
+            # Image refinement - also run in executor
+            result = await loop.run_in_executor(
+                None,  # Use default executor
+                self.image_refinement_agent.execute,
+                result,
+                config
+            )
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
                 slide_state.error_message = result["error_message"]
@@ -573,6 +773,7 @@ class ParallelSlideWorkflow:
             slide_contents = result.get("slide_contents", [])
             if slide_contents:
                 slide_state.slide_content = slide_contents[0]
+                print(f"✅ image_processing: Completed for slide {slide_state.slide_number}")
             
             return slide_state
             
@@ -595,7 +796,14 @@ class ParallelSlideWorkflow:
                 "current_step": "quality_review"
             }
             
-            result = self.quality_agent.execute(workflow_state, config)
+            # Quality review - run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                self.quality_agent.execute,
+                workflow_state,
+                config
+            )
             
             if result.get("error_message"):
                 slide_state.status = SlideStatus.FAILED
@@ -612,6 +820,36 @@ class ParallelSlideWorkflow:
             slide_state.status = SlideStatus.FAILED
             slide_state.error_message = f"Quality review failed: {str(e)}"
             return slide_state
+
+    async def _generate_individual_slide_file(
+        self, slide_state: IndividualSlideState, layout_state: SlideGenerationState
+    ):
+        """Generate individual PPTX file for the completed slide"""
+        try:
+            if not slide_state.slide_content:
+                print(f"⚠️ No slide content available for individual PPTX generation: {slide_state.slide_number}")
+                return
+            
+            print(f"📄 Generating individual PPTX for slide {slide_state.slide_number}")
+            
+            # Generate individual slide PPTX
+            result = await self.slide_generator.generate_individual_slide(
+                slide_id=slide_state.slide_id,
+                project_id=slide_state.project_id,
+                slide_content=slide_state.slide_content,
+                template_path=slide_state.template_path,
+                slide_number=slide_state.slide_number,
+                layouts_info=layout_state.get("layouts_info") or {},
+                dynamic_models=layout_state.get("dynamic_models") or {}
+            )
+            
+            if result.get("success"):
+                print(f"✅ Individual PPTX generated for slide {slide_state.slide_number}: {result.get('file_url')}")
+            else:
+                print(f"❌ Failed to generate individual PPTX for slide {slide_state.slide_number}: {result.get('error')}")
+                
+        except Exception as e:
+            print(f"❌ Error generating individual PPTX for slide {slide_state.slide_number}: {e}")
 
     async def _assemble_final_presentation(
         self,
@@ -636,7 +874,45 @@ class ParallelSlideWorkflow:
                 "current_step": "slide_assembly"
             }
             
-            # Run slide assembly
+            # Try to use individual slides for assembly first
+            try:
+                print("🔗 Attempting to combine individual slide PPTX files...")
+                project_id = completed_slides[0].project_id if completed_slides else None
+                
+                if project_id:
+                    combination_result = await self.slide_generator.combine_individual_slides(
+                        project_id=project_id,
+                        output_path=output_path,
+                        template_path=completed_slides[0].template_path if completed_slides else layout_state.get("template_path")
+                    )
+                    
+                    if combination_result.get("success"):
+                        print(f"✅ Successfully combined {combination_result['slides_combined']} individual slides")
+                        return {
+                            "success": True,
+                            "error": None,
+                            "presentation_path": combination_result["output_path"],
+                            "slides_completed": len(completed_slides),
+                            "slides_failed": 0,
+                            "metadata": {
+                                "total_slides": len(completed_slides),
+                                "processing_time_minutes": self._calculate_total_processing_time(completed_slides),
+                                "assembly_method": "individual_combination"
+                            },
+                        }
+                    else:
+                        print(f"⚠️ Individual slide combination failed: {combination_result.get('error')}")
+                        print("🔄 Falling back to traditional assembly...")
+                
+            except Exception as e:
+                print(f"⚠️ Individual slide combination failed: {e}")
+                print("🔄 Falling back to traditional assembly...")
+            
+            # Check if we have any slide contents to assemble
+            if not slide_contents:
+                raise Exception("No slide contents available for assembly - all slides failed during processing")
+            
+            # Fallback to traditional slide assembly
             result = self.assembly_agent.execute(final_state, config)
             
             if result.get("error_message"):
@@ -651,6 +927,7 @@ class ParallelSlideWorkflow:
                 "metadata": {
                     "total_slides": len(completed_slides),
                     "processing_time_minutes": self._calculate_total_processing_time(completed_slides),
+                    "assembly_method": "traditional"
                 },
             }
             
@@ -677,20 +954,133 @@ class ParallelSlideWorkflow:
     async def _update_project_status(self, project_id: str, status: str, error_message: Optional[str] = None):
         """Update project status in database"""
         try:
-            update_data = {
-                "status": status,
-                "updated_at": datetime.now().isoformat()
-            }
+            # Use the proper database method instead of directly accessing client
+            completed_at = datetime.now().isoformat() if status == "completed" else None
+            success = self.supabase.update_project_status(project_id, status, completed_at)
             
-            if status == "completed":
-                update_data["completed_at"] = datetime.now().isoformat()
-            elif status == "failed" and error_message:
-                update_data["metadata"] = {"error": error_message}
-            
-            result = self.supabase.table("projects").update(update_data).eq("id", project_id).execute()
-            
-            if not result.data:
+            if not success:
                 print(f"⚠️ Failed to update project {project_id} status to {status}")
                 
         except Exception as e:
             print(f"⚠️ Database error updating project status: {e}")
+
+    def _select_appropriate_layout(self, slide_spec: Dict[str, Any], layout_state: SlideGenerationState) -> int:
+        """
+        Select appropriate layout based on slide content type using same logic as presentation planning agent
+        """
+        try:
+            layouts_info = layout_state.get("layouts_info", {})
+            
+            # Debug: Print layout state keys
+            print(f"🔍 Layout state keys: {list(layout_state.keys())}")
+            print(f"🔍 Layouts info available: {bool(layouts_info)}")
+            if layouts_info:
+                print(f"🔍 Available layouts: {list(layouts_info.keys())}")
+            
+            if not layouts_info:
+                print("⚠️ No layouts_info available in layout_state!")
+                # Try to get the first available layout from template analysis
+                first_layout = 0  # Always start with layout 0 as the safest fallback
+                print(f"🔧 Using fallback layout {first_layout}")
+                return first_layout
+            
+            content_type = slide_spec.get("content_type", "text")
+            print(f"🎯 Selecting layout for content_type: '{content_type}'")
+            
+            # Content type to layout mapping strategy
+            # visual -> picture layout (for AI-generated images)
+            # chart/timeline/comparison -> HTML layout (for HTML visualizations)
+            # text -> text layout
+            content_type_to_layout = {}
+            try:
+                content_type_to_layout = {
+                    "text": self._find_best_layout_for_content(layouts_info, "text"),
+                    "visual": self._find_best_layout_for_content(layouts_info, "picture"),  # For AI images
+                    "chart": self._find_best_layout_for_content(layouts_info, "html"),      # For HTML viz
+                    "timeline": self._find_best_layout_for_content(layouts_info, "html"),   # For HTML viz
+                    "comparison": self._find_best_layout_for_content(layouts_info, "html")  # For HTML viz
+                }
+                print(f"🔍 Content type mappings: {content_type_to_layout}")
+            except Exception as mapping_error:
+                print(f"⚠️ Error creating content type mappings: {mapping_error}")
+                # Use first available layout as fallback
+                first_layout = next(iter(layouts_info.keys())) if layouts_info else 0
+                print(f"🔧 Using first available layout {first_layout}")
+                return first_layout
+            
+            # Select appropriate layout based on content type
+            layout_index = content_type_to_layout.get(content_type)
+            if layout_index is None:
+                # Fallback to text layout
+                try:
+                    layout_index = self._find_best_layout_for_content(layouts_info, "text")
+                except Exception as fallback_error:
+                    print(f"⚠️ Error with text fallback: {fallback_error}")
+                    layout_index = next(iter(layouts_info.keys())) if layouts_info else 0
+            
+            # Validate that the selected layout exists
+            if layout_index not in layouts_info:
+                print(f"⚠️ Selected layout {layout_index} not found in layouts_info!")
+                layout_index = next(iter(layouts_info.keys())) if layouts_info else 0
+                print(f"🔧 Using first available layout {layout_index} instead")
+            
+            print(f"✅ Selected layout {layout_index} for content_type '{content_type}'")
+            return layout_index
+                
+        except Exception as e:
+            print(f"❌ Error selecting layout for slide: {e}")
+            print(f"🔍 Slide spec: {slide_spec}")
+            print(f"🔍 Layout state keys: {list(layout_state.keys()) if layout_state else 'None'}")
+            # Ultimate fallback - use layout 0 which should always exist
+            return 0
+
+    def _find_best_layout_for_content(
+        self, 
+        layouts_info: Dict[int, Dict[str, Any]], 
+        preferred_type: str
+    ) -> int:
+        """
+        Find the best layout index for a given content type (copied from PresentationPlanningAgent)
+        
+        Args:
+            layouts_info: Available layout information
+            preferred_type: Preferred layout type (text, picture, html)
+            
+        Returns:
+            Layout index (defaults to first available layout if no match found)
+        """
+        if not layouts_info:
+            print(f"⚠️ Empty layouts_info provided to _find_best_layout_for_content")
+            return 0
+            
+        print(f"🔍 Finding layout for preferred_type: '{preferred_type}'")
+        print(f"🔍 Available layouts: {[(idx, info.get('name', 'Unknown')) for idx, info in layouts_info.items()]}")
+        
+        # Priority mapping for different content types
+        search_patterns = {
+            "text": ["text content", "content", "text"],
+            "picture": ["title and picture", "picture", "image"],
+            "html": ["html", "picture generated from html", "picture"]
+        }
+        
+        patterns = search_patterns.get(preferred_type, ["content", "text"])
+        print(f"🔍 Searching for patterns: {patterns}")
+        
+        # Search for exact matches first
+        for pattern in patterns:
+            for layout_index, layout_info in layouts_info.items():
+                layout_name = layout_info.get("name", "").lower()
+                if pattern in layout_name:
+                    print(f"✅ Found matching layout {layout_index} ('{layout_info.get('name')}') for pattern '{pattern}'")
+                    return layout_index
+        
+        # Fallback to first available layout
+        if layouts_info:
+            first_layout = next(iter(layouts_info.keys()))
+            first_layout_name = layouts_info[first_layout].get("name", "Unknown")
+            print(f"⚠️ No matching layout found for '{preferred_type}', using first available layout {first_layout} ('{first_layout_name}')")
+            return first_layout
+        
+        # Ultimate fallback
+        print(f"❌ No layouts available at all, using default layout 0")
+        return 0

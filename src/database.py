@@ -803,11 +803,14 @@ class SupabaseClient:
             }
 
     @log_database_operation("get_slide_details", "slides")
-    def get_slide_details(self, slide_id: str) -> Optional[Dict[str, Any]]:
+    def get_slide_details(self, slide_id: str, jwt_token: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get detailed slide information including processing status"""
         self._validate_uuid(slide_id, "slide_id")
         
-        result = self.client.table("slides")\
+        # Use appropriate client based on service role availability and JWT token
+        client_to_use = self.create_user_client(jwt_token) if jwt_token and not self.using_service_role else self.client
+        
+        result = client_to_use.table("slides")\
             .select("*")\
             .eq("id", slide_id)\
             .execute()
@@ -867,7 +870,7 @@ class SupabaseClient:
         if event_types:
             query = query.in_("event_type", event_types)
         
-        result = query.order("created_at", {"ascending": False}).execute()
+        result = query.order("created_at", desc=True).execute()
         
         data = self._handle_supabase_response(result, "get_slide_events", "slide_events")
         return data or []

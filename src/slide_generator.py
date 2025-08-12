@@ -690,6 +690,9 @@ class SlideGenerator:
                     self._insert_html_visualization_into_placeholder(
                         placeholder, content, custom_name
                     )
+                elif self._is_image_path(content):
+                    # Handle as image file path
+                    self._insert_image_into_placeholder(placeholder, content)
                 else:
                     # Handle as regular picture placeholder - leave as placeholder
                     print(
@@ -744,6 +747,33 @@ class SlideGenerator:
         ]
         content_lower = content.lower().strip()
         return any(indicator in content_lower for indicator in html_indicators)
+
+    def _is_image_path(self, content: str) -> bool:
+        """
+        Check if content is a file path pointing to an image file
+        
+        Args:
+            content: Content string to check
+            
+        Returns:
+            True if content appears to be an image file path
+        """
+        if not content or not isinstance(content, str):
+            return False
+            
+        content = content.strip()
+        
+        # Check for common image file extensions
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp']
+        content_lower = content.lower()
+        
+        # Check if it ends with an image extension
+        has_image_extension = any(content_lower.endswith(ext) for ext in image_extensions)
+        
+        # Check if it looks like a file path (contains directory separators)
+        looks_like_path = ('/' in content or '\\' in content or content.startswith('.'))
+        
+        return has_image_extension and looks_like_path
 
     def _insert_html_visualization_into_placeholder(
         self, placeholder, content: str, custom_name: str
@@ -1102,9 +1132,14 @@ class SlideGenerator:
                         placeholder, content, placeholder_name
                     )
                     return
-                if "icon" in placeholder_name.lower():
+                elif "icon" in placeholder_name.lower():
                     # Handle as icon placeholder
                     self._insert_icon_into_placeholder(placeholder, content)
+                    return
+                elif self._is_image_path(content):
+                    # Handle as image file path
+                    self._insert_image_into_placeholder(placeholder, content)
+                    return
                 else:
                     # Handle as regular picture placeholder - leave as placeholder
                     print(
@@ -1190,6 +1225,30 @@ class SlideGenerator:
             print(f"Error inserting icon '{icon_name}': {e}")
             import traceback
 
+            traceback.print_exc()
+
+    def _insert_image_into_placeholder(self, placeholder, image_path: str) -> None:
+        """
+        Insert an image file into a picture placeholder by replacing the placeholder
+        
+        Args:
+            placeholder: PowerPoint picture placeholder object
+            image_path: Path to the image file to insert
+        """
+        try:
+            # Check if image file exists
+            if not os.path.exists(image_path):
+                print(f"Warning: Image file '{image_path}' not found")
+                return
+            
+            # Use the existing well-tested _replace_placeholder_with_image method
+            placeholder_name = getattr(placeholder, 'name', 'Image')
+            self._replace_placeholder_with_image(placeholder, image_path, f"{placeholder_name}_image")
+            print(f"✅ Inserted image '{image_path}' into picture placeholder")
+                
+        except Exception as e:
+            print(f"Error inserting image '{image_path}': {e}")
+            import traceback
             traceback.print_exc()
 
     def _create_chart_from_content(self, placeholder, content: str) -> bool:

@@ -228,8 +228,10 @@ class SlideGenerationWorkflow:
         print(f"📄 Approved slides count: {len(approved_outline.get('slides', []))}")
 
         try:
-            # Initialize parallel workflow
-            parallel_workflow = ParallelSlideWorkflow(max_concurrent_slides=3)
+            # Initialize parallel workflow with configurable concurrency
+            max_concurrent = int(os.getenv("MAX_CONCURRENT_SLIDES", "5"))
+            print(f"⚡ Using {max_concurrent} concurrent slides for parallel processing")
+            parallel_workflow = ParallelSlideWorkflow(max_concurrent_slides=max_concurrent)
             
             # Set database callback if available
             if self.database_callback and self.project_id:
@@ -281,19 +283,11 @@ class SlideGenerationWorkflow:
             from .database import get_supabase_client
             supabase = get_supabase_client()
             
-            update_data = {
-                "status": status,
-                "updated_at": datetime.now().isoformat()
-            }
+            # Use the proper database method instead of directly accessing client
+            completed_at = datetime.now().isoformat() if status == "completed" else None
+            success = supabase.update_project_status(project_id, status, completed_at)
             
-            if status == "completed":
-                update_data["completed_at"] = datetime.now().isoformat()
-            elif status == "failed" and error_message:
-                update_data["metadata"] = {"error": error_message}
-            
-            result = supabase.table("projects").update(update_data).eq("id", project_id).execute()
-            
-            if not result.data:
+            if not success:
                 print(f"⚠️ Failed to update project {project_id} status to {status}")
                 
         except Exception as e:

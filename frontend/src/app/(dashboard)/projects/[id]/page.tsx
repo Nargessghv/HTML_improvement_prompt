@@ -101,6 +101,7 @@ export default function ProjectDetailPage() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([])
   const [isLoadingFiles, setIsLoadingFiles] = useState(false)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
 
   const projectId = params?.id as string
 
@@ -155,8 +156,7 @@ export default function ProjectDetailPage() {
         return
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiUrl}/projects/${projectId}/files`, {
+      const response = await fetch(`/api/projects/${projectId}/files`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
@@ -197,15 +197,13 @@ export default function ProjectDetailPage() {
 
       // Call backend API to start the AI workflow
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        
         // Get the current session to access the JWT token
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.access_token) {
           throw new Error('No valid session found')
         }
         
-        const response = await fetch(`${apiUrl}/projects`, {
+        const response = await fetch(`/api/projects`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -344,7 +342,7 @@ export default function ProjectDetailPage() {
   const StatusIcon = statusConfig[project.status].icon
 
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-6 min-h-screen">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
@@ -438,315 +436,224 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Project Details */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Project Description</CardTitle>
-              <CardDescription>
-                The topic and requirements for this presentation
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[400px] w-full">
-                <div className="p-6">
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        h1: ({ children }) => <h1 className="text-lg font-bold text-gray-900 mb-3 mt-0">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-base font-semibold text-gray-800 mb-2 mt-4">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-800 mb-2 mt-3">{children}</h3>,
-                        h4: ({ children }) => <h4 className="text-sm font-medium text-gray-700 mb-1 mt-2">{children}</h4>,
-                        p: ({ children }) => <p className="text-gray-700 mb-2 leading-relaxed">{children}</p>,
-                        ul: ({ children }) => <ul className="list-disc list-inside text-gray-700 mb-2 ml-2">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal list-inside text-gray-700 mb-2 ml-2">{children}</ol>,
-                        li: ({ children }) => <li className="mb-1">{children}</li>,
-                        strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-                        em: ({ children }) => <em className="italic text-gray-800">{children}</em>,
-                        code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
-                        pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-md overflow-x-auto text-sm font-mono mb-3">{children}</pre>,
-                        blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 mb-3">{children}</blockquote>,
-                        hr: () => <hr className="border-gray-300 my-4" />,
-                        a: ({ href, children }) => <a href={href} className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
-                      }}
-                    >
-                      {project.topic}
-                    </ReactMarkdown>
+      {/* Main Content - Maximized Screen Use */}
+      <div className="space-y-6">
+        {/* Top Section: Project Description & Key Actions */}
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+          {/* Project Description - Takes most space */}
+          <div className="xl:col-span-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Project Description</CardTitle>
+                <CardDescription>
+                  The topic and requirements for this presentation
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ScrollArea className="h-[300px] w-full">
+                  <div className="p-6">
+                    <div className="prose prose-sm max-w-none">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({ children }) => <h1 className="text-lg font-bold text-gray-900 mb-3 mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-base font-semibold text-gray-800 mb-2 mt-4">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-semibold text-gray-800 mb-2 mt-3">{children}</h3>,
+                          h4: ({ children }) => <h4 className="text-sm font-medium text-gray-700 mb-1 mt-2">{children}</h4>,
+                          p: ({ children }) => <p className="text-gray-700 mb-2 leading-relaxed">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc list-inside text-gray-700 mb-2 ml-2">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside text-gray-700 mb-2 ml-2">{children}</ol>,
+                          li: ({ children }) => <li className="mb-1">{children}</li>,
+                          strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-gray-800">{children}</em>,
+                          code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800">{children}</code>,
+                          pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-md overflow-x-auto text-sm font-mono mb-3">{children}</pre>,
+                          blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 mb-3">{children}</blockquote>,
+                          hr: () => <hr className="border-gray-300 my-4" />,
+                          a: ({ href, children }) => <a href={href} className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                        }}
+                      >
+                        {project.topic}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Info & Actions Sidebar */}
+          <div className="xl:col-span-1">
+            <Card className="h-[300px]">
+              <CardHeader>
+                <CardTitle className="text-base">Quick Info</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</label>
+                  <div className="mt-1">
+                    <Badge className={statusConfig[project.status].color}>
+                      <StatusIcon className={`w-3 h-3 mr-1 ${project.status === 'processing' ? 'animate-spin' : ''}`} />
+                      {statusConfig[project.status].label}
+                    </Badge>
                   </div>
                 </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          {/* Workflow Progress */}
-          <div className="mt-6">
-            <WorkflowProgress project={project} />
-          </div>
-
-          {/* Individual Slides Grid */}
-          <div className="mt-6">
-            <SlidesGrid 
-              projectId={project.id}
-              projectStatus={project.status}
-              isParallelProcessing={process.env.NEXT_PUBLIC_USE_PARALLEL_SLIDE_PROCESSING === 'true'}
-              expectedSlideCount={0} // This could be determined from the approved outline
-            />
-          </div>
-
-{/* HTML Refinement Viewer - Now accessed via modal button in WorkflowProgress */}
-
-          {/* Download Section for Completed Projects */}
-          {project.status === 'completed' && (
-            <div className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Download Results</CardTitle>
-                  <CardDescription>
-                    Download your generated presentation files
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingFiles ? (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                      <span>Loading available files...</span>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Created</label>
+                  <div className="mt-1 text-xs text-gray-900">
+                    {new Date(project.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Updated</label>
+                  <div className="mt-1 text-xs text-gray-900">
+                    {new Date(project.updated_at).toLocaleDateString()}
+                  </div>
+                </div>
+                {project.completed_at && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Completed</label>
+                    <div className="mt-1 text-xs text-gray-900">
+                      {new Date(project.completed_at).toLocaleDateString()}
                     </div>
-                  ) : projectFiles.length > 0 ? (
-                    <div className="space-y-3">
-                      {projectFiles.map((file) => {
-                        const FileIcon = getFileIcon(file.file_type)
-                        return (
-                          <div key={file.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                            <div className="flex items-center space-x-3">
-                              <FileIcon className="w-5 h-5 text-gray-500" />
-                              <div>
-                                <p className="font-medium">{getDisplayName(file)}</p>
-                                <p className="text-sm text-gray-500">
-                                  {formatFileSize(file.file_size)} • Created {new Date(file.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => downloadFile(file)}
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              Download
-                            </Button>
-                          </div>
-                        )
-                      })}
-                      <div className="pt-3 border-t">
-                        <Button 
-                          variant="outline" 
-                          onClick={fetchProjectFiles}
-                          disabled={isLoadingFiles}
-                        >
-                          {isLoadingFiles ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Refreshing...
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              Refresh Files
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <Download className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                      <p className="text-gray-500 mb-3">No files available for download yet</p>
-                      <Button 
-                        variant="outline"
-                        onClick={fetchProjectFiles}
-                        disabled={isLoadingFiles}
-                      >
-                        {isLoadingFiles ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Checking...
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Check for Files
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                  </div>
+                )}
+                
+                {/* Quick Actions */}
+                <div className="pt-2 border-t space-y-2">
+                  {project.status === 'completed' && projectFiles.length > 0 && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="w-full"
+                      onClick={() => downloadFile(projectFiles[0])}
+                    >
+                      <Download className="w-3 h-3 mr-2" />
+                      Download
+                    </Button>
                   )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowEditModal(true)}
+                  >
+                    <Edit3 className="w-3 h-3 mr-2" />
+                    Edit
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Project Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Project Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        {/* Auto-Refresh Control */}
+        {(project.status === 'processing' || project.status === 'completed') && (
+          <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <RefreshCw className={`w-4 h-4 text-blue-600 ${autoRefreshEnabled ? 'animate-spin' : ''}`} />
               <div>
-                <label className="text-sm font-medium text-gray-500">Status</label>
-                <div className="mt-1">
-                  <Badge className={statusConfig[project.status].color}>
-                    <StatusIcon className={`w-4 h-4 mr-1 ${project.status === 'processing' ? 'animate-spin' : ''}`} />
-                    {statusConfig[project.status].label}
-                  </Badge>
-                </div>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                  Auto-refresh {autoRefreshEnabled ? 'enabled' : 'disabled'}
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  {autoRefreshEnabled 
+                    ? 'Automatically checking for updates every 15 seconds' 
+                    : 'Manual refresh required for updates'
+                  }
+                </p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Created</label>
-                <div className="mt-1 text-sm text-gray-900">
-                  {new Date(project.created_at).toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Last Updated</label>
-                <div className="mt-1 text-sm text-gray-900">
-                  {new Date(project.updated_at).toLocaleString()}
-                </div>
-              </div>
-              {project.completed_at && (
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Completed</label>
-                  <div className="mt-1 text-sm text-gray-900">
-                    {new Date(project.completed_at).toLocaleString()}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+              className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900"
+            >
+              {autoRefreshEnabled ? 'Disable' : 'Enable'} Auto-refresh
+            </Button>
+          </div>
+        )}
 
-          {/* Actions */}
+        {/* Workflow Progress - Full Width */}
+        <WorkflowProgress project={project} autoRefreshEnabled={autoRefreshEnabled} />
+
+        {/* Individual Slides Grid - Full Width */}
+        <SlidesGrid 
+          projectId={project.id}
+          projectStatus={project.status}
+          isParallelProcessing={process.env.NEXT_PUBLIC_USE_PARALLEL_SLIDE_PROCESSING === 'true'}
+          expectedSlideCount={0}
+          autoRefreshEnabled={autoRefreshEnabled}
+        />
+
+        {/* Download Section for Completed Projects */}
+        {project.status === 'completed' && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Actions</CardTitle>
+              <CardTitle>Download Results</CardTitle>
+              <CardDescription>
+                Download your generated presentation files
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {project.status === 'draft' && (
-                <Button 
-                  onClick={startProcessing}
-                  disabled={isStarting}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-                >
-                  {isStarting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Starting...
-                    </>
-                  ) : (
-                    <>
-                      <PlayCircle className="w-4 h-4 mr-2" />
-                      Start Processing
-                    </>
-                  )}
-                </Button>
-              )}
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setShowEditModal(true)}
-              >
-                <Edit3 className="w-4 h-4 mr-2" />
-                Edit Project
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setShowDuplicateModal(true)}
-              >
-                <Copy className="w-4 h-4 mr-2" />
-                Duplicate
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setShowShareModal(true)}
-              >
-                <Share2 className="w-4 h-4 mr-2" />
-                Share
-              </Button>
-              {project.status === 'completed' && projectFiles.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700">Download Files:</p>
+            <CardContent>
+              {isLoadingFiles ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  <span>Loading available files...</span>
+                </div>
+              ) : projectFiles.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {projectFiles.map((file) => {
                     const FileIcon = getFileIcon(file.file_type)
                     return (
-                      <Button 
-                        key={file.id}
-                        variant="outline" 
-                        className="w-full justify-start"
-                        onClick={() => downloadFile(file)}
-                      >
-                        <FileIcon className="w-4 h-4 mr-2" />
-                        <div className="flex-1 text-left">
-                          <div className="text-sm font-medium">{getDisplayName(file)}</div>
-                          <div className="text-xs text-gray-500">{formatFileSize(file.file_size)}</div>
+                      <div key={file.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center space-x-3">
+                          <FileIcon className="w-5 h-5 text-gray-500" />
+                          <div>
+                            <p className="font-medium text-sm">{getDisplayName(file)}</p>
+                            <p className="text-xs text-gray-500">
+                              {formatFileSize(file.file_size)}
+                            </p>
+                          </div>
                         </div>
-                        <Download className="w-4 h-4 ml-2" />
-                      </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => downloadFile(file)}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </div>
                     )
                   })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Download className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-gray-500 mb-3">No files available for download yet</p>
                   <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="w-full"
+                    variant="outline"
                     onClick={fetchProjectFiles}
                     disabled={isLoadingFiles}
                   >
                     {isLoadingFiles ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Refreshing...
+                        Checking...
                       </>
                     ) : (
                       <>
                         <RefreshCw className="w-4 h-4 mr-2" />
-                        Refresh Files
+                        Check for Files
                       </>
                     )}
                   </Button>
                 </div>
-              ) : project.status === 'completed' ? (
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={fetchProjectFiles}
-                  disabled={isLoadingFiles}
-                >
-                  {isLoadingFiles ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Loading Files...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4 mr-2" />
-                      Check for Downloads
-                    </>
-                  )}
-                </Button>
-              ) : (
-                <Button variant="outline" className="w-full" disabled>
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Results
-                  <span className="ml-2 text-xs text-gray-400">(Available after completion)</span>
-                </Button>
               )}
             </CardContent>
           </Card>
-        </div>
+        )}
       </div>
 
       {/* Modals */}

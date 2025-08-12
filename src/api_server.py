@@ -10,9 +10,13 @@ import mimetypes
 import logging
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Set
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -271,6 +275,12 @@ class SlideResponse(BaseModel):
     layout_type: Optional[str] = None
     has_html_content: bool
     created_at: str
+    # New fields for individual slide files
+    status: Optional[str] = None
+    individual_pptx_url: Optional[str] = None
+    individual_pptx_size: Optional[int] = None
+    processing_time_seconds: Optional[int] = None
+    error_message: Optional[str] = None
 
 class WebhookRegistrationRequest(BaseModel):
     webhook_url: str = Field(..., pattern=r'^https?://.+')
@@ -785,7 +795,7 @@ async def get_project_slides(
     project_id: str,
     user = Depends(get_current_user)
 ):
-    """Get slides for a project"""
+    """Get slides for a project with file information"""
     try:
         # Verify project belongs to user
         project = db.get_project(project_id, user.id)
@@ -793,8 +803,8 @@ async def get_project_slides(
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Get slides
-        slides_data = db.get_project_slides(project_id)
+        # Get slides with enhanced status information
+        slides_data = db.get_project_slides_with_status(project_id)
         
         slides = []
         for slide in slides_data:
@@ -804,13 +814,200 @@ async def get_project_slides(
                 title=slide.get("title"),
                 layout_type=slide.get("layout_type"),
                 has_html_content=bool(slide.get("html_content") or slide.get("refined_html")),
-                created_at=slide["created_at"]
+                created_at=slide["created_at"],
+                # Add new fields for individual slide files
+                status=slide.get("status", "pending"),
+                individual_pptx_url=slide.get("individual_pptx_url"),
+                individual_pptx_size=slide.get("individual_pptx_size"),
+                processing_time_seconds=slide.get("processing_time_seconds"),
+                error_message=slide.get("error_message")
             ))
         
         return slides
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching slides: {str(e)}")
+
+@app.get("/projects/{project_id}/slides/{slide_id}")
+async def get_slide_details(
+    project_id: str,
+    slide_id: str,
+    user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Get detailed information about a specific slide including files"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get slide details
+        slide = db.get_slide_details(slide_id, credentials.credentials)
+        if not slide or slide["project_id"] != project_id:
+            raise HTTPException(status_code=404, detail="Slide not found")
+        
+        # Get slide files - use authenticated client for RLS
+        user_client = db.create_user_client(credentials.credentials) if credentials.credentials and not db.using_service_role else db.client
+        files_result = user_client.table("slide_files")\
+            .select("*")\
+            .eq("slide_id", slide_id)\
+            .order("created_at", desc=True)\
+            .execute()
+        
+        files = files_result.data if files_result.data else []
+        
+        # Refresh expired URLs
+        for file_record in files:
+            try:
+                expires_at_str = file_record.get("expires_at")
+                if expires_at_str:
+                    # Handle different datetime formats
+                    if isinstance(expires_at_str, str):
+                        # Convert UTC Z format to +00:00 format for fromisoformat
+                        if expires_at_str.endswith('Z'):
+                            expires_at_str = expires_at_str.replace('Z', '+00:00')
+                        elif not expires_at_str.endswith('+00:00') and not expires_at_str.endswith('-00:00'):
+                            # Add timezone if missing
+                            expires_at_str = expires_at_str + '+00:00'
+                    
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    # Use timezone-aware comparison
+                    now = datetime.now()
+                    if expires_at.tzinfo is not None:
+                        # Make now timezone-aware for comparison
+                        now = datetime.now(timezone.utc)
+                    
+                    if expires_at < now:
+                        # Generate new signed URL
+                        try:
+                            signed_url_result = user_client.storage.from_("presentations").create_signed_url(
+                                path=file_record["file_path"],
+                                expires_in=86400  # 24 hours
+                            )
+                            
+                            if signed_url_result and signed_url_result.get('signedURL'):
+                                new_url = signed_url_result['signedURL']
+                                # Use timezone-aware datetime for expiry
+                                new_expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+                                
+                                # Update database
+                                user_client.table("slide_files").update({
+                                    "file_url": new_url,
+                                    "expires_at": new_expiry.isoformat()
+                                }).eq("id", file_record["id"]).execute()
+                                
+                                # Update in-memory data
+                                file_record["file_url"] = new_url
+                                file_record["expires_at"] = new_expiry.isoformat()
+                                
+                        except Exception as e:
+                            api_logger.warning(f"Failed to refresh signed URL for file {file_record['id']}: {e}")
+            except Exception as e:
+                api_logger.warning(f"Failed to parse expires_at for file {file_record.get('id', 'unknown')}: {e}")
+                # Continue with the next file record without failing the entire request
+        
+        return {
+            "slide": slide,
+            "files": files
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching slide details: {str(e)}")
+
+@app.get("/projects/{project_id}/slides/{slide_id}/download")
+async def download_individual_slide(
+    project_id: str,
+    slide_id: str,
+    user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Download individual slide PPTX file"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get slide with PPTX file
+        slide = db.get_slide_details(slide_id, credentials.credentials)
+        if not slide or slide["project_id"] != project_id:
+            raise HTTPException(status_code=404, detail="Slide not found")
+        
+        if not slide.get("individual_pptx_path"):
+            raise HTTPException(status_code=404, detail="Individual PPTX file not available")
+        
+        # Generate fresh signed URL for download
+        signed_url_result = db.client.storage.from_("presentations").create_signed_url(
+            path=slide["individual_pptx_path"],
+            expires_in=300  # 5 minutes for download
+        )
+        
+        if not signed_url_result or not signed_url_result.get('signedURL'):
+            raise HTTPException(status_code=500, detail="Failed to generate download URL")
+        
+        # Return redirect to signed URL
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=signed_url_result['signedURL'])
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error downloading slide: {str(e)}")
+
+@app.post("/projects/{project_id}/slides/{slide_id}/refresh-url")
+async def refresh_slide_url(
+    project_id: str,
+    slide_id: str,
+    user = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Refresh expired signed URL for a slide file"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get slide details
+        slide = db.get_slide_details(slide_id, credentials.credentials)
+        if not slide or slide["project_id"] != project_id:
+            raise HTTPException(status_code=404, detail="Slide not found")
+        
+        if not slide.get("individual_pptx_path"):
+            raise HTTPException(status_code=404, detail="No file to refresh")
+        
+        # Generate new signed URL
+        signed_url_result = db.client.storage.from_("presentations").create_signed_url(
+            path=slide["individual_pptx_path"],
+            expires_in=86400  # 24 hours
+        )
+        
+        if not signed_url_result or not signed_url_result.get('signedURL'):
+            raise HTTPException(status_code=500, detail="Failed to generate signed URL")
+        
+        new_url = signed_url_result['signedURL']
+        new_expiry = datetime.now() + timedelta(hours=24)
+        
+        # Update slide record
+        db.client.table("slides").update({
+            "individual_pptx_url": new_url,
+            "updated_at": datetime.now().isoformat()
+        }).eq("id", slide_id).execute()
+        
+        # Update slide files record
+        db.client.table("slide_files").update({
+            "file_url": new_url,
+            "expires_at": new_expiry.isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }).eq("slide_id", slide_id).eq("file_type", "individual_pptx").execute()
+        
+        return {
+            "success": True,
+            "new_url": new_url,
+            "expires_at": new_expiry.isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing URL: {str(e)}")
 
 @app.post("/projects/{project_id}/restart")
 async def restart_project_workflow(
@@ -1319,20 +1516,73 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         
         # Check if parallel processing is enabled
         use_parallel_processing = os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true"
+        max_concurrent = os.getenv("MAX_CONCURRENT_SLIDES", "5")
+        api_logger.info(f"Parallel processing enabled: {use_parallel_processing}, Max concurrent: {max_concurrent}")
         
-        if approved_outline and use_parallel_processing:
-            api_logger.info("🚀 Using parallel slide processing for approved outline")
-            # Run parallel workflow
-            result = await workflow.run_parallel_for_approved_outline(
-                topic=actual_topic,
-                template_path=template_path,
-                output_path=output_path,
-                approved_outline=approved_outline,
-                title=project.get("title")
-            )
+        if use_parallel_processing:
+            # If no approved outline for parallel processing, generate one automatically
+            if not approved_outline:
+                api_logger.info("🎯 No approved outline provided - generating outline for parallel processing")
+                
+                # Use the planning agent to generate an outline
+                planning_agent = PresentationPlanningAgent()
+                try:
+                    # Generate outline using the new quickstart method that respects project description
+                    outline_result = await planning_agent.generate_outline_for_quickstart(
+                        topic=actual_topic,
+                        project_id=project_id
+                    )
+                    
+                    if outline_result and hasattr(outline_result, 'slides'):
+                        # Convert PresentationOutline object to dict format expected by parallel workflow
+                        approved_outline = {
+                            "title": outline_result.title,
+                            "topic": outline_result.topic,
+                            "slides": [
+                                {
+                                    "slide_number": slide.slide_number,
+                                    "title": slide.title,
+                                    "content_type": slide.content_type,
+                                    "key_points": slide.key_points,
+                                    "layout_type": slide.suggested_layout or "content",
+                                    "notes": slide.notes
+                                }
+                                for slide in outline_result.slides
+                            ]
+                        }
+                        api_logger.info(f"✅ Auto-generated outline with {len(approved_outline.get('slides', []))} slides")
+                    else:
+                        api_logger.warning("⚠️ Failed to auto-generate outline - falling back to sequential workflow")
+                        use_parallel_processing = False
+                        
+                except Exception as e:
+                    api_logger.error(f"❌ Error auto-generating outline: {e}")
+                    api_logger.warning("⚠️ Falling back to sequential workflow")
+                    use_parallel_processing = False
+            
+            if use_parallel_processing and approved_outline:
+                api_logger.info("🚀 Using parallel slide processing")
+                # Run parallel workflow
+                result = await workflow.run_parallel_for_approved_outline(
+                    topic=actual_topic,
+                    template_path=template_path,
+                    output_path=output_path,
+                    approved_outline=approved_outline,
+                    title=project.get("title")
+                )
+            else:
+                # Run standard workflow
+                api_logger.info("🔄 Using standard sequential workflow")
+                result = workflow.run(
+                    topic=actual_topic,
+                    template_path=template_path,
+                    output_path=output_path,
+                    title=project.get("title"),
+                    approved_outline=approved_outline
+                )
         else:
             # Run standard workflow
-            api_logger.info("🔄 Using standard sequential workflow")
+            api_logger.info("🔄 Using standard sequential workflow (parallel processing disabled)")
             result = workflow.run(
                 topic=actual_topic,
                 template_path=template_path,

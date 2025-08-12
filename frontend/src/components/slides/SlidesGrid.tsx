@@ -51,13 +51,15 @@ interface SlidesGridProps {
   projectStatus: 'draft' | 'processing' | 'completed' | 'failed'
   isParallelProcessing?: boolean
   expectedSlideCount?: number
+  autoRefreshEnabled?: boolean
 }
 
 export function SlidesGrid({ 
   projectId, 
   projectStatus, 
   isParallelProcessing = false,
-  expectedSlideCount = 0
+  expectedSlideCount = 0,
+  autoRefreshEnabled = true
 }: SlidesGridProps) {
   const { supabase, user } = useSupabaseAuth()
   const [slides, setSlides] = useState<Slide[]>([])
@@ -124,7 +126,26 @@ export function SlidesGrid({
 
   useEffect(() => {
     fetchSlides()
-  }, [projectId, user, supabase, isParallelProcessing])
+
+    // Set up auto-refresh interval for processing projects
+    let refreshInterval: NodeJS.Timeout | null = null
+    let isSubscribed = true
+
+    if (autoRefreshEnabled && (projectStatus === 'processing' || projectStatus === 'completed')) {
+      refreshInterval = setInterval(() => {
+        if (isSubscribed) {
+          fetchSlides()
+        }
+      }, 20000) // Refresh slides every 20 seconds
+    }
+
+    return () => {
+      isSubscribed = false
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+      }
+    }
+  }, [projectId, user, supabase, isParallelProcessing, autoRefreshEnabled, projectStatus])
 
   // Set up real-time subscription for slides
   useEffect(() => {
@@ -183,6 +204,7 @@ export function SlidesGrid({
         <SlideCard 
           key={slides[i].id} 
           slide={slides[i]} 
+          projectId={projectId}
           isParallelProcessing={isParallelProcessing}
         />
       )
@@ -194,7 +216,8 @@ export function SlidesGrid({
         slideElements.push(
           <SlideCard 
             key={`skeleton-${i}`} 
-            slide={null} 
+            slide={null}
+            projectId={projectId} 
             isParallelProcessing={isParallelProcessing}
           />
         )
@@ -228,72 +251,89 @@ export function SlidesGrid({
     <div className="space-y-6">
       {/* Progress Summary for Parallel Processing */}
       {isParallelProcessing && slideProgress && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Presentation className="w-5 h-5" />
-                Slide Generation Progress
-              </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Overall Progress */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <Presentation className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
               <div>
-                <div className="flex items-center justify-between text-sm mb-2">
-                  <span className="font-medium">
-                    Overall Progress ({Math.round(slideProgress.completion_percentage)}%)
-                  </span>
-                  <span className="text-gray-500">
-                    {slideProgress.completed_slides} of {slideProgress.total_slides} completed
-                  </span>
-                </div>
-                <Progress value={slideProgress.completion_percentage} className="h-3" />
-              </div>
-
-              {/* Status Breakdown */}
-              <div className="flex flex-wrap gap-2">
-                {slideProgress.completed_slides > 0 && (
-                  <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    {slideProgress.completed_slides} Completed
-                  </Badge>
-                )}
-                
-                {slideProgress.in_progress_slides > 0 && (
-                  <Badge variant="secondary" className="bg-primary/10 text-primary">
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                    {slideProgress.in_progress_slides} Processing
-                  </Badge>
-                )}
-                
-                {slideProgress.pending_slides > 0 && (
-                  <Badge variant="secondary" className="bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-200">
-                    <Clock className="w-3 h-3 mr-1" />
-                    {slideProgress.pending_slides} Pending
-                  </Badge>
-                )}
-                
-                {slideProgress.failed_slides > 0 && (
-                  <Badge variant="secondary" className="bg-destructive/10 text-destructive">
-                    <XCircle className="w-3 h-3 mr-1" />
-                    {slideProgress.failed_slides} Failed
-                  </Badge>
-                )}
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100">Slide Generation Progress</h3>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  {slideProgress.completed_slides} of {slideProgress.total_slides} slides completed
+                </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            {/* Overall Progress */}
+            <div>
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="font-medium text-blue-900 dark:text-blue-100">
+                  Overall Progress
+                </span>
+                <span className="text-blue-700 dark:text-blue-300">
+                  {Math.round(slideProgress.completion_percentage)}%
+                </span>
+              </div>
+              <Progress value={slideProgress.completion_percentage} className="h-3 bg-blue-100 dark:bg-blue-900" />
+            </div>
+
+            {/* Status Breakdown */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {slideProgress.completed_slides > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <div>
+                    <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">{slideProgress.completed_slides}</p>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300">Completed</p>
+                  </div>
+                </div>
+              )}
+              
+              {slideProgress.in_progress_slides > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <Loader2 className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">{slideProgress.in_progress_slides}</p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300">Processing</p>
+                  </div>
+                </div>
+              )}
+              
+              {slideProgress.pending_slides > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-lg">
+                  <Clock className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{slideProgress.pending_slides}</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300">Pending</p>
+                  </div>
+                </div>
+              )}
+              
+              {slideProgress.failed_slides > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
+                  <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                  <div>
+                    <p className="text-sm font-medium text-red-900 dark:text-red-100">{slideProgress.failed_slides}</p>
+                    <p className="text-xs text-red-700 dark:text-red-300">Failed</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Slides Grid */}
@@ -325,7 +365,7 @@ export function SlidesGrid({
               <span>Loading slides...</span>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 gap-4">
               {renderSlides()}
             </div>
           )}

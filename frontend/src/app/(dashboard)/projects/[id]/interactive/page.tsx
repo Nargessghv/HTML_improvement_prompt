@@ -69,8 +69,7 @@ export default function InteractivePlanningPage() {
       }
 
       // Trigger slide generation workflow with approved outline
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiUrl}/projects`, {
+      const response = await fetch(`/api/projects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

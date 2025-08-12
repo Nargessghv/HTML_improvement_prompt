@@ -159,10 +159,21 @@ class HTMLContentGenerationAgent:
                 print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
                 return state
 
-            # Count HTML slides for progress tracking
+            # Get the slides from the presentation plan
+            slides = getattr(presentation_plan, 'slides', presentation_plan) if hasattr(presentation_plan, 'slides') else presentation_plan
+            
+            # Count HTML slides for progress tracking  
             html_slide_count = sum(
-                1 for spec in presentation_plan if getattr(spec, "is_html", False)
+                1 for spec in slides if getattr(spec, "is_html", False)
             )
+            
+            # Debug: Print plan details
+            print(f"🔍 {self.name}: Presentation plan has {len(slides)} slides")
+            for i, spec in enumerate(slides):
+                is_html = getattr(spec, "is_html", False)
+                layout_index = getattr(spec, "layout_index", None)
+                title = getattr(spec, "slide_title", "Unknown")
+                print(f"  Slide {i+1}: '{title}' - Layout {layout_index} - is_html: {is_html}")
 
             if html_slide_count == 0:
                 print(
@@ -178,7 +189,7 @@ class HTMLContentGenerationAgent:
             # Use truly parallel HTML generation
             layouts_info = state.get("layouts_info", {})
             processed_slides = await self._process_planned_html_slides_parallel(
-                slide_contents, presentation_plan, state.get("topic", ""), layouts_info, config
+                slide_contents, slides, state.get("topic", ""), layouts_info, config
             )
 
             # Update state with processed content

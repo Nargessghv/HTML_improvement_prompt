@@ -78,11 +78,12 @@ class PresentationPlanningAgent:
         self.system_prompt = """You are an expert presentation planning assistant. Your role is to help users create well-structured, engaging presentations through conversational planning.
 
 Your responsibilities:
-1. Ask clarifying questions to understand the user's needs
-2. Suggest presentation structures and content organization
-3. Provide industry-specific insights and best practices
-4. Create detailed slide outlines with intelligent content type selection
-5. Recommend visual elements strategically for maximum impact
+1. ALWAYS respect and incorporate the original project description/requirements provided by the user
+2. Ask clarifying questions to understand the user's needs beyond the original description
+3. Suggest presentation structures and content organization that align with the original requirements
+4. Provide industry-specific insights and best practices
+5. Create detailed slide outlines with intelligent content type selection
+6. Recommend visual elements strategically for maximum impact
 
 Key principles:
 - Be conversational and friendly
@@ -91,6 +92,7 @@ Key principles:
 - Consider the target audience and context
 - Balance information density with visual appeal
 - Suggest 8-15 slides for most presentations
+- CRITICAL: If the original project description specifies certain content, slides, or requirements, ALWAYS include them in the final outline
 
 Visual Content Strategy:
 - Use TIMELINE content type for: chronological sequences, process flows, roadmaps, workflows
@@ -136,7 +138,7 @@ When the user seems ready, generate a complete presentation outline with strateg
             session_id = session["id"]
             
             # Generate initial response
-            initial_message = f"I'd be happy to help you create a presentation about '{initial_topic}'. To get started, could you tell me:\n\n1. Who is your target audience?\n2. What's the main goal or message you want to convey?\n3. How long do you expect the presentation to be (in minutes or number of slides)?"
+            initial_message = f"I'd be happy to help you create a presentation based on your project description:\n\n**'{initial_topic}'**\n\nI've noted your specific requirements and will make sure to include them in the final outline. To help me create the best possible presentation structure, could you tell me:\n\n1. Who is your target audience?\n2. What's the main goal or message you want to convey?\n3. How long do you expect the presentation to be (in minutes or number of slides)?\n4. Are there any additional points beyond your original description that you'd like to emphasize?"
             
             # Save messages
             messages = [
@@ -281,6 +283,130 @@ When the user seems ready, generate a complete presentation outline with strateg
             "response": result["response"],
             "outline": outline.dict()
         }
+
+    async def generate_outline_for_quickstart(self, topic: str, project_id: Optional[str] = None) -> Optional[PresentationOutline]:
+        """
+        Generate presentation outline for quickstart workflow (without session context).
+        
+        Args:
+            topic: The project topic/description
+            project_id: Optional project ID to fetch additional context
+            
+        Returns:
+            Generated outline or None if generation fails
+        """
+        try:
+            # Create a comprehensive prompt that includes the original project description
+            outline_prompt = f"""You are creating a presentation outline for quickstart generation.
+
+ORIGINAL PROJECT DESCRIPTION:
+{topic}
+
+IMPORTANT: This is a quickstart generation, so you must carefully analyze the project description above and create an outline that EXACTLY matches what was requested. If the description specifies a certain number of slides, specific content, or particular requirements, you MUST follow them precisely.
+
+SPECIAL INSTRUCTIONS FOR USER REQUESTS:
+- If user asks for "HTML" slide → Use content_type="chart" (will generate HTML visualization)
+- If user asks for "image" slide → Use content_type="visual" (will generate AI image)
+- If user specifies exact number of slides → Create EXACTLY that many slides
+- If user specifies content types → Use those EXACT types
+
+Create a detailed presentation outline using strategic presentation planning principles.
+
+🎨 HTML VISUALIZATION DECISION GUIDE
+
+USE content_type="timeline" FOR:
+✅ Timelines, roadmaps, chronological sequences  
+✅ Process flows, workflows, step-by-step procedures
+
+USE content_type="chart" FOR:
+✅ Data visualizations, metrics, statistics  
+✅ Complex diagrams, hierarchies, relationships
+✅ When user explicitly asks for "HTML" slide
+
+USE content_type="comparison" FOR:
+✅ Comparisons, before/after scenarios
+✅ Feature comparisons, pros/cons analysis
+
+USE content_type="visual" FOR:
+✅ Any content requiring AI-generated images
+✅ When user explicitly asks for "image" slide
+✅ Creative storytelling patterns requiring custom visuals
+
+USE content_type="text" FOR:
+❌ Simple text content and basic bullet points
+❌ Standard introductions and conclusions
+❌ Simple titles and descriptions
+
+🔑 KEY PRINCIPLES:
+• STRICTLY follow the requirements in the project description
+• If description says "one slide", create exactly one slide
+• If description specifies content types, use those exact types
+• Choose content types based on CONTENT PURPOSE, not sequence
+• Use visual content types strategically for maximum impact
+• Ensure each slide advances the narrative
+
+📋 CONTENT TYPE SELECTION EXAMPLES:
+- Company introduction → "text"
+- Project timeline → "timeline" 
+- Performance metrics → "chart"
+- Before vs After results → "comparison"
+- Process workflow → "timeline"
+- Feature comparison → "comparison"
+- Vision/mission statement → "text"
+- Team introduction → "text"
+- Data analysis → "chart"
+- Transformation story → "visual"
+
+Return the outline in this exact JSON format:
+        {{
+            "title": "Presentation Title",
+            "topic": "Main topic",
+            "target_audience": "Target audience description",
+            "objectives": ["Objective 1", "Objective 2"],
+            "key_themes": ["Theme 1", "Theme 2"],
+            "slides": [
+                {{
+                    "slide_number": 1,
+                    "title": "Slide Title",
+                    "content_type": "text|visual|chart|timeline|comparison",
+                    "key_points": ["Point 1", "Point 2"],
+                    "suggested_layout": "layout name",
+                    "notes": "Additional notes"
+                }}
+            ],
+            "estimated_duration": 30,
+            "style_preferences": {{
+                "tone": "professional|casual|academic",
+                "visual_style": "modern|classic|minimal",
+                "color_scheme": "suggestions"
+            }}
+        }}
+
+CRITICAL: Carefully analyze each slide's purpose and choose the most appropriate content_type. This determines whether HTML visualization will be used in the final presentation.
+
+REMINDER: Pay close attention to the original project description at the top and follow its requirements exactly."""
+            
+            # Create messages for the LLM
+            messages = [
+                SystemMessage(content="You are an expert presentation planning assistant specialized in quickstart generation."),
+                HumanMessage(content=outline_prompt)
+            ]
+            
+            # Generate response
+            response = await self.llm.ainvoke(messages)
+            
+            # Parse JSON from response
+            json_start = response.content.find('{')
+            json_end = response.content.rfind('}') + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                outline_data = json.loads(response.content[json_start:json_end])
+                return PresentationOutline(**outline_data)
+            
+        except Exception as e:
+            print(f"Error generating quickstart outline: {e}")
+        
+        return None
     
     # Private helper methods
     
@@ -361,7 +487,31 @@ When the user seems ready, generate a complete presentation outline with strateg
     
     async def _generate_outline(self, session_id: str, messages: List, force: bool = False) -> Optional[PresentationOutline]:
         """Generate presentation outline based on conversation"""
-        outline_prompt = """Based on our conversation, create a detailed presentation outline using strategic presentation planning principles.
+        
+        # Get project context to include original description
+        session = await self._load_session(session_id)
+        project_id = session["project_id"]
+        
+        # Get the original project information
+        project_result = self.db.client.table("projects").select("*").eq("id", project_id).execute()
+        project_topic = ""
+        if project_result.data:
+            project_topic = project_result.data[0].get("topic", "")
+        
+        outline_prompt = f"""Based on our conversation AND the original project description, create a detailed presentation outline using strategic presentation planning principles.
+
+ORIGINAL PROJECT DESCRIPTION:
+{project_topic}
+
+IMPORTANT: The outline must respect and incorporate the specific requirements from the original project description above, while also considering our conversation. If the original description specifies certain slides or content, make sure to include them.
+
+SPECIAL INSTRUCTIONS FOR USER REQUESTS:
+- If user asks for "HTML" slide → Use content_type="chart" (will generate HTML visualization)
+- If user asks for "image" slide → Use content_type="visual" (will generate AI image)
+- If user specifies exact number of slides → Create EXACTLY that many slides
+- If user specifies content types → Use those EXACT types
+
+Based on our conversation and the original project requirements, create a detailed presentation outline using strategic presentation planning principles.
 
 🎨 HTML VISUALIZATION DECISION GUIDE
 
@@ -372,14 +522,16 @@ USE content_type="timeline" FOR:
 USE content_type="chart" FOR:
 ✅ Data visualizations, metrics, statistics  
 ✅ Complex diagrams, hierarchies, relationships
+✅ When user explicitly asks for "HTML" slide
 
 USE content_type="comparison" FOR:
 ✅ Comparisons, before/after scenarios
 ✅ Feature comparisons, pros/cons analysis
 
 USE content_type="visual" FOR:
-✅ Any other content requiring visual flow or custom graphics
-✅ Creative storytelling patterns (hero journeys, transformations)
+✅ Any content requiring AI-generated images
+✅ When user explicitly asks for "image" slide
+✅ Creative storytelling patterns requiring custom visuals
 
 USE content_type="text" FOR:
 ❌ Simple text content and basic bullet points
