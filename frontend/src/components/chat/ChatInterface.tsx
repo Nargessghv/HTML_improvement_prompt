@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, Bot, User, Sparkles } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -18,11 +20,23 @@ interface Message {
   suggestions?: string[]
 }
 
+interface PresentationOutline {
+  title: string
+  topic: string
+  slides: Array<{
+    slide_number: number
+    title: string
+    content_type: string
+    key_points: string[]
+  }>
+  estimated_duration?: number
+}
+
 interface ChatInterfaceProps {
   sessionId?: string
   projectId: string
   initialTopic?: string
-  onOutlineGenerated?: (outline: unknown) => void
+  onOutlineGenerated?: (outline: PresentationOutline) => void
   className?: string
 }
 
@@ -84,19 +98,9 @@ export function ChatInterface({
 
       const data = await response.json()
       
-      // Get session ID from the response data
-      // We'll need to fetch it from the database
-      const sessionsResponse = await fetch(`${apiUrl}/projects/${projectId}/chat-sessions`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-      
-      if (sessionsResponse.ok) {
-        const sessions = await sessionsResponse.json()
-        if (sessions.length > 0) {
-          setSessionId(sessions[0].session_id)
-        }
+      // Set session ID from response
+      if (data.session_id) {
+        setSessionId(data.session_id)
       }
 
       // Add initial messages
@@ -216,7 +220,7 @@ export function ChatInterface({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+      <ScrollArea className="flex-1 p-4 h-0" ref={scrollAreaRef}>
         <div className="space-y-4">
           {messages.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
@@ -245,11 +249,28 @@ export function ChatInterface({
                 className={cn(
                   "max-w-[80%] rounded-lg px-4 py-2",
                   message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-ekona-red text-white'
                     : 'bg-muted'
                 )}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:leading-relaxed prose-pre:p-0">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      ul: ({ children }) => <ul className="ml-4 mb-2 list-disc space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="ml-4 mb-2 list-decimal space-y-1">{children}</ol>,
+                      li: ({ children }) => <li className="text-sm">{children}</li>,
+                      h1: ({ children }) => <h1 className="text-lg font-semibold mb-2">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-md font-semibold mb-2">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
+                      code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs">{children}</code>,
+                      pre: ({ children }) => <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">{children}</pre>
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
                 {message.suggestions && message.suggestions.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-border/50">
                     <p className="text-xs font-medium mb-2 opacity-70">Suggestions:</p>
@@ -263,8 +284,8 @@ export function ChatInterface({
               </div>
 
               {message.role === 'user' && (
-                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-primary-foreground" />
+                <div className="w-8 h-8 rounded-full bg-ekona-red flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-white" />
                 </div>
               )}
             </div>

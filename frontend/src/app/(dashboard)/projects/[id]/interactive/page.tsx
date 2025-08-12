@@ -56,20 +56,48 @@ export default function InteractivePlanningPage() {
     fetchProject()
   }, [projectId, user, supabase, router])
 
-  const handleApproveOutline = async (_outline: unknown) => {
+  const handleApproveOutline = async (outline: unknown) => {
     setIsGenerating(true)
     
     try {
-      // TODO: Trigger slide generation based on outline
+      // Get the auth token for API request
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        toast.error('Authentication required')
+        return
+      }
+
+      // Trigger slide generation workflow with approved outline
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/projects`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          title: project?.title || 'Interactive Presentation',
+          topic: project?.topic || 'Generated from interactive planning',
+          project_id: projectId, // This tells the API to start workflow on existing project
+          approved_outline: outline // Include the approved outline for the agents
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to start generation')
+      }
+
       toast.success('Presentation outline approved! Generation will begin shortly.')
       
-      // For now, just navigate back to project page
+      // Navigate back to project page to show progress
       setTimeout(() => {
         router.push(`/projects/${projectId}`)
-      }, 2000)
+      }, 1500)
     } catch (error) {
       console.error('Error starting generation:', error)
-      toast.error('Failed to start generation')
+      toast.error(error instanceof Error ? error.message : 'Failed to start generation')
     } finally {
       setIsGenerating(false)
     }
@@ -102,43 +130,45 @@ export default function InteractivePlanningPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push(`/projects/${projectId}`)}
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Project
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-primary" />
-              Interactive Presentation Planning
-            </h1>
-            <p className="text-muted-foreground">
-              Chat with AI to plan and structure your presentation for &quot;{project.title}&quot;
-            </p>
+    <div className="flex flex-col h-full min-h-0">
+      <div className="p-6 flex-shrink-0">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push(`/projects/${projectId}`)}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Project
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-primary" />
+                Interactive Presentation Planning
+              </h1>
+              <p className="text-muted-foreground">
+                Chat with AI to plan and structure your presentation for &quot;{project.title}&quot;
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      <Card className="max-w-7xl mx-auto">
-        <CardHeader>
-          <CardTitle>Plan Your Presentation</CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="h-[600px]">
+      <div className="flex-1 px-6 pb-6 min-h-0">
+        <Card className="max-w-7xl mx-auto h-full flex flex-col">
+          <CardHeader className="flex-shrink-0">
+            <CardTitle>Plan Your Presentation</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 flex-1 min-h-0">
             <PresentationPlanner
               projectId={projectId}
               initialTopic={project.topic}
               onApproveOutline={handleApproveOutline}
             />
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {isGenerating && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">

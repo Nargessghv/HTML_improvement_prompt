@@ -182,6 +182,153 @@ class SlideGenerationWorkflow:
 
         return workflow.compile()
 
+    def run_streamlined_for_approved_outline(
+        self,
+        topic: str,
+        template_path: str,
+        output_path: str,
+        approved_outline: Dict[str, Any],
+        title: Optional[str] = None,
+        config: Optional[RunnableConfig] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run streamlined workflow for approved outlines - skips planning phase
+        
+        This workflow is optimized for interactive planning where the user has
+        already approved the outline and we just need to generate content.
+        """
+        print("🚀 Starting streamlined workflow for approved outline...")
+        print(f"🎯 Title: {title}")
+        print(f"📋 Topic: {topic}")
+        print(f"📁 Template: {template_path}")
+        print(f"💾 Output: {output_path}")
+        print(f"📄 Approved slides count: {len(approved_outline.get('slides', []))}")
+
+        try:
+            # Initialize state with project_id for database tracking
+            initial_state: SlideGenerationState = {
+                "topic": topic,
+                "template_path": template_path,
+                "output_path": output_path,
+                "layout_indices": None,
+                "title": title,
+                "approved_outline": approved_outline,
+                "current_step": "starting",
+                "error_message": None,
+                "retry_count": 0,
+                "html_refinement_iteration": 0,
+                "html_refinement_slide_index": None,
+                "html_slides_to_refine_queue": None,
+                "refinement_id": None,
+                "layouts_info": None,
+                "dynamic_models": None,
+                "presentation_plan": None,
+                "selected_layouts": None,
+                "slide_contents": None,
+                "icon_errors": None,
+                "icon_corrections": None,
+                "needs_icon_retry": False,
+                "needs_html_refinement": False,
+                "presentation_path": None,
+                "success": False,
+                "monitor_trace": None,
+                "project_id": self.project_id,  # Include project_id for database tracking
+            }
+
+            # Step 1: Layout Analysis (use node wrapper for database tracking)
+            print("⚡ Step 1: Analyzing template layouts...")
+            layout_state = self._layout_analysis_node(initial_state, config)
+
+            if layout_state.get("error_message"):
+                raise Exception(layout_state["error_message"])
+
+            # Step 2: Convert approved outline to presentation plan (use node wrapper)
+            print("⚡ Step 2: Converting approved outline to presentation plan...")
+            planning_state = self._presentation_planning_node(layout_state, config)
+            
+            if planning_state.get("error_message"):
+                raise Exception(planning_state["error_message"])
+
+            # Step 3: Generate content (use node wrapper)
+            print("⚡ Step 3: Generating slide content...")
+            content_state = self._content_generation_node(planning_state, config)
+            
+            if content_state.get("error_message"):
+                raise Exception(content_state["error_message"])
+
+            # Step 4: HTML content generation (use node wrapper)
+            print("⚡ Step 4: Generating HTML visualizations...")
+            html_state = self._html_content_generation_node(content_state, config)
+            
+            if html_state.get("error_message"):
+                raise Exception(html_state["error_message"])
+
+            # Step 5: HTML refinement loop (use node wrapper if needed)
+            refinement_iteration = 0
+            max_refinement_iterations = 3
+            
+            # Debug: Check refinement flag
+            needs_refinement = html_state.get("needs_html_refinement")
+            print(f"🔍 Debug: needs_html_refinement = {needs_refinement}")
+            
+            while html_state.get("needs_html_refinement") and refinement_iteration < max_refinement_iterations:
+                print(f"⚡ Step 5: Refining HTML content (iteration {refinement_iteration + 1}/{max_refinement_iterations})...")
+                
+                # Debug: Log state before refinement
+                print(f"🔍 Before refinement: needs_html_refinement = {html_state.get('needs_html_refinement')}")
+                
+                refined_state = self._html_refinement_node(html_state, config)
+                
+                # Debug: Log state after refinement 
+                print(f"🔍 After refinement: needs_html_refinement = {refined_state.get('needs_html_refinement')}")
+                
+                if refined_state.get("error_message"):
+                    raise Exception(refined_state["error_message"])
+                html_state = refined_state
+                refinement_iteration += 1
+                
+            if refinement_iteration > 0:
+                print(f"✅ HTML refinement completed after {refinement_iteration} iterations")
+
+            # Step 6: Quality review (use node wrapper)
+            print("⚡ Step 6: Performing quality review...")
+            quality_state = self._quality_review_node(html_state, config)
+            
+            if quality_state.get("error_message"):
+                raise Exception(quality_state["error_message"])
+
+            # Step 7: Slide assembly (use node wrapper)
+            print("⚡ Step 7: Assembling final presentation...")
+            final_state = self._slide_assembly_node(quality_state, config)
+            
+            if final_state.get("error_message"):
+                raise Exception(final_state["error_message"])
+
+            # Step 8: Icon validation (direct call is fine, no database tracking needed)
+            print("⚡ Step 8: Validating icons...")
+            validated_state = self.icon_validator.execute(final_state, config)
+
+            print("✅ Streamlined workflow completed successfully!")
+            return self._process_workflow_results(validated_state)
+
+        except Exception as e:
+            print(f"❌ Streamlined workflow failed: {e}")
+            slide_monitor.flush()
+            return {
+                "success": False,
+                "error": str(e),
+                "presentation_path": None,
+                "agent_results": {},
+                "metadata": {
+                    "topic": topic,
+                    "template_path": template_path,
+                    "output_path": output_path,
+                    "execution_time": 0,
+                    "total_tokens": 0,
+                    "cost_estimate": 0.0,
+                },
+            }
+
     def run(
         self,
         topic: str,
@@ -190,6 +337,7 @@ class SlideGenerationWorkflow:
         layout_indices: Optional[List[int]] = None,
         config: Optional[RunnableConfig] = None,
         title: Optional[str] = None,
+        approved_outline: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Execute the complete slide generation workflow
@@ -212,6 +360,13 @@ class SlideGenerationWorkflow:
         print(f"📁 Template: {template_path}")
         print(f"💾 Output: {output_path}")
 
+        # Use streamlined workflow if approved outline is provided
+        if approved_outline:
+            print("🎯 Using streamlined workflow for approved outline")
+            return self.run_streamlined_for_approved_outline(
+                topic, template_path, output_path, approved_outline, title, config
+            )
+
         # Initialize workflow state
         initial_state: SlideGenerationState = {
             "topic": topic,
@@ -219,6 +374,7 @@ class SlideGenerationWorkflow:
             "output_path": output_path,
             "layout_indices": layout_indices,
             "title": title,
+            "approved_outline": approved_outline,
             "current_step": "starting",
             "error_message": None,
             "retry_count": 0,
@@ -586,6 +742,10 @@ class SlideGenerationWorkflow:
                     )
             
             execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            # Debug: Check if refinement flag was preserved
+            needs_refinement = result.get("needs_html_refinement")
+            print(f"🔍 HTML node wrapper debug: needs_html_refinement = {needs_refinement}")
             
             if result.get("error_message"):
                 self._update_workflow_state("html_generation", "failed",

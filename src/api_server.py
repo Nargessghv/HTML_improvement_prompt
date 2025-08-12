@@ -44,7 +44,7 @@ app = FastAPI(
 # Add CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "https://*.vercel.app"],  # Add your frontend URLs
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3005", "https://*.vercel.app"],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -244,6 +244,7 @@ class ProjectCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     topic: str = Field(..., min_length=1)
     project_id: Optional[str] = None  # For starting workflow on existing project
+    approved_outline: Optional[Dict[str, Any]] = None  # Approved outline from interactive planning
 
 class ProjectResponse(BaseModel):
     id: str
@@ -317,6 +318,7 @@ class ChatMessageResponse(BaseModel):
     response: str
     outline: Optional[Dict[str, Any]] = None
     suggestions: List[str] = Field(default_factory=list)
+    session_id: Optional[str] = None
 
 class ChatSessionResponse(BaseModel):
     session_id: str
@@ -712,7 +714,8 @@ async def create_or_start_project(
             start_slide_generation_workflow, 
             project["id"], 
             project["topic"],  # Use topic from database
-            user.id
+            user.id,
+            request.approved_outline  # Pass approved outline to workflow
         )
         
         api_logger.info(f"Workflow background task started for project: {project['id']}")
@@ -831,7 +834,8 @@ async def restart_project_workflow(
             start_slide_generation_workflow,
             project_id,
             project["topic"],
-            user.id
+            user.id,
+            None  # No approved outline for restart
         )
         
         return {"message": "Workflow restarted", "project_id": project_id}
@@ -1122,7 +1126,8 @@ async def start_chat_session(
         
         return ChatMessageResponse(
             response=result["response"],
-            suggestions=result["suggestions"]
+            suggestions=result["suggestions"],
+            session_id=result["session_id"]
         )
         
     except Exception as e:
@@ -1269,7 +1274,7 @@ async def get_project_chat_sessions(
         raise HTTPException(status_code=500, detail=f"Error getting chat sessions: {str(e)}")
 
 # Background task function
-async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str):
+async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str, approved_outline: Optional[Dict[str, Any]] = None):
     """Background task to run the slide generation workflow"""
     try:
         # Get project details from database (in case title/topic were updated)
@@ -1307,12 +1312,18 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         # Set database callback on workflow
         workflow.set_database_callback(realtime_callback, project_id)
         
+        # Debug logging for approved outline
+        api_logger.info(f"Approved outline received: {approved_outline is not None}")
+        if approved_outline:
+            api_logger.info(f"Approved outline slides count: {len(approved_outline.get('slides', []))}")
+        
         # Run workflow
         result = workflow.run(
             topic=actual_topic,
             template_path=template_path,
             output_path=output_path,
-            title=project.get("title")
+            title=project.get("title"),
+            approved_outline=approved_outline
         )
         
         if result.get("success"):

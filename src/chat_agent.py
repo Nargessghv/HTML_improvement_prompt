@@ -81,8 +81,8 @@ Your responsibilities:
 1. Ask clarifying questions to understand the user's needs
 2. Suggest presentation structures and content organization
 3. Provide industry-specific insights and best practices
-4. Create detailed slide outlines with content suggestions
-5. Recommend visual elements (charts, timelines, diagrams) where appropriate
+4. Create detailed slide outlines with intelligent content type selection
+5. Recommend visual elements strategically for maximum impact
 
 Key principles:
 - Be conversational and friendly
@@ -90,9 +90,24 @@ Key principles:
 - Provide specific, actionable suggestions
 - Consider the target audience and context
 - Balance information density with visual appeal
-- Suggest 10-15 slides for most presentations
+- Suggest 8-15 slides for most presentations
 
-When the user seems ready, generate a complete presentation outline in a structured format."""
+Visual Content Strategy:
+- Use TIMELINE content type for: chronological sequences, process flows, roadmaps, workflows
+- Use CHART content type for: data visualizations, metrics, complex diagrams, hierarchies
+- Use COMPARISON content type for: before/after scenarios, feature comparisons, pros/cons
+- Use VISUAL content type for: creative storytelling patterns, transformations, hero journeys
+- Use TEXT content type for: simple introductions, conclusions, basic bullet points
+
+Content Type Selection Examples:
+- "Project timeline" → timeline
+- "Performance metrics" → chart  
+- "Before vs After results" → comparison
+- "Process workflow" → timeline
+- "Transformation story" → visual
+- "Company introduction" → text
+
+When the user seems ready, generate a complete presentation outline with strategic content type selection that will enable powerful HTML visualizations where appropriate."""
     
     async def start_session(self, project_id: str, initial_topic: str) -> Dict[str, Any]:
         """
@@ -346,9 +361,51 @@ When the user seems ready, generate a complete presentation outline in a structu
     
     async def _generate_outline(self, session_id: str, messages: List, force: bool = False) -> Optional[PresentationOutline]:
         """Generate presentation outline based on conversation"""
-        outline_prompt = """Based on our conversation, create a detailed presentation outline. 
-        
-        Return the outline in this exact JSON format:
+        outline_prompt = """Based on our conversation, create a detailed presentation outline using strategic presentation planning principles.
+
+🎨 HTML VISUALIZATION DECISION GUIDE
+
+USE content_type="timeline" FOR:
+✅ Timelines, roadmaps, chronological sequences  
+✅ Process flows, workflows, step-by-step procedures
+
+USE content_type="chart" FOR:
+✅ Data visualizations, metrics, statistics  
+✅ Complex diagrams, hierarchies, relationships
+
+USE content_type="comparison" FOR:
+✅ Comparisons, before/after scenarios
+✅ Feature comparisons, pros/cons analysis
+
+USE content_type="visual" FOR:
+✅ Any other content requiring visual flow or custom graphics
+✅ Creative storytelling patterns (hero journeys, transformations)
+
+USE content_type="text" FOR:
+❌ Simple text content and basic bullet points
+❌ Standard introductions and conclusions
+❌ Simple titles and descriptions
+
+🔑 KEY PRINCIPLES:
+• Create 8-15 slides with logical flow: introduction → content → conclusion
+• Choose content types based on CONTENT PURPOSE, not sequence
+• Use visual content types strategically for maximum impact
+• Ensure each slide advances the narrative
+• Balance visual and text slides appropriately
+
+📋 CONTENT TYPE SELECTION EXAMPLES:
+- Company introduction → "text"
+- Project timeline → "timeline" 
+- Performance metrics → "chart"
+- Before vs After results → "comparison"
+- Process workflow → "timeline"
+- Feature comparison → "comparison"
+- Vision/mission statement → "text"
+- Team introduction → "text"
+- Data analysis → "chart"
+- Transformation story → "visual"
+
+Return the outline in this exact JSON format:
         {
             "title": "Presentation Title",
             "topic": "Main topic",
@@ -371,7 +428,9 @@ When the user seems ready, generate a complete presentation outline in a structu
                 "visual_style": "modern|classic|minimal",
                 "color_scheme": "suggestions"
             }
-        }"""
+        }
+
+CRITICAL: Carefully analyze each slide's purpose and choose the most appropriate content_type. This determines whether HTML visualization will be used in the final presentation."""
         
         messages_with_prompt = messages + [HumanMessage(content=outline_prompt)]
         
@@ -509,22 +568,34 @@ When the user seems ready, generate a complete presentation outline in a structu
         return [
             f"Consider starting with a compelling story or statistic about {topic}",
             "Think about what your audience already knows and what they need to learn",
-            "Aim for 10-15 slides for a 20-30 minute presentation",
-            "Include visual elements to support your key messages"
+            "Aim for 8-15 slides with strategic use of timelines, charts, and comparisons",
+            "Include visual elements where they add value - timelines for processes, charts for data"
         ]
     
     def _generate_suggestions(self, message: str, response: str) -> List[str]:
         """Generate contextual suggestions"""
         suggestions = []
         
-        # Context-based suggestions
+        # Context-based suggestions with visual content strategy
         if "audience" in message.lower():
             suggestions.append("Consider tailoring examples to your audience's industry or experience")
         
         if "technical" in message.lower():
             suggestions.append("Balance technical details with clear explanations for non-experts")
         
-        if "visual" in message.lower():
-            suggestions.append("Use charts for data, timelines for processes, and diagrams for concepts")
+        if any(word in message.lower() for word in ["visual", "chart", "graph", "diagram"]):
+            suggestions.append("Use timelines for processes, charts for data, comparisons for before/after scenarios")
+        
+        if any(word in message.lower() for word in ["process", "workflow", "timeline", "roadmap"]):
+            suggestions.append("Consider using timeline visualization to show process flow or chronological sequence")
+        
+        if any(word in message.lower() for word in ["data", "metrics", "statistics", "numbers"]):
+            suggestions.append("Charts work well for data visualization and performance metrics")
+        
+        if any(word in message.lower() for word in ["compare", "versus", "before", "after", "difference"]):
+            suggestions.append("Comparison slides are perfect for before/after scenarios and feature analysis")
+        
+        if any(word in message.lower() for word in ["story", "journey", "transformation", "change"]):
+            suggestions.append("Visual storytelling patterns can make transformation narratives more engaging")
         
         return suggestions if suggestions else ["Let me know if you need any clarification or have specific requirements"]

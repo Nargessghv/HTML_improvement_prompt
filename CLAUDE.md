@@ -94,6 +94,7 @@ The core of this system is a **6-agent LangGraph workflow** that creates PowerPo
 - **Real-time Updates** - Supabase Realtime subscriptions for live workflow progress
 - **State Management** - Zustand stores for auth, projects, slides with persistence
 - **API Integration** - FastAPI server (`src/api_server.py`) provides REST endpoints and WebSocket connections
+- **Interactive Planning** - Chat-based presentation planning with outline approval triggers workflow execution
 
 ### Critical Implementation Details
 

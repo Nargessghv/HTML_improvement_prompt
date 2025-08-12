@@ -44,6 +44,7 @@ class SlideGenerationState(TypedDict):
     output_path: str
     layout_indices: Optional[List[int]]
     title: Optional[str]
+    approved_outline: Optional[Dict[str, Any]]  # Interactive planning outline
 
     # Workflow state
     current_step: str
@@ -176,11 +177,25 @@ class PresentationPlanningAgent:
 
             topic = state["topic"]
             title = state.get("title")  # Get title from state (may be None)
+            approved_outline = state.get("approved_outline")
 
-            # Use LLM to create intelligent presentation plan with callback tracing
-            presentation_plan = self._plan_presentation_with_tracing(
-                layouts_info, topic, title, config
-            )
+            # Debug logging for approved outline
+            print(f"📋 {self.name}: Approved outline present: {approved_outline is not None}")
+            if approved_outline:
+                print(f"📋 {self.name}: Approved outline slides count: {len(approved_outline.get('slides', []))}")
+
+            # Check if we have an approved outline from interactive planning
+            if approved_outline:
+                print(f"📋 {self.name}: Using approved outline from interactive planning")
+                presentation_plan = self._convert_approved_outline_to_plan(
+                    approved_outline, layouts_info
+                )
+            else:
+                print(f"📋 {self.name}: Generating new presentation plan with LLM")
+                # Use LLM to create intelligent presentation plan with callback tracing
+                presentation_plan = self._plan_presentation_with_tracing(
+                    layouts_info, topic, title, config
+                )
 
             # Extract layout indices from the plan
             selected_layouts = [spec.layout_index for spec in presentation_plan]
@@ -258,6 +273,112 @@ class PresentationPlanningAgent:
         except Exception as e:
             print(f"Structured planning failed: {e}")
             return self._create_default_plan(layouts_info)
+
+    def _convert_approved_outline_to_plan(
+        self, 
+        approved_outline: Dict[str, Any], 
+        layouts_info: Dict[int, Dict[str, Any]]
+    ) -> List[SlideSpec]:
+        """
+        Convert approved outline from interactive planning to SlideSpec format
+        
+        Args:
+            approved_outline: The approved outline from interactive planning
+            layouts_info: Available layout information for layout selection
+            
+        Returns:
+            List of SlideSpec objects matching the approved outline
+        """
+        from .llm_models import SlideSpec
+        
+        slides = approved_outline.get("slides", [])
+        slide_specs = []
+        
+        # Content type to layout mapping strategy
+        content_type_to_layout = {
+            "text": self._find_best_layout_for_content(layouts_info, "text"),
+            "visual": self._find_best_layout_for_content(layouts_info, "picture"),
+            "chart": self._find_best_layout_for_content(layouts_info, "html"),
+            "timeline": self._find_best_layout_for_content(layouts_info, "html"),
+            "comparison": self._find_best_layout_for_content(layouts_info, "html")
+        }
+        
+        for slide_data in slides:
+            slide_number = slide_data.get("slide_number", len(slide_specs) + 1)
+            title = slide_data.get("title", f"Slide {slide_number}")
+            content_type = slide_data.get("content_type", "text")
+            key_points = slide_data.get("key_points", [])
+            
+            # Select appropriate layout based on content type
+            layout_index = content_type_to_layout.get(content_type, 
+                self._find_best_layout_for_content(layouts_info, "text"))
+            
+            # Determine if HTML visualization is needed
+            needs_html = content_type in ["chart", "timeline", "comparison"]
+            
+            # Create slide specification
+            slide_spec = SlideSpec(
+                layout_index=layout_index,
+                slide_title=title,
+                slide_purpose=f"Create {content_type} slide: {title}",
+                is_html=needs_html,
+                detailed_purpose=f"Content from approved outline - slide {slide_number}",
+                content_structure=f"Key points: {', '.join(key_points)}",
+                html_requirements=f"Create {content_type} visualization" if needs_html else None,
+                visual_elements=content_type if needs_html else None,
+                key_information=key_points
+            )
+            
+            slide_specs.append(slide_spec)
+            
+        print(f"✅ Converted approved outline to {len(slide_specs)} slide specifications")
+        return slide_specs
+
+    def _find_best_layout_for_content(
+        self, 
+        layouts_info: Dict[int, Dict[str, Any]], 
+        preferred_type: str
+    ) -> int:
+        """
+        Find the best layout index for a given content type
+        
+        Args:
+            layouts_info: Available layout information
+            preferred_type: Preferred layout type (text, picture, html)
+            
+        Returns:
+            Layout index (defaults to first text layout if no match found)
+        """
+        # Priority mapping for different content types
+        search_patterns = {
+            "text": ["text content", "content", "text"],
+            "picture": ["title and picture", "picture"],
+            "html": ["html", "picture generated from html", "picture"]
+        }
+        
+        patterns = search_patterns.get(preferred_type, ["content", "text"])
+        
+        # Search for exact matches first
+        for pattern in patterns:
+            for layout_index, layout_info in layouts_info.items():
+                layout_name = layout_info.get("name", "").lower()
+                if pattern in layout_name:
+                    return layout_index
+        
+        # Fallback to any content layout
+        for layout_index, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", "").lower()
+            if any(keyword in layout_name for keyword in ["content", "text", "title"]):
+                return layout_index
+                
+        # Final fallback to first non-logo layout
+        for layout_index, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", "").lower()
+            if "logo" not in layout_name and "branding" not in layout_name:
+                return layout_index
+                
+        # Ultimate fallback to first available layout
+        return list(layouts_info.keys())[0] if layouts_info else 0
 
     def _create_presentation_planning_prompt(
         self,
@@ -577,6 +698,7 @@ class ContentGenerationAgent:
 
             dynamic_models = state.get("dynamic_models") or {}
             topic = state["topic"]
+            approved_outline = state.get("approved_outline")
 
             # Generate content for all slides with full presentation context
             slide_contents = self._generate_contextual_presentation_content(
@@ -584,6 +706,7 @@ class ContentGenerationAgent:
                 presentation_plan=presentation_plan,
                 layouts_info=layouts_info,
                 dynamic_models=dynamic_models,
+                approved_outline=approved_outline,
                 config=config,
             )
 
@@ -607,6 +730,7 @@ class ContentGenerationAgent:
         presentation_plan: List[SlideSpec],
         layouts_info: Dict[int, Dict[str, Any]],
         dynamic_models: Dict[int, Any],
+        approved_outline: Optional[Dict[str, Any]] = None,
         config: Optional[RunnableConfig] = None,
     ) -> List[SlideContent]:
         """

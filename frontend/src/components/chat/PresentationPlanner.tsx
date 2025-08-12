@@ -8,10 +8,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MessageSquare, FileText, CheckCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
+interface PresentationOutline {
+  title: string
+  topic: string
+  slides: Array<{
+    slide_number: number
+    title: string
+    content_type: string
+    key_points: string[]
+  }>
+  estimated_duration?: number
+}
+
 interface PresentationPlannerProps {
   projectId: string
   initialTopic?: string
-  onApproveOutline?: (outline: unknown) => void
+  onApproveOutline?: (outline: PresentationOutline) => void
 }
 
 export function PresentationPlanner({ 
@@ -19,17 +31,17 @@ export function PresentationPlanner({
   initialTopic,
   onApproveOutline 
 }: PresentationPlannerProps) {
-  const [outline, setOutline] = useState<unknown>(null)
+  const [outline, setOutline] = useState<PresentationOutline | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
   const [isApproved, setIsApproved] = useState(false)
 
-  const handleOutlineGenerated = (newOutline: unknown) => {
+  const handleOutlineGenerated = (newOutline: PresentationOutline) => {
     setOutline(newOutline)
     // Automatically switch to outline tab when generated
     setActiveTab('outline')
   }
 
-  const handleOutlineUpdate = (updatedOutline: unknown) => {
+  const handleOutlineUpdate = (updatedOutline: PresentationOutline) => {
     setOutline(updatedOutline)
   }
 
@@ -41,8 +53,8 @@ export function PresentationPlanner({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+    <div className="h-full flex flex-col min-h-0">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="chat" className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4" />
@@ -60,7 +72,7 @@ export function PresentationPlanner({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat" className="flex-1 mt-4">
+        <TabsContent value="chat" className="flex-1 mt-4 min-h-0">
           <ChatInterface
             projectId={projectId}
             initialTopic={initialTopic}
@@ -69,7 +81,7 @@ export function PresentationPlanner({
           />
         </TabsContent>
 
-        <TabsContent value="outline" className="flex-1 mt-4">
+        <TabsContent value="outline" className="flex-1 mt-4 min-h-0">
           {outline ? (
             <OutlineBuilder
               outline={outline}

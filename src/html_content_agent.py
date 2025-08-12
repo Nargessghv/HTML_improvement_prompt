@@ -102,10 +102,19 @@ class HTMLContentGenerationAgent:
                 if self._is_html_visualization(content)
             )
 
+            # Set refinement flag if HTML content was generated
+            print(f"🔍 DEBUG: html_count = {html_count}, setting needs_html_refinement = {html_count > 0}")
+            state["needs_html_refinement"] = html_count > 0
+
             print(f"✅ {self.name}: Processed {len(processed_slides)} slides")
             print(
                 f"✅ {self.name}: Converted {html_count} descriptions to HTML visualizations"
             )
+            
+            if html_count > 0:
+                print(f"🔄 {self.name}: HTML refinement needed for {html_count} slides")
+            else:
+                print(f"📝 {self.name}: No HTML content generated - refinement not needed")
 
             return state
 
@@ -113,6 +122,7 @@ class HTMLContentGenerationAgent:
             print(f"❌ {self.name}: Error during HTML content generation: {e}")
             # Don't fail the workflow - HTML generation is optional
             state["current_step"] = "html_content_generation_complete"
+            state["needs_html_refinement"] = False  # No refinement needed if generation failed
             return state
 
     @monitor_agent_execution("html_content_generator_parallel")
@@ -182,11 +192,20 @@ class HTMLContentGenerationAgent:
                 if self._is_html_visualization(content)
             )
 
+            # Set refinement flag if HTML content was generated
+            print(f"🔍 DEBUG: html_count = {html_count}, setting needs_html_refinement = {html_count > 0}")
+            state["needs_html_refinement"] = html_count > 0
+
             print(f"🎉 {self.name}: TRUE parallel processing complete!")
             print(f"✅ {self.name}: Processed {len(processed_slides)} slides")
             print(
                 f"✅ {self.name}: Converted {html_count} descriptions to HTML visualizations"
             )
+            
+            if html_count > 0:
+                print(f"🔄 {self.name}: HTML refinement needed for {html_count} slides")
+            else:
+                print(f"📝 {self.name}: No HTML content generated - refinement not needed")
 
             return state
 
@@ -196,6 +215,7 @@ class HTMLContentGenerationAgent:
             )
             # Don't fail the workflow - HTML generation is optional
             state["current_step"] = "html_content_generation_complete"
+            state["needs_html_refinement"] = False  # No refinement needed if generation failed
             return state
 
     def _process_slides_for_html_content(
@@ -1849,10 +1869,15 @@ without any content being cropped or lost."""
                 print("    ⚠️ Invalid Mermaid syntax detected")
                 return False
 
+        # Debug validation process
+        is_valid = (has_doctype and has_body and has_elements) or (has_doctype and has_basic_html)
+        
+        if not is_valid:
+            print(f"🔍 HTML validation failed - doctype: {has_doctype}, body: {has_body}, elements: {has_elements}, basic_html: {has_basic_html}")
+            print(f"🔍 Content preview: {content[:200]}...")
+        
         # Accept if it has proper structure OR basic HTML tags
-        return (has_doctype and has_body and has_elements) or (
-            has_doctype and has_basic_html
-        )
+        return is_valid
 
     def _validate_mermaid_syntax(self, html_content: str) -> bool:
         """
