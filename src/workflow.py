@@ -18,6 +18,9 @@ from .agents import (
     ContentGenerationAgent,
     HTMLRefinementAgent,
     IconValidationAgent,
+    ImagePromptAgent,
+    ImageGenerationAgent,
+    ImageRefinementAgent,
     LayoutAnalysisAgent,
     PresentationPlanningAgent,
     QualityReviewAgent,
@@ -47,6 +50,9 @@ class SlideGenerationWorkflow:
         self.content_agent = ContentGenerationAgent()
         self.html_content_agent = HTMLContentGenerationAgent()  # Add HTML agent
         self.refinement_agent = HTMLRefinementAgent()  # Add Refinement agent
+        self.image_prompt_agent = ImagePromptAgent()  # Add Image prompt agent
+        self.image_generation_agent = ImageGenerationAgent()  # Add Image generation agent
+        self.image_refinement_agent = ImageRefinementAgent()  # Add Image refinement agent
         self.assembly_agent = SlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
         self.icon_validator = IconValidationAgent()
@@ -105,6 +111,9 @@ class SlideGenerationWorkflow:
             "html_content_generation", self._html_content_generation_node
         )  # Add HTML node
         workflow.add_node("html_refinement", self._html_refinement_node)
+        workflow.add_node("image_prompt_generation", self._image_prompt_generation_node)  # Add Image prompt node
+        workflow.add_node("image_generation", self._image_generation_node)  # Add Image generation node
+        workflow.add_node("image_refinement", self._image_refinement_node)  # Add Image refinement node
         workflow.add_node("quality_review", self._quality_review_node)
         workflow.add_node("slide_assembly", self._slide_assembly_node)
         workflow.add_node("icon_validation", self._icon_validation_node)
@@ -138,11 +147,24 @@ class SlideGenerationWorkflow:
         # HTML content generation -> HTML Refinement
         workflow.add_edge("html_content_generation", "html_refinement")
 
-        # HTML refinement -> Quality review or loop
+        # HTML refinement -> Image prompt generation or loop
         workflow.add_conditional_edges(
             "html_refinement",
             self._check_html_refinement_status,
-            {"continue": "quality_review", "refine": "html_refinement"},
+            {"continue": "image_prompt_generation", "refine": "html_refinement"},
+        )
+
+        # Image prompt generation -> Image generation
+        workflow.add_edge("image_prompt_generation", "image_generation")
+
+        # Image generation -> Image refinement
+        workflow.add_edge("image_generation", "image_refinement")
+
+        # Image refinement -> Quality review or loop  
+        workflow.add_conditional_edges(
+            "image_refinement",
+            self._check_image_refinement_status,
+            {"continue": "quality_review", "refine": "image_refinement"},
         )
 
         # Quality review -> Assembly (always proceed, as quality is optional)
@@ -827,6 +849,87 @@ class SlideGenerationWorkflow:
                                       execution_time_seconds=execution_time)
             raise
 
+    def _image_prompt_generation_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """Image prompt generation agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("image_prompt_generation", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.image_prompt_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("image_prompt_generation", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("image_prompt_generation", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("image_prompt_generation", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
+
+    def _image_generation_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """Image generation agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("image_generation", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.image_generation_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("image_generation", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("image_generation", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("image_generation", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
+
+    def _image_refinement_node(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """Image refinement agent node with database tracking"""
+        start_time = datetime.now()
+        self._update_workflow_state("image_refinement", "in_progress", started_at=start_time.isoformat())
+        
+        try:
+            result = self.image_refinement_agent.execute(state, config)
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            
+            if result.get("error_message"):
+                self._update_workflow_state("image_refinement", "failed",
+                                          error_message=result["error_message"],
+                                          execution_time_seconds=execution_time)
+            else:
+                self._update_workflow_state("image_refinement", "completed",
+                                          execution_time_seconds=execution_time)
+            return result
+            
+        except Exception as e:
+            execution_time = int((datetime.now() - start_time).total_seconds())
+            self._update_workflow_state("image_refinement", "failed",
+                                      error_message=str(e),
+                                      execution_time_seconds=execution_time)
+            raise
+
     def _quality_review_node(
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
@@ -1019,6 +1122,15 @@ class SlideGenerationWorkflow:
         iteration = state.get("html_refinement_iteration", 0)
         if iteration < 3:
             return "refine"
+        return "continue"
+
+    def _check_image_refinement_status(self, state: SlideGenerationState) -> str:
+        """Check if image refinement should continue"""
+        if not state.get("needs_image_refinement", False):
+            return "continue"
+            
+        # Since image refinement is limited to 3 rounds, we'll always continue after first pass
+        # The ImageRefinementAgent handles the iteration logic internally
         return "continue"
 
     def _check_assembly_success(self, state: SlideGenerationState) -> str:

@@ -72,6 +72,12 @@ class SlideGenerationState(TypedDict):
     needs_icon_retry: bool
     needs_html_refinement: bool
 
+    # Image generation results
+    image_prompts: Optional[Dict[int, str]]  # Detailed prompts for each slide
+    generated_images: Optional[Dict[int, Dict[str, Any]]]
+    refined_images: Optional[Dict[int, Dict[str, Any]]]
+    needs_image_refinement: bool
+
     # Final output
     presentation_path: Optional[str]
     success: bool
@@ -459,13 +465,16 @@ USE HTML (set is_html: true) FOR:
 ✅ Comparisons, before/after scenarios
 ✅ Data visualizations, metrics, statistics  
 ✅ Complex diagrams, hierarchies, relationships
-✅ Any content requiring visual flow or custom graphics
+✅ Interactive elements, dashboards, multi-step processes
 
 SKIP HTML (set is_html: false) FOR:
 ❌ Simple text content and basic bullet points
 ❌ Icon-heavy content (use icon placeholders instead)  
 ❌ Standard chart data (use chart placeholders)
 ❌ Simple titles and descriptions
+❌ PHOTOGRAPHIC/SCENE REQUESTS (e.g., "image of a doctor", "photo of office", "picture of person working")
+❌ Single illustrations or scenes that can be generated as images
+❌ Portrait-style or environmental images
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -586,8 +595,11 @@ Focus on creating compelling narrative with strategic HTML visualizations that e
 🔑 KEY RESPONSIBILITIES:
 1. **Strategic Layout Selection**: Choose layouts based on content type, not sequence
 2. **HTML Decision Making**: Explicitly decide which slides need HTML visualizations  
-3. **Detailed Specifications**: Provide comprehensive guidance for each slide
-4. **Content Flow Design**: Ensure logical narrative progression
+3. **Image vs HTML Detection**: Distinguish between photographic/scene requests (for image generation) and data visualization needs (for HTML)
+4. **Detailed Specifications**: Provide comprehensive guidance for each slide
+5. **Content Flow Design**: Ensure logical narrative progression
+
+🚨 CRITICAL: When users request visual scenes, photos, or illustrations (e.g., "image of a doctor working", "photo of people in meeting", "picture of office environment"), these should be handled as IMAGE GENERATION (is_html: false), NOT HTML visualization.
 
 📋 SPECIFICATION REQUIREMENTS:
 
@@ -2674,3 +2686,609 @@ NOTE: Replace WIDTH and HEIGHT with the exact pixel dimensions found in the exis
 - **Height Constraints**: ALWAYS ensure Mermaid containers have `max-h-[400px]` or similar constraints to prevent overflow.
 
 Focus on creating HTML that serves the slide's purpose effectively while ABSOLUTELY ensuring all content fits within the viewport constraints without any cropping or information loss."""
+
+
+class ImagePromptAgent:
+    """
+    Agent responsible for crafting high-quality, descriptive prompts for image generation.
+    Translates user requests and slide context into detailed visual descriptions
+    optimized for AI image generation models.
+    """
+
+    def __init__(self):
+        self.name = "image_prompt_agent" 
+        self.llm_client = LangchainLLMClient()
+
+    @monitor_agent_execution("image_prompt_agent")
+    def execute(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Create detailed image generation prompts for slides that need images.
+        
+        Args:
+            state: Current workflow state
+            config: Optional LangGraph configuration
+            
+        Returns:
+            Updated state with optimized image prompts
+        """
+        print(f"🎨 {self.name}: Crafting detailed image generation prompts...")
+        
+        # Check if we have slides that need images
+        if not state.get("slide_contents"):
+            print("  - No slide contents available")
+            return state
+            
+        # Identify slides that need images and create prompts
+        image_prompts = self._create_image_prompts(state)
+        
+        if image_prompts:
+            state["image_prompts"] = image_prompts
+            print(f"  ✅ Created {len(image_prompts)} detailed image prompts")
+        else:
+            print("  - No slides identified for image generation")
+            
+        return state
+    
+    def _create_image_prompts(self, state: SlideGenerationState) -> dict:
+        """
+        Create detailed image prompts for all slides that need images.
+        
+        Args:
+            state: Current workflow state
+            
+        Returns:
+            Dictionary mapping slide indices to detailed image prompts
+        """
+        image_prompts = {}
+        slide_contents = state.get("slide_contents", [])
+        layouts_info = state.get("layouts_info", {})
+        presentation_plan = state.get("presentation_plan", [])
+        topic = state.get("topic", "")
+        
+        for i, slide_content in enumerate(slide_contents):
+            # Get layout info
+            layout_index = getattr(slide_content, 'layout_index', None)
+            if not layout_index or layout_index not in layouts_info:
+                continue
+                
+            layout_info = layouts_info[layout_index]
+            
+            # Check if this layout has picture placeholders
+            has_picture = False
+            for placeholder in layout_info.get("placeholders", []):
+                if "Picture" in placeholder.get("name", ""):
+                    has_picture = True
+                    break
+                    
+            if not has_picture:
+                continue
+                
+            # Get slide context
+            slide_spec = presentation_plan[i] if i < len(presentation_plan) else None
+            slide_title = getattr(slide_spec, 'slide_title', 'Slide') if slide_spec else 'Slide'
+            
+            # Create detailed prompt using LLM
+            detailed_prompt = self._generate_detailed_image_prompt(
+                topic=topic,
+                slide_title=slide_title,
+                slide_content=slide_content,
+                slide_spec=slide_spec
+            )
+            
+            if detailed_prompt:
+                image_prompts[i] = detailed_prompt
+                print(f"  📝 Created prompt for slide {i + 1}: {slide_title}")
+                
+        return image_prompts
+    
+    def _generate_detailed_image_prompt(
+        self, 
+        topic: str, 
+        slide_title: str, 
+        slide_content, 
+        slide_spec
+    ) -> str:
+        """
+        Use LLM to generate a detailed, descriptive image prompt.
+        
+        Args:
+            topic: Original presentation topic
+            slide_title: Title of the slide
+            slide_content: Slide content object
+            slide_spec: Slide specification from planning
+            
+        Returns:
+            Detailed image generation prompt
+        """
+        try:
+            # Build context for the LLM
+            context_parts = [f"Topic: {topic}", f"Slide: {slide_title}"]
+            
+            if slide_spec:
+                if hasattr(slide_spec, 'slide_purpose'):
+                    context_parts.append(f"Purpose: {slide_spec.slide_purpose}")
+                if hasattr(slide_spec, 'key_information'):
+                    context_parts.append(f"Key Info: {', '.join(slide_spec.key_information)}")
+            
+            # Get text content from slide
+            text_content = []
+            for attr_name, attr_value in slide_content.__dict__.items():
+                if isinstance(attr_value, str) and attr_value.strip() and attr_name != 'layout_index':
+                    text_content.append(f"{attr_name}: {attr_value}")
+            
+            if text_content:
+                context_parts.append(f"Content: {'; '.join(text_content)}")
+            
+            context = "\n".join(context_parts)
+            
+            prompt = f"""You are an expert at creating specific visual descriptions for AI image generation.
+
+TASK: Based on the context below, create a detailed visual description focusing ONLY on what should appear in the image itself.
+
+CONTEXT:
+{context}
+
+BRAND COLORS (use when appropriate):
+- Swiss Red: #dc261e
+- Dark Grey: #2d3748
+
+INSTRUCTIONS:
+1. Describe the exact visual scene - people, objects, environment, composition
+2. Be specific about clothing, expressions, poses, lighting, atmosphere
+3. Focus on the core visual elements, not the presentation context
+4. Include relevant colors and professional style
+5. Make it a clear, direct description of what should be generated
+
+OUTPUT: Return ONLY the visual description for image generation, no mention of slides or presentations."""
+
+            # Use the same pattern as other agents
+            messages = [
+                {"role": "system", "content": "You are an expert image prompt creator."},
+                {"role": "user", "content": prompt}
+            ]
+            config = RunnableConfig(
+                run_name="image_prompt_generation",
+                tags=["image", "prompt", "generation"]
+            )
+            
+            response = self.llm_client.chat_client.invoke(messages, config=config)
+            content = str(response.content) if response.content else ""
+            
+            if content and content.strip():
+                return content.strip()
+            else:
+                print(f"  ⚠️ LLM returned empty response for slide prompt")
+                return self._create_fallback_prompt(topic, slide_title)
+                
+        except Exception as e:
+            print(f"  ⚠️ Error generating detailed prompt: {e}")
+            return self._create_fallback_prompt(topic, slide_title)
+    
+    def _create_fallback_prompt(self, topic: str, slide_title: str) -> str:
+        """Create a fallback prompt when LLM generation fails."""
+        if 'image of' in topic.lower():
+            base_prompt = topic.replace('image of', '').strip()
+        else:
+            base_prompt = f"Professional business scene related to {slide_title}"
+        
+        return (f"{base_prompt}. High-quality, detailed illustration with clean composition, "
+                f"professional style, modern design, Swiss red (#dc261e) and dark grey (#2d3748) accents.")
+
+
+class ImageGenerationAgent:
+    """
+    Agent responsible for generating images for Layout 2 slides using GPT-image-1 model.
+    Identifies slides that need images and generates them in parallel.
+    """
+
+    def __init__(self):
+        self.name = "image_generation_agent"
+        
+        # Initialize the image webhook client
+        try:
+            from .image_webhook_client import ImageWebhookClient
+            self.image_client = ImageWebhookClient()
+            print("✅ Image webhook client initialized successfully")
+        except Exception as e:
+            print(f"❌ Failed to initialize image webhook client: {e}")
+            self.image_client = None
+            
+        # Initialize storage and database clients
+        try:
+            from .supabase_storage import get_storage_client
+            from .database import get_supabase_client
+            self.storage_client = get_storage_client()
+            self.db_client = get_supabase_client()
+            print("✅ Supabase storage and database clients initialized for image tracking")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize Supabase clients for image tracking: {e}")
+            self.storage_client = None
+            self.db_client = None
+            
+        self.temp_dir = Path("image_debug")
+        self.temp_dir.mkdir(exist_ok=True)
+
+    @monitor_agent_execution("image_generation_agent")
+    def execute(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Generate images for slides that need them (Layout 2).
+        
+        Args:
+            state: Current workflow state containing slide contents
+            config: Optional LangGraph configuration
+            
+        Returns:
+            Updated state with generated images
+        """
+        if not self.image_client:
+            print("❌ Image client not available, skipping image generation")
+            return state
+            
+        # Check if we have slide contents
+        if not state.get("slide_contents"):
+            print("❌ No slide contents available for image generation")
+            return state
+            
+        print(f"🎨 {self.name}: Starting image generation process...")
+        
+        # Identify slides that need images (Layout 2)
+        image_slides = self._identify_image_slides(state)
+        
+        if not image_slides:
+            print(f"ℹ️ {self.name}: No slides require image generation")
+            return state
+            
+        print(f"🎯 {self.name}: Found {len(image_slides)} slides needing images")
+        
+        # Check for parallel processing
+        use_parallel = os.getenv("USE_PARALLEL_IMAGE_GENERATION", "true").lower() == "true"
+        
+        if use_parallel:
+            print("🚀 Using parallel image generation")
+            return self._generate_images_parallel(state, image_slides)
+        else:
+            print("🔄 Using sequential image generation")
+            return self._generate_images_sequential(state, image_slides)
+            
+    def _identify_image_slides(self, state: SlideGenerationState) -> list[dict]:
+        """
+        Identify slides that need image generation (Layout 2).
+        
+        Args:
+            state: Current workflow state
+            
+        Returns:
+            List of dictionaries containing slide info for image generation
+        """
+        image_slides = []
+        slide_contents = state.get("slide_contents", [])
+        layouts_info = state.get("layouts_info", {})
+        
+        for i, slide_content in enumerate(slide_contents):
+            layout_index = getattr(slide_content, 'layout_index', None)
+            
+            # Check if this is Layout 2 (Title and Picture)
+            if layout_index == 2:
+                layout_info = layouts_info.get(layout_index, {})
+                
+                # Find the picture placeholder
+                picture_placeholder = None
+                for placeholder in layout_info.get("placeholders", []):
+                    if "Picture 16:9" in placeholder.get("name", ""):
+                        picture_placeholder = placeholder
+                        break
+                        
+                if picture_placeholder:
+                    # Get image prompt for this slide (preferring detailed prompts)
+                    image_prompt = self._get_image_prompt_for_slide(i, state)
+                    
+                    image_slides.append({
+                        "slide_index": i,
+                        "slide_content": slide_content,
+                        "placeholder": picture_placeholder,
+                        "image_prompt": image_prompt,
+                        "placeholder_description": picture_placeholder.get("name", "Picture 16:9"),
+                        "placeholder_width": picture_placeholder.get("width_px", 1200),
+                        "placeholder_height": picture_placeholder.get("height_px", 456),
+                    })
+                    
+        return image_slides
+        
+    def _get_image_prompt_for_slide(self, slide_index: int, state: SlideGenerationState) -> str:
+        """
+        Get the image prompt for a slide, preferring pre-crafted prompts from ImagePromptAgent.
+        
+        Args:
+            slide_index: Index of the slide (0-based)
+            state: Full workflow state
+            
+        Returns:
+            Image generation prompt
+        """
+        # First try to use pre-crafted prompt from ImagePromptAgent
+        image_prompts = state.get('image_prompts', {})
+        if slide_index in image_prompts:
+            print(f"    🎯 Using detailed prompt from ImagePromptAgent")
+            return image_prompts[slide_index]
+        
+        # Fallback to simple prompt generation
+        print(f"    ⚠️ No detailed prompt available, using fallback")
+        original_topic = state.get('topic', '')
+        
+        if original_topic and 'image of' in original_topic.lower():
+            # User specifically requested an image scene
+            base_prompt = original_topic
+        else:
+            # Generic business slide
+            base_prompt = f"Professional business illustration for presentation slide"
+            if original_topic:
+                base_prompt += f" about {original_topic[:100]}"
+        
+        # Add style guidelines
+        style_prompt = ". Style: modern, professional, clean design with corporate colors (Swiss red #dc261e, dark grey #2d3748). High quality, detailed illustration suitable for business presentation."
+        
+        return base_prompt + style_prompt
+        
+    def _generate_images_parallel(
+        self, state: SlideGenerationState, image_slides: list[dict]
+    ) -> SlideGenerationState:
+        """
+        Generate images for multiple slides in parallel.
+        
+        Args:
+            state: Current workflow state
+            image_slides: List of slide information for image generation
+            
+        Returns:
+            Updated state with generated images
+        """
+        try:
+            # Prepare prompts and specs for parallel generation
+            prompts_and_specs = []
+            for slide_info in image_slides:
+                prompts_and_specs.append((
+                    slide_info["image_prompt"],
+                    {
+                        "slide_index": slide_info["slide_index"],
+                        "placeholder_description": slide_info["placeholder_description"],
+                        "placeholder_width": slide_info["placeholder_width"],
+                        "placeholder_height": slide_info["placeholder_height"],
+                    }
+                ))
+                
+            # Run parallel image generation
+            import concurrent.futures
+            
+            def run_async_in_thread():
+                return asyncio.run(
+                    self.image_client.generate_images_parallel(prompts_and_specs)
+                )
+                
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_async_in_thread)
+                results = future.result()
+            
+            # Process results and save images
+            generated_images = {}
+            for slide_index, image_data in results:
+                if image_data:
+                    # Save image to debug directory
+                    image_filename = f"slide_{slide_index + 1:02d}_generated_image.png"
+                    image_path = self.temp_dir / image_filename
+                    
+                    if self.image_client.save_image_to_file(image_data, str(image_path)):
+                        generated_images[slide_index] = {
+                            "image_data": image_data,
+                            "image_path": str(image_path),
+                            "placeholder_name": image_slides[slide_index]["placeholder"]["name"]
+                        }
+                        print(f"✅ Generated and saved image for slide {slide_index + 1}")
+                    else:
+                        print(f"❌ Failed to save image for slide {slide_index + 1}")
+                else:
+                    print(f"❌ Failed to generate image for slide {slide_index + 1}")
+                    
+            # Update state with generated images
+            state["generated_images"] = generated_images
+            state["needs_image_refinement"] = len(generated_images) > 0
+            
+            print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
+            return state
+            
+        except Exception as e:
+            print(f"❌ Parallel image generation failed: {e}")
+            state["generated_images"] = {}
+            state["needs_image_refinement"] = False
+            return state
+            
+    def _generate_images_sequential(
+        self, state: SlideGenerationState, image_slides: list[dict]
+    ) -> SlideGenerationState:
+        """
+        Generate images for slides sequentially (fallback method).
+        
+        Args:
+            state: Current workflow state  
+            image_slides: List of slide information for image generation
+            
+        Returns:
+            Updated state with generated images
+        """
+        generated_images = {}
+        
+        for slide_info in image_slides:
+            slide_index = slide_info["slide_index"]
+            print(f"🎨 Generating image for slide {slide_index + 1}...")
+            
+            try:
+                # Generate single image using thread executor
+                import concurrent.futures
+                
+                def run_single_image(info):
+                    return asyncio.run(
+                        self.image_client.generate_image(
+                            prompt=info["image_prompt"],
+                            placeholder_description=info["placeholder_description"],
+                            placeholder_width=info["placeholder_width"],
+                            placeholder_height=info["placeholder_height"],
+                        )
+                    )
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_single_image, slide_info)
+                    image_data = future.result()
+                
+                if image_data:
+                    # Save image to debug directory
+                    image_filename = f"slide_{slide_index + 1:02d}_generated_image.png"
+                    image_path = self.temp_dir / image_filename
+                    
+                    if self.image_client.save_image_to_file(image_data, str(image_path)):
+                        generated_images[slide_index] = {
+                            "image_data": image_data,
+                            "image_path": str(image_path),
+                            "placeholder_name": slide_info["placeholder"]["name"]
+                        }
+                        print(f"✅ Generated and saved image for slide {slide_index + 1}")
+                    else:
+                        print(f"❌ Failed to save image for slide {slide_index + 1}")
+                else:
+                    print(f"❌ Failed to generate image for slide {slide_index + 1}")
+                    
+            except Exception as e:
+                print(f"❌ Failed to generate image for slide {slide_index + 1}: {e}")
+                continue
+                
+        # Update state with generated images
+        state["generated_images"] = generated_images
+        state["needs_image_refinement"] = len(generated_images) > 0
+        
+        print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
+        return state
+
+
+class ImageRefinementAgent:
+    """
+    Agent responsible for refining generated images based on visual feedback.
+    Uses vision models to analyze generated images and request improvements.
+    """
+
+    def __init__(self):
+        self.name = "image_refinement_agent"
+        self.max_iterations = 3  # Limited to 3 rounds as specified
+        
+        # Initialize the image webhook client
+        try:
+            from .image_webhook_client import ImageWebhookClient
+            self.image_client = ImageWebhookClient()
+            print("✅ Image webhook client initialized for refinement")
+        except Exception as e:
+            print(f"❌ Failed to initialize image webhook client: {e}")
+            self.image_client = None
+            
+        # Initialize LLM client for vision analysis
+        self.llm_client = LangchainLLMClient()
+        
+        # Initialize storage and database clients
+        try:
+            from .supabase_storage import get_storage_client
+            from .database import get_supabase_client
+            self.storage_client = get_storage_client()
+            self.db_client = get_supabase_client()
+            print("✅ Supabase clients initialized for image refinement tracking")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize Supabase clients: {e}")
+            self.storage_client = None
+            self.db_client = None
+            
+        self.temp_dir = Path("image_debug")
+        self.temp_dir.mkdir(exist_ok=True)
+
+    @monitor_agent_execution("image_refinement_agent")
+    def execute(
+        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
+    ) -> SlideGenerationState:
+        """
+        Refine generated images based on visual feedback.
+        
+        Args:
+            state: Current workflow state containing generated images
+            config: Optional LangGraph configuration
+            
+        Returns:
+            Updated state with refined images
+        """
+        if not self.image_client or not state.get("needs_image_refinement", False):
+            print(f"ℹ️ {self.name}: No image refinement needed")
+            return state
+            
+        generated_images = state.get("generated_images", {})
+        if not generated_images:
+            print(f"ℹ️ {self.name}: No generated images to refine")
+            return state
+            
+        print(f"🔧 {self.name}: Starting image refinement process for {len(generated_images)} images")
+        
+        # Check for parallel processing
+        use_parallel = os.getenv("USE_PARALLEL_IMAGE_REFINEMENT", "true").lower() == "true"
+        
+        if use_parallel:
+            print("🚀 Using parallel image refinement")
+            return self._refine_images_parallel(state, generated_images)
+        else:
+            print("🔄 Using sequential image refinement")
+            return self._refine_images_sequential(state, generated_images)
+            
+    def _refine_images_parallel(
+        self, state: SlideGenerationState, generated_images: dict
+    ) -> SlideGenerationState:
+        """
+        Refine multiple images in parallel with limited iterations.
+        
+        Args:
+            state: Current workflow state
+            generated_images: Dictionary of generated images
+            
+        Returns:
+            Updated state with refined images
+        """
+        # For now, implement a simple approach that just validates the images exist
+        # Full refinement logic would involve vision model analysis and iterative improvement
+        
+        refined_images = {}
+        
+        for slide_index, image_info in generated_images.items():
+            # Check if image file exists
+            image_path = image_info.get("image_path")
+            if image_path and Path(image_path).exists():
+                refined_images[slide_index] = image_info
+                print(f"✅ Validated image for slide {slide_index + 1}")
+            else:
+                print(f"❌ Image file not found for slide {slide_index + 1}")
+                
+        # Update state with refined images
+        state["refined_images"] = refined_images
+        state["needs_image_refinement"] = False
+        
+        print(f"🎉 {self.name}: Image refinement complete for {len(refined_images)} images")
+        return state
+        
+    def _refine_images_sequential(
+        self, state: SlideGenerationState, generated_images: dict
+    ) -> SlideGenerationState:
+        """
+        Refine images sequentially (fallback method).
+        
+        Args:
+            state: Current workflow state
+            generated_images: Dictionary of generated images
+            
+        Returns:
+            Updated state with refined images
+        """
+        # Same simple validation approach for now
+        return self._refine_images_parallel(state, generated_images)

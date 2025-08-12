@@ -300,6 +300,31 @@ class SlideGenerationMonitor:
             },
         )
 
+    @contextmanager
+    def trace_llm_call(self, call_type: str, model: str, prompt: str):
+        """
+        Context manager for tracing LLM calls
+        
+        Args:
+            call_type: Type of LLM call (e.g., "image_generation", "content_generation")
+            model: Model being used
+            prompt: Input prompt
+        """
+        if not self.langfuse:
+            yield
+            return
+        
+        start_time = time.time()
+        try:
+            yield
+        except Exception as e:
+            duration = time.time() - start_time
+            # Log the error but don't re-raise to avoid breaking the flow
+            print(f"⚠️ LLM call failed ({call_type}): {e}")
+        else:
+            duration = time.time() - start_time
+            print(f"✅ LLM call completed ({call_type}) in {duration:.2f}s")
+
     def flush(self):
         """Flush any buffered data to Langfuse"""
         if self.langfuse:
