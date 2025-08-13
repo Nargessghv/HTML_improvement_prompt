@@ -26,6 +26,8 @@ class TemplateInfo:
     slide_count: int
     is_valid: bool
     error_message: Optional[str] = None
+    folder_path: Optional[str] = None
+    locked_backgrounds: int = 0
     
     @property
     def display_name(self) -> str:
@@ -58,7 +60,18 @@ class TemplateManager:
             logger.warning(f"Templates directory does not exist: {self.templates_dir}")
             return templates
         
-        # Look for .pptx files
+        # New folder structure: Look for .pptx files in subdirectories
+        for template_folder in self.templates_dir.iterdir():
+            if template_folder.is_dir():
+                # Look for PPTX files in this template folder
+                pptx_files = list(template_folder.glob("*.pptx"))
+                if pptx_files:
+                    # Use the first PPTX file found in the folder
+                    template_file = pptx_files[0]
+                    template_info = self._analyze_template(template_file, template_folder)
+                    templates.append(template_info)
+        
+        # Fallback: Also check for legacy .pptx files directly in templates directory
         for template_file in self.templates_dir.glob("*.pptx"):
             template_info = self._analyze_template(template_file)
             templates.append(template_info)
@@ -69,18 +82,26 @@ class TemplateManager:
         logger.info(f"Found {len(templates)} templates")
         return templates
     
-    def _analyze_template(self, template_path: Path) -> TemplateInfo:
+    def _analyze_template(self, template_path: Path, template_folder: Optional[Path] = None) -> TemplateInfo:
         """
         Analyze a template file to extract information
         
         Args:
             template_path: Path to the template file
+            template_folder: Path to the template folder (for new structure)
             
         Returns:
             TemplateInfo object with template details
         """
         filename = template_path.name
-        name = template_path.stem
+        
+        # For new folder structure, use folder name as template name
+        if template_folder and template_folder.parent.name == "templates":
+            name = template_folder.name
+        else:
+            # Legacy: use file stem
+            name = template_path.stem
+            
         size_mb = template_path.stat().st_size / (1024 * 1024)
         
         try:
@@ -98,6 +119,15 @@ class TemplateManager:
             is_valid = False
             error_message = str(e)
         
+        # Count locked background SVG files
+        locked_backgrounds = 0
+        folder_path_str = None
+        
+        if template_folder:
+            folder_path_str = str(template_folder)
+            locked_svg_files = list(template_folder.glob("LOCKED_*.svg"))
+            locked_backgrounds = len(locked_svg_files)
+        
         return TemplateInfo(
             filename=filename,
             path=str(template_path),
@@ -105,7 +135,9 @@ class TemplateManager:
             size_mb=size_mb,
             slide_count=slide_count,
             is_valid=is_valid,
-            error_message=error_message
+            error_message=error_message,
+            folder_path=folder_path_str,
+            locked_backgrounds=locked_backgrounds
         )
     
     def get_template_path(self, template_name: str) -> Optional[str]:
@@ -113,16 +145,24 @@ class TemplateManager:
         Get the full path for a template by name
         
         Args:
-            template_name: Name of the template (with or without .pptx extension)
+            template_name: Name of the template (folder name or filename)
             
         Returns:
             Full path to the template file, or None if not found
         """
+        # New folder structure: Check if template_name is a folder name
+        template_folder = self.templates_dir / template_name
+        if template_folder.is_dir():
+            # Look for PPTX files in the folder
+            pptx_files = list(template_folder.glob("*.pptx"))
+            if pptx_files:
+                return str(pptx_files[0])
+        
+        # Legacy: Check if it's a direct PPTX filename
         if not template_name.endswith('.pptx'):
             template_name += '.pptx'
         
         template_path = self.templates_dir / template_name
-        
         if template_path.exists():
             return str(template_path)
         
@@ -145,6 +185,36 @@ class TemplateManager:
             return default.path
         
         logger.error("No valid templates found")
+        return None
+    
+    def get_template_folder_path(self, template_name: str) -> Optional[str]:
+        """
+        Get the folder path for a template (for accessing SVG backgrounds)
+        
+        Args:
+            template_name: Name of the template (folder name or filename)
+            
+        Returns:
+            Full path to the template folder, or None if not found
+        """
+        # Check if template_name is a folder name
+        template_folder = self.templates_dir / template_name
+        if template_folder.is_dir():
+            return str(template_folder)
+        
+        # If it's a filename, extract the folder name
+        if template_name.endswith('.pptx'):
+            folder_name = template_name[:-5]  # Remove .pptx
+            template_folder = self.templates_dir / folder_name
+            if template_folder.is_dir():
+                return str(template_folder)
+        
+        # Legacy: For templates in root directory, return templates directory
+        template_path = self.templates_dir / template_name
+        if template_path.exists() and template_path.is_file():
+            return str(self.templates_dir)
+        
+        logger.warning(f"Template folder not found for: {template_name}")
         return None
     
     def validate_template(self, template_path: str) -> bool:

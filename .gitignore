@@ -58,7 +58,7 @@ package-lock.json
 generated_presentations/
 dist/
 *.pptx
-!templates/*.pptx
+!templates/*/*.pptx
 
 # Logs
 *.log

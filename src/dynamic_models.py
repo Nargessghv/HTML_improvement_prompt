@@ -34,6 +34,11 @@ def create_placeholder_model(layout_info: Dict[str, Any]) -> Type[BaseModel]:
         placeholder_type = placeholder.get("type", 1)
         instructions = placeholder.get("instructions", "")  # Get instructional text
 
+        # Skip LOCKED_ placeholders - they are handled by the locked background system
+        if placeholder_name.startswith("LOCKED_"):
+            print(f"  🔒 Skipping locked background placeholder: {placeholder_name}")
+            continue
+
         # Create field with exact placeholder name as key
         # Add description including instructional text to help LLM
         # understand what content to generate

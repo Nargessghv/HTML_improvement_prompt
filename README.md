@@ -845,12 +845,88 @@ OPENAI_MODEL_FAST=gpt-4o-mini  # Used for fast operations like icon validation
    └── Slide Assembly Agent
 ```
 
+## 📋 PowerPoint Template & Placeholder Guidelines
+
+### **Placeholder Naming Conventions**
+The system recognizes and handles different placeholder types based on naming:
+
+#### **Regular Content Placeholders**
+- **Title placeholders**: Any name containing "Title", "Heading", "Header"
+- **Body placeholders**: Any name containing "Content", "Body", "Text"
+- **Picture placeholders**: Must be type 18 (PP_PLACEHOLDER.PICTURE) OR contain "Picture", "Image", "Photo" in name
+- **Icon placeholders**: Must contain "icon" in name (case-insensitive) - generates icon references
+
+#### **Special System Placeholders**
+
+##### **🔒 LOCKED_ Placeholders**
+Placeholders starting with `LOCKED_` are reserved for background system handling:
+- **Naming Format**: `LOCKED_Background_1`, `LOCKED_Background_2`, etc.
+- **File Requirements**: Corresponding SVG file must exist in template folder (e.g., `LOCKED_Background_1.svg`)
+- **Automatic Handling**: System automatically inserts SVG backgrounds, no content generation
+- **Type**: Should be Picture placeholder (type 18) in PowerPoint
+- **Important**: NEVER generate content for LOCKED_ placeholders - they're handled by the background system
+
+Example template structure:
+```
+templates/
+├── YourTemplate/
+│   ├── YourTemplate.pptx
+│   ├── LOCKED_Background_1.svg  # Automatically inserted into LOCKED_Background_1 placeholder
+│   └── LOCKED_Background_2.svg  # Automatically inserted into LOCKED_Background_2 placeholder
+```
+
+### **Layout Naming Best Practices**
+When creating PowerPoint templates, use descriptive layout names for better agent understanding:
+
+#### **Recommended Layout Names**
+- **"Title Slide"** - Opening slide with main title
+- **"Title and Content"** - Standard content slide
+- **"Title and Picture"** - Slide with image placeholder
+- **"Picture and Text content in multiple places"** - Mixed media layout
+- **"Two Content"** - Side-by-side content areas
+- **"Comparison"** - Before/after or comparative layouts
+- **"Content with Caption"** - Content with descriptive text
+- **"Blank"** - Minimal layout for custom content
+
+#### **Layout Detection Keywords**
+The system looks for these keywords when selecting layouts:
+- **Picture layouts**: "picture", "image", "photo", "visual"
+- **Content layouts**: "content", "text", "body"
+- **Title layouts**: "title", "heading", "header"
+- **HTML layouts**: "html", "chart", "diagram", "timeline"
+
+### **Placeholder Type Reference**
+PowerPoint placeholder types (numeric values) recognized by the system:
+
+| Type ID | Type Name | Description | System Handling |
+|---------|-----------|-------------|-----------------|
+| 0 | MIXED | Mixed content | Text content |
+| 1 | TITLE | Title text | Title formatting |
+| 2 | BODY/OBJECT | Body content | Bullet points/paragraphs |
+| 18 | PICTURE | Picture/Image | Image generation or HTML rendering |
+
+### **Image Generation Rules**
+
+#### **Automatic Image Detection**
+Images are generated for placeholders when:
+1. **Layout-based**: Placeholder is type 18 (PICTURE) AND not LOCKED_
+2. **Content-based**: Content contains visual descriptions like:
+   - "image of", "picture of", "photo of"
+   - "shows a", "displays a", "depicts a"
+   - Visual keywords: woman, man, scene, professional, medical, etc.
+
+#### **Excluded from Image Generation**
+- **LOCKED_ placeholders**: Reserved for background system
+- **Icon placeholders**: Generate icon references instead
+- **Text placeholders**: Types 1, 2 (TITLE, BODY)
+
 ## 🔧 Agent Workflow Details
 
 ### **1. 🔍 Layout Analysis Agent**
 - Analyzes PowerPoint template layouts
 - Creates dynamic Pydantic models for exact placeholder matching
 - Identifies suitable layouts for different content types
+- **NEW**: Automatically skips LOCKED_ placeholders from content generation
 
 ### **2. 📋 Presentation Planning Agent** 
 - Uses LLM to create intelligent slide structure
@@ -888,6 +964,62 @@ LANGFUSE_SECRET_KEY=your_langfuse_secret_key
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
+## 🔍 Troubleshooting Guide
+
+### **Images Not Being Generated**
+
+**Problem**: Slides describing images don't trigger image generation.
+
+**Solutions**:
+1. **Check placeholder type**: Ensure picture placeholders are type 18 in PowerPoint
+2. **Verify placeholder names**: Don't start with "LOCKED_" (reserved for backgrounds)
+3. **Content analysis**: Include visual keywords like "image of", "picture of", "shows a"
+4. **Layout selection**: Ensure the slide uses a layout with picture placeholders
+
+**Debug Script**:
+```python
+# Run debug_brochure_template.py to analyze your template
+python debug_brochure_template.py
+```
+
+### **Locked Backgrounds Not Inserted**
+
+**Problem**: LOCKED_Background placeholders show text instead of SVG backgrounds.
+
+**Solutions**:
+1. **File existence**: Verify SVG files exist in template folder (e.g., `LOCKED_Background_1.svg`)
+2. **Naming match**: Ensure SVG filename matches placeholder name exactly
+3. **Placeholder prefix**: Must start with "LOCKED_" to trigger background system
+4. **Template structure**:
+```
+templates/YourTemplate/
+├── YourTemplate.pptx
+└── LOCKED_Background_1.svg  # Must exist!
+```
+
+### **Content in Wrong Placeholders**
+
+**Problem**: Content appears in unexpected placeholders.
+
+**Solutions**:
+1. **Custom names**: Use descriptive placeholder names in slide master
+2. **Layout analysis**: Check if layouts_info is properly initialized
+3. **Dynamic models**: Verify Pydantic models match placeholder names
+4. **Fallback behavior**: System uses partial name matching if exact match fails
+
+### **Template Not Recognized Properly**
+
+**Problem**: Agent can't identify appropriate layouts.
+
+**Solutions**:
+1. **Layout names**: Use standard names like "Title and Content", "Title and Picture"
+2. **Placeholder count**: Ensure layouts have appropriate placeholders
+3. **Template location**: Place templates in `templates/` folder
+4. **Run analysis**:
+```bash
+python -m src.agent_main --analyze --template your_template.pptx
+```
+
 ## 📊 Example Output
 
 ```
@@ -923,6 +1055,14 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 - **Content Models**: Dynamic Pydantic models for structured output
 
 ## 📝 Recent Updates
+
+### 🔒 Latest Fixes - Placeholder & Image Generation System
+- **🖼️ Fixed Picture Placeholder Detection**: Now correctly identifies type 18 (PICTURE) placeholders by numeric type
+- **🔒 LOCKED_ Placeholder Handling**: System now properly skips LOCKED_ placeholders for content generation
+- **🎯 Enhanced Image Generation**: Detects visual content in any layout, not just "Title and Picture"
+- **📋 Dynamic Model Updates**: Pydantic models exclude LOCKED_ placeholders preventing LLM content generation
+- **🔧 SlideGenerator Fix**: Both layout mapping methods now skip LOCKED_ placeholders
+- **✨ Background System Integration**: SVG backgrounds properly inserted into LOCKED_ placeholders
 
 ### 🔧 Latest Bug Fixes - True Parallel Processing 
 - **🚀 Parallel LLM Calls**: HTML refinement now uses TRUE parallel LLM calls (3x faster!)

@@ -49,6 +49,8 @@ interface Template {
   slide_count: number
   is_valid: boolean
   error_message?: string
+  folder_path?: string
+  locked_backgrounds?: number
 }
 
 interface NewProjectModalProps {
@@ -248,12 +250,22 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                           </div>
                         </SelectItem>
                         {templates.map((template) => (
-                          <SelectItem key={template.filename} value={template.filename}>
+                          <SelectItem key={template.name} value={template.name}>
                             <div className="flex flex-col items-start">
                               <span className="font-medium">{template.display_name}</span>
-                              <span className="text-xs text-gray-500">
-                                {template.slide_count} slides • {template.size_mb.toFixed(1)} MB
-                              </span>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <span>{template.slide_count} slides</span>
+                                <span>•</span>
+                                <span>{template.size_mb.toFixed(1)} MB</span>
+                                {template.locked_backgrounds && template.locked_backgrounds > 0 && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-red-600 font-medium">
+                                      🔒 {template.locked_backgrounds} backgrounds
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </SelectItem>
                         ))}

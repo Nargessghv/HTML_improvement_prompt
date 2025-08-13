@@ -532,6 +532,12 @@ class SlideGenerator:
         for layout_placeholder in layout_info.get("placeholders", []):
             custom_name = layout_placeholder["name"]
             placeholder_index = layout_placeholder["index"]
+            
+            # Don't skip LOCKED_ placeholders if they have content (they should have image paths)
+            # Only skip if no content is provided
+            if custom_name.startswith("LOCKED_") and custom_name not in content:
+                print(f"  - No content for locked placeholder '{custom_name}'")
+                continue
 
             if custom_name in content:
                 if placeholder_index in placeholder_by_index:
@@ -569,6 +575,12 @@ class SlideGenerator:
 
         # Fill placeholders with content
         for placeholder_name, text_content in content.items():
+            # Don't skip LOCKED_ placeholders if they have content (they should have image paths)
+            # Only skip if no content is provided
+            if placeholder_name.startswith("LOCKED_") and placeholder_name not in content:
+                print(f"  - No content for locked placeholder '{placeholder_name}'")
+                continue
+                
             if placeholder_name in placeholder_map:
                 placeholder = placeholder_map[placeholder_name]
                 self._set_placeholder_content(placeholder, text_content)
@@ -1071,10 +1083,9 @@ class SlideGenerator:
                 print(f"  - Placeholder: {target_width_px}x{target_height_px}px")
                 
                 if width_diff > tolerance or height_diff > tolerance:
-                    print(f"  - Auto-sizing difference too large, using placeholder-proportional sizing")
+                    print(f"  - Size difference detected, applying crop-to-fill")
                     
-                    # Instead of forcing exact dimensions (which causes distortion),
-                    # scale proportionally to fit within placeholder bounds
+                    # Crop to fill: Scale image to cover entire placeholder, then crop excess
                     auto_aspect = auto_width_px / auto_height_px if auto_height_px > 0 else 1
                     target_aspect = target_width_px / target_height_px if target_height_px > 0 else 1
                     
@@ -1084,18 +1095,45 @@ class SlideGenerator:
                         picture.height = height
                         print(f"  - Aspect ratios match, using exact placeholder dimensions")
                     else:
-                        # Proportional scaling to fit within placeholder
+                        # Use PowerPoint's crop feature to fill the placeholder
+                        # Set the image to placeholder size (this will distort temporarily)
+                        picture.width = width
+                        picture.height = height
+                        
+                        # Apply crop to maintain aspect ratio
+                        # Calculate how much to scale to fill (use max instead of min)
                         scale_width = target_width_px / auto_width_px
                         scale_height = target_height_px / auto_height_px
-                        scale = min(scale_width, scale_height)  # Scale to fit
+                        scale = max(scale_width, scale_height)  # Scale to fill (not fit)
                         
-                        new_width_px = int(auto_width_px * scale)
-                        new_height_px = int(auto_height_px * scale)
+                        # The image is now sized to the placeholder
+                        # PowerPoint will automatically center the image content
+                        print(f"  - Applied crop-to-fill at placeholder size: {target_width_px}x{target_height_px}px")
                         
-                        # Convert back to EMU
-                        picture.width = new_width_px * 9525
-                        picture.height = new_height_px * 9525
-                        print(f"  - Scaled proportionally to: {new_width_px}x{new_height_px}px")
+                        # Set crop properties to center the image
+                        try:
+                            # Access the crop properties
+                            picture.crop_left = 0
+                            picture.crop_right = 0
+                            picture.crop_top = 0
+                            picture.crop_bottom = 0
+                            
+                            # Calculate crop amounts if aspect ratios don't match
+                            if auto_aspect > target_aspect:
+                                # Image is wider - crop left and right
+                                crop_amount = (1 - (target_aspect / auto_aspect)) / 2
+                                picture.crop_left = crop_amount
+                                picture.crop_right = crop_amount
+                                print(f"  - Cropping sides by {crop_amount:.1%} each")
+                            else:
+                                # Image is taller - crop top and bottom
+                                crop_amount = (1 - (auto_aspect / target_aspect)) / 2
+                                picture.crop_top = crop_amount
+                                picture.crop_bottom = crop_amount
+                                print(f"  - Cropping top/bottom by {crop_amount:.1%} each")
+                        except:
+                            # If crop properties aren't available, the image will just be stretched
+                            print(f"  - Using fill mode (image will fill placeholder)")
                 else:
                     print(f"  - Auto-sizing worked correctly, keeping auto dimensions")
                 

@@ -1509,9 +1509,18 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         workflow = SlideGenerationWorkflow()
         
         # Set up paths
-        from .template_manager import resolve_template_path
+        from .template_manager import resolve_template_path, get_template_manager
         template_path = resolve_template_path(template_name)
         output_path = f"generated_presentations/project_{project_id}"
+        
+        # Get template folder path for locked backgrounds
+        template_folder_path = None
+        if template_name:
+            manager = get_template_manager()
+            template_folder_path = manager.get_template_folder_path(template_name)
+        
+        api_logger.info(f"Template path: {template_path}")
+        api_logger.info(f"Template folder path: {template_folder_path}")
         
         # Create enhanced callback with real-time updates
         realtime_callback = create_realtime_callback(project_id, user_id)
@@ -1578,7 +1587,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                     template_path=template_path,
                     output_path=output_path,
                     approved_outline=approved_outline,
-                    title=project.get("title")
+                    title=project.get("title"),
+                    template_folder_path=template_folder_path
                 )
             else:
                 # Run standard workflow
@@ -1586,6 +1596,7 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                 result = workflow.run(
                     topic=actual_topic,
                     template_path=template_path,
+                    template_folder_path=template_folder_path,
                     output_path=output_path,
                     title=project.get("title"),
                     approved_outline=approved_outline
@@ -1596,6 +1607,7 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
             result = workflow.run(
                 topic=actual_topic,
                 template_path=template_path,
+                template_folder_path=template_folder_path,
                 output_path=output_path,
                 title=project.get("title"),
                 approved_outline=approved_outline
@@ -1750,7 +1762,9 @@ async def get_templates():
                     "size_mb": round(template.size_mb, 2),
                     "slide_count": template.slide_count,
                     "is_valid": template.is_valid,
-                    "error_message": template.error_message
+                    "error_message": template.error_message,
+                    "folder_path": template.folder_path,
+                    "locked_backgrounds": template.locked_backgrounds
                 }
                 for template in templates
             ]

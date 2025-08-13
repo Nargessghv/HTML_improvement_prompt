@@ -64,7 +64,9 @@ class IndividualSlideGenerator:
             individual_pptx_path = self._create_simple_slide_pptx(
                 slide_content=slide_content,
                 template_path=template_path,
-                slide_number=slide_number
+                slide_number=slide_number,
+                layouts_info=layouts_info,
+                dynamic_models=dynamic_models
             )
             
             if not individual_pptx_path:
@@ -125,7 +127,9 @@ class IndividualSlideGenerator:
         self,
         slide_content: SlideContent,
         template_path: str,
-        slide_number: int
+        slide_number: int,
+        layouts_info: Optional[Dict[str, Any]] = None,
+        dynamic_models: Optional[Dict[str, Any]] = None
     ) -> Optional[str]:
         """
         Create a simple single-slide PPTX file
@@ -193,6 +197,27 @@ class IndividualSlideGenerator:
         try:
             content = slide_content.content if hasattr(slide_content, 'content') else {}
             
+            # Process LOCKED_ placeholders - replace their content with SVG paths
+            from .template_manager import resolve_template_path
+            template_path = resolve_template_path()
+            template_folder = self.get_template_folder_from_path(template_path)
+            
+            if template_folder:
+                content_copy = content.copy()
+                for key in content_copy:
+                    if key.startswith("LOCKED_"):
+                        svg_path = Path(template_folder) / f"{key}.svg"
+                        if svg_path.exists():
+                            # Convert SVG to PNG for PowerPoint insertion
+                            png_path = self._convert_svg_to_png(svg_path)
+                            if png_path:
+                                content[key] = str(png_path)
+                                print(f"🔒 Replacing LOCKED_ placeholder content: {key} -> {png_path}")
+                            else:
+                                print(f"❌ Failed to convert SVG to PNG for {key}")
+                        else:
+                            print(f"⚠️ SVG file not found for {key}: {svg_path}")
+            
             # Debug: Print available content
             print(f"🔍 Individual slide content keys: {list(content.keys())}")
             print(f"🔍 Content details:")
@@ -223,8 +248,16 @@ class IndividualSlideGenerator:
             slide_generator._current_topic = "Individual Slide Generation"
             
             # CRITICAL FIX: Initialize layouts_info for proper placeholder mapping
-            if layouts_info and hasattr(slide_generator, 'content_generator'):
-                slide_generator.content_generator.layouts_info = layouts_info
+            if layouts_info:
+                # Ensure content_generator exists with layouts_info
+                if not hasattr(slide_generator, 'content_generator'):
+                    # Create a simple object to hold layouts_info
+                    class SimpleContentGenerator:
+                        def __init__(self, layouts_info):
+                            self.layouts_info = layouts_info
+                    slide_generator.content_generator = SimpleContentGenerator(layouts_info)
+                else:
+                    slide_generator.content_generator.layouts_info = layouts_info
                 print(f"🔧 Using proven SlideGenerator with layout mapping...")
             else:
                 print(f"🔧 Using proven SlideGenerator with fallback name matching...")
@@ -236,6 +269,9 @@ class IndividualSlideGenerator:
             if html_image_path and os.path.exists(html_image_path):
                 print(f"📸 Inserting HTML rendered image: {html_image_path}")
                 self._insert_html_image_into_slide(slide, html_image_path)
+            
+            # LOCKED backgrounds are now handled by converting SVG to PNG and passing as content
+            # No need for separate locked background detection
             
             print(f"✅ Applied content using proven SlideGenerator methods")
                 
@@ -290,9 +326,14 @@ class IndividualSlideGenerator:
         
         return has_image_extension and looks_like_path
 
-    def _insert_image_into_placeholder(self, placeholder, image_path: str) -> None:
+    def _insert_image_into_placeholder(self, placeholder, image_path: str, preserve_zorder: bool = True) -> None:
         """
         Insert an image file into a picture placeholder by replacing the placeholder
+        
+        Args:
+            placeholder: The placeholder shape to replace
+            image_path: Path to the image file
+            preserve_zorder: Whether to maintain the original z-order position (default: True)
         """
         try:
             # Check if image file exists
@@ -311,6 +352,11 @@ class IndividualSlideGenerator:
             slide = placeholder.part.slide
             shapes = slide.shapes
             
+            # Find placeholder's z-order position if preserving order
+            original_zorder_index = None
+            if preserve_zorder:
+                original_zorder_index = self._find_shape_zorder_index(shapes, placeholder)
+            
             # Find and remove the placeholder
             placeholder_found = False
             for i, shape in enumerate(shapes):
@@ -326,6 +372,11 @@ class IndividualSlideGenerator:
                 
                 # Set the picture name
                 picture.name = f"{name}_image"
+                
+                # Restore z-order position if requested and found
+                if preserve_zorder and original_zorder_index is not None:
+                    self._move_shape_to_zorder_index(shapes, picture, original_zorder_index)
+                    print(f"  → Preserved z-order position {original_zorder_index}")
                 
                 print(f"✅ Individual slide: Inserted image '{image_path}' into picture placeholder")
             else:
@@ -812,7 +863,12 @@ class IndividualSlideGenerator:
         """Replace target shape with source image"""
         try:
             # Get image data from source shape
-            image_part = source_shape.part.related_parts[source_shape._element.blip_rId]
+            # Access the image through the slide part's rels
+            slide_part = source_shape.part
+            blip_rId = source_shape._element.blip_rId
+            
+            # Get the image part from the slide's relationships
+            image_part = slide_part.rels[blip_rId].target_part
             image_bytes = image_part.blob
             
             # Get target shape dimensions and position
@@ -829,8 +885,12 @@ class IndividualSlideGenerator:
                 io.BytesIO(image_bytes), left, top, width, height
             )
             
+            print(f"✅ Successfully replaced image shape in combined presentation")
+            
         except Exception as e:
             logger.warning(f"Failed to replace image shape: {e}")
+            # If we can't get the image data, skip the replacement
+            print(f"⚠️ Could not replace image shape, keeping original placeholder")
 
     def cleanup_temp_files(self):
         """Clean up temporary files"""
@@ -840,3 +900,403 @@ class IndividualSlideGenerator:
             logger.info("Cleaned up temporary slide files")
         except Exception as e:
             logger.error(f"Error cleaning up temp files: {e}")
+    
+    # Z-Order Management Utilities
+    
+    def _find_shape_zorder_index(self, shapes, target_shape) -> Optional[int]:
+        """
+        Find the z-order index of a shape in the slide's shape tree
+        
+        Args:
+            shapes: The slide's shapes collection
+            target_shape: The shape to find
+            
+        Returns:
+            The z-order index (position in _spTree) or None if not found
+        """
+        try:
+            for i, element in enumerate(shapes._spTree):
+                # Compare elements - need to handle different attribute names
+                shape_element = getattr(target_shape, 'element', None)
+                if shape_element is None:
+                    shape_element = getattr(target_shape, '_element', None)
+                if element == shape_element:
+                    return i
+            return None
+        except Exception as e:
+            print(f"Warning: Could not determine z-order index: {e}")
+            return None
+    
+    def _move_shape_to_zorder_index(self, shapes, shape, target_index: int) -> bool:
+        """
+        Move a shape to a specific z-order index
+        
+        Args:
+            shapes: The slide's shapes collection
+            shape: The shape to move
+            target_index: The desired z-order position
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Remove shape from current position
+            shapes._spTree.remove(shape._element)
+            
+            # Insert at target position (clamped to valid range)
+            max_index = len(shapes._spTree)
+            safe_index = max(0, min(target_index, max_index))
+            shapes._spTree.insert(safe_index, shape._element)
+            
+            return True
+        except Exception as e:
+            print(f"Warning: Could not move shape to z-order index {target_index}: {e}")
+            return False
+    
+    def send_shape_to_back(self, slide, shape):
+        """
+        Send a shape behind all other shapes (background layer)
+        
+        Args:
+            slide: The PowerPoint slide
+            shape: The shape to send to back
+        """
+        try:
+            shapes = slide.shapes
+            # Position 2 is typically safe for background (after slide master elements)
+            self._move_shape_to_zorder_index(shapes, shape, 2)
+            print(f"✅ Sent shape '{getattr(shape, 'name', 'unnamed')}' to back")
+        except Exception as e:
+            print(f"❌ Failed to send shape to back: {e}")
+    
+    def bring_shape_to_front(self, slide, shape):
+        """
+        Bring a shape in front of all other shapes (foreground layer)
+        
+        Args:
+            slide: The PowerPoint slide
+            shape: The shape to bring to front
+        """
+        try:
+            shapes = slide.shapes
+            # Move to last position (front)
+            shapes._spTree.remove(shape._element)
+            shapes._spTree.append(shape._element)
+            print(f"✅ Brought shape '{getattr(shape, 'name', 'unnamed')}' to front")
+        except Exception as e:
+            print(f"❌ Failed to bring shape to front: {e}")
+    
+    def move_shape_forward(self, slide, shape):
+        """
+        Move a shape one layer forward (towards front)
+        
+        Args:
+            slide: The PowerPoint slide
+            shape: The shape to move forward
+        """
+        try:
+            shapes = slide.shapes
+            current_index = self._find_shape_zorder_index(shapes, shape)
+            if current_index is not None and current_index < len(shapes._spTree) - 1:
+                self._move_shape_to_zorder_index(shapes, shape, current_index + 1)
+                print(f"✅ Moved shape '{getattr(shape, 'name', 'unnamed')}' forward")
+            else:
+                print(f"Shape '{getattr(shape, 'name', 'unnamed')}' is already at front")
+        except Exception as e:
+            print(f"❌ Failed to move shape forward: {e}")
+    
+    def move_shape_backward(self, slide, shape):
+        """
+        Move a shape one layer backward (towards back)
+        
+        Args:
+            slide: The PowerPoint slide
+            shape: The shape to move backward
+        """
+        try:
+            shapes = slide.shapes
+            current_index = self._find_shape_zorder_index(shapes, shape)
+            if current_index is not None and current_index > 2:  # Don't go behind master elements
+                self._move_shape_to_zorder_index(shapes, shape, current_index - 1)
+                print(f"✅ Moved shape '{getattr(shape, 'name', 'unnamed')}' backward")
+            else:
+                print(f"Shape '{getattr(shape, 'name', 'unnamed')}' is already at back")
+        except Exception as e:
+            print(f"❌ Failed to move shape backward: {e}")
+    
+    # Locked Background System
+    
+    def _detect_and_insert_locked_backgrounds(self, slide, template_folder: str) -> None:
+        """
+        Detect LOCKED_* placeholders and automatically insert corresponding SVG backgrounds
+        
+        Args:
+            slide: PowerPoint slide object
+            template_folder: Path to the template folder containing SVG files
+        """
+        try:
+            # Get the layout to access original placeholder names
+            layout = slide.slide_layout
+            locked_placeholders = []
+            
+            # Build a mapping of idx to layout placeholder name
+            layout_placeholder_names = {}
+            for layout_ph in layout.placeholders:
+                layout_name = getattr(layout_ph, 'name', '')
+                idx = layout_ph.placeholder_format.idx
+                layout_placeholder_names[idx] = layout_name
+                if layout_name.startswith('LOCKED_'):
+                    print(f"🔒 Found LOCKED placeholder in layout: {layout_name} (idx: {idx})")
+            
+            # Find corresponding placeholders in the slide by matching idx
+            for placeholder in slide.placeholders:
+                idx = placeholder.placeholder_format.idx
+                layout_name = layout_placeholder_names.get(idx, '')
+                if layout_name.startswith('LOCKED_'):
+                    locked_placeholders.append((placeholder, layout_name))
+                    print(f"🔒 Matched LOCKED placeholder in slide: {layout_name} (idx: {idx})")
+            
+            if not locked_placeholders:
+                print(f"⚠️ No LOCKED placeholders found in slide")
+                return
+            
+            print(f"🎨 Processing {len(locked_placeholders)} LOCKED placeholders...")
+            
+            # Process each locked placeholder
+            for placeholder, layout_name in locked_placeholders:
+                self._insert_locked_background_with_name(placeholder, layout_name, template_folder)
+                
+        except Exception as e:
+            print(f"❌ Error processing locked backgrounds: {e}")
+    
+    def _insert_locked_background_with_name(self, placeholder, layout_name: str, template_folder: str) -> bool:
+        """
+        Insert SVG background for a specific locked placeholder using layout name
+        
+        Args:
+            placeholder: The placeholder to fill
+            layout_name: The original name from the layout (e.g., "LOCKED_Background_1")
+            template_folder: Path to template folder containing SVG files
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not layout_name.startswith('LOCKED_'):
+                print(f"⚠️ Placeholder {layout_name} is not a locked background")
+                return False
+            
+            # Extract the background file name from placeholder name
+            # LOCKED_Background_1 -> LOCKED_Background_1.svg
+            svg_filename = f"{layout_name}.svg"
+            svg_path = Path(template_folder) / svg_filename
+            
+            if not svg_path.exists():
+                print(f"❌ SVG file not found: {svg_path}")
+                return False
+            
+            print(f"🎨 Inserting locked background: {svg_filename}")
+            
+            # Convert SVG to PNG for PowerPoint insertion
+            png_path = self._convert_svg_to_png(svg_path)
+            if not png_path:
+                print(f"❌ Failed to convert SVG to PNG: {svg_path}")
+                return False
+            
+            # Insert the PNG into the placeholder with z-order preservation
+            self._insert_image_into_placeholder(placeholder, str(png_path), preserve_zorder=True)
+            
+            # Clean up temporary PNG
+            try:
+                Path(png_path).unlink()
+            except:
+                pass
+            
+            print(f"✅ Successfully inserted locked background: {layout_name}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error inserting locked background for {layout_name}: {e}")
+            return False
+    
+    def _insert_locked_background(self, placeholder, template_folder: str) -> bool:
+        """
+        Legacy method - kept for backward compatibility
+        Insert SVG background for a specific locked placeholder
+        
+        Args:
+            placeholder: The LOCKED_* placeholder to fill
+            template_folder: Path to template folder containing SVG files
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        placeholder_name = getattr(placeholder, 'name', '')
+        return self._insert_locked_background_with_name(placeholder, placeholder_name, template_folder)
+    
+    def _convert_svg_to_png(self, svg_path: Path) -> Optional[str]:
+        """
+        Convert SVG file to PNG for PowerPoint insertion
+        
+        Args:
+            svg_path: Path to the SVG file
+            
+        Returns:
+            Path to the generated PNG file, or None if conversion failed
+        """
+        try:
+            # Try different SVG conversion methods
+            
+            # Method 1: Using cairosvg (if available)
+            try:
+                import cairosvg
+                import warnings
+                import os
+                
+                output_path = svg_path.with_suffix('.png')
+                
+                # Suppress pixman warnings on macOS
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore")
+                    # Also redirect stderr temporarily to suppress pixman bug messages
+                    import sys
+                    old_stderr = sys.stderr
+                    try:
+                        # Redirect stderr to devnull
+                        sys.stderr = open(os.devnull, 'w')
+                        cairosvg.svg2png(url=str(svg_path), write_to=str(output_path), dpi=96)
+                    finally:
+                        # Restore stderr
+                        sys.stderr.close()
+                        sys.stderr = old_stderr
+                
+                # Check if the PNG was actually created
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    print(f"  ✅ Converted SVG using cairosvg: {output_path}")
+                    return str(output_path)
+                else:
+                    print(f"  ⚠️ cairosvg produced empty or no file")
+                    
+            except ImportError:
+                pass
+            except Exception as e:
+                print(f"  ⚠️ cairosvg conversion failed: {e}")
+            
+            # Method 2: Using svglib + reportlab (often more reliable on macOS)
+            try:
+                from svglib.svglib import svg2rlg
+                from reportlab.graphics import renderPM
+                
+                output_path = svg_path.with_suffix('.png')
+                drawing = svg2rlg(str(svg_path))
+                renderPM.drawToFile(drawing, str(output_path), fmt="PNG", dpi=96)
+                
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    print(f"  ✅ Converted SVG using svglib: {output_path}")
+                    return str(output_path)
+                    
+            except ImportError:
+                pass
+            except Exception as e:
+                print(f"  ⚠️ svglib conversion failed: {e}")
+            
+            # Method 3: Using Pillow with wand/ImageMagick (if available)
+            try:
+                from PIL import Image
+                import io
+                
+                # Read SVG content
+                with open(svg_path, 'r', encoding='utf-8') as f:
+                    svg_content = f.read()
+                
+                # Try to use wand (ImageMagick) if available
+                try:
+                    from wand.image import Image as WandImage
+                    from wand.color import Color
+                    
+                    with WandImage(blob=svg_content.encode(), format='svg') as img:
+                        img.format = 'png'
+                        img.background_color = Color('transparent')
+                        
+                        output_path = svg_path.with_suffix('.png')
+                        img.save(filename=str(output_path))
+                        print(f"  ✅ Converted SVG using ImageMagick: {output_path}")
+                        return str(output_path)
+                except ImportError:
+                    pass
+                except Exception as e:
+                    print(f"  ⚠️ ImageMagick conversion failed: {e}")
+                
+            except ImportError:
+                pass
+            except Exception as e:
+                print(f"  ⚠️ Pillow conversion failed: {e}")
+            
+            # Method 4: Fallback - create a simple colored rectangle PNG
+            print(f"  ⚠️ No SVG conversion library available, creating fallback PNG...")
+            return self._create_fallback_background_png(svg_path)
+            
+        except Exception as e:
+            print(f"❌ SVG conversion failed completely: {e}")
+            return None
+    
+    def _create_fallback_background_png(self, svg_path: Path) -> Optional[str]:
+        """
+        Create a fallback PNG when SVG conversion is not available
+        
+        Args:
+            svg_path: Original SVG path (for naming)
+            
+        Returns:
+            Path to created PNG file
+        """
+        try:
+            from PIL import Image, ImageDraw
+            
+            # Create a simple background image
+            width, height = 1920, 1080  # Standard slide dimensions
+            img = Image.new('RGB', (width, height), color='#dc261e')  # ekona red
+            draw = ImageDraw.Draw(img)
+            
+            # Add some basic styling
+            draw.rectangle([0, 0, width, 20], fill='#ffffff')
+            draw.rectangle([0, height-20, width, height], fill='#ffffff')
+            
+            # Add text indicator
+            try:
+                draw.text((50, height-60), f"Locked Background: {svg_path.stem}", 
+                         fill='#ffffff', anchor='lm')
+            except:
+                pass
+            
+            output_path = svg_path.with_suffix('.png')
+            img.save(output_path)
+            print(f"  ✅ Created fallback background PNG: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            print(f"❌ Failed to create fallback PNG: {e}")
+            return None
+    
+    def get_template_folder_from_path(self, template_path: str) -> Optional[str]:
+        """
+        Extract template folder path from template file path
+        
+        Args:
+            template_path: Path to the PPTX template file
+            
+        Returns:
+            Path to the template folder containing SVG files
+        """
+        try:
+            template_file = Path(template_path)
+            if template_file.parent.name == 'templates':
+                # Old structure: templates/file.pptx
+                template_name = template_file.stem
+                return str(template_file.parent / template_name)
+            else:
+                # New structure: templates/template_name/file.pptx
+                return str(template_file.parent)
+        except Exception as e:
+            print(f"❌ Error determining template folder: {e}")
+            return None

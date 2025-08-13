@@ -41,6 +41,7 @@ class SlideGenerationState(TypedDict):
     # Input parameters
     topic: str
     template_path: str
+    template_folder_path: Optional[str]  # Path to template folder for locked backgrounds
     output_path: str
     layout_indices: Optional[List[int]]
     title: Optional[str]
@@ -2894,15 +2895,27 @@ class ImagePromptAgent:
                 
             layout_info = layouts_info[layout_index]
             
-            # Check if this layout has picture placeholders
+            # Method 1: Check if this layout has picture placeholders
             has_picture = False
             for placeholder in layout_info.get("placeholders", []):
                 if "Picture" in placeholder.get("name", ""):
                     has_picture = True
                     break
-                    
-            if not has_picture:
+            
+            # Method 2: Check if content describes images (regardless of layout)
+            content_suggests_image = self._slide_content_suggests_image_prompt(slide_content)
+            
+            # Skip if neither layout nor content suggests images
+            if not has_picture and not content_suggests_image:
                 continue
+                
+            # Log detection method
+            if has_picture and content_suggests_image:
+                print(f"  🎯 Slide {i}: Detected image need via both layout and content analysis")
+            elif has_picture:
+                print(f"  🎯 Slide {i}: Detected image need via picture placeholder in layout")
+            else:
+                print(f"  🎯 Slide {i}: Detected image need via content analysis")
                 
             # Get slide context
             slide_spec = slides_list[i] if i < len(slides_list) else None
@@ -2921,6 +2934,78 @@ class ImagePromptAgent:
                 print(f"  📝 Created prompt for slide {i + 1}: {slide_title}")
                 
         return image_prompts
+    
+    def _slide_content_suggests_image_prompt(self, slide_content) -> bool:
+        """
+        Analyze slide content to determine if it describes visual content that needs image generation.
+        This is specifically for the ImagePromptAgent to detect image needs for prompt creation.
+        
+        Args:
+            slide_content: SlideContent object with content dictionary
+            
+        Returns:
+            True if content suggests image generation is needed
+        """
+        try:
+            content = getattr(slide_content, 'content', {})
+            if not content or not isinstance(content, dict):
+                return False
+            
+            # Convert all content values to lowercase text for analysis
+            all_text = ""
+            for key, value in content.items():
+                # Skip background placeholders - they're handled separately
+                if "LOCKED_Background" in key:
+                    continue
+                    
+                if isinstance(value, str):
+                    all_text += value.lower() + " "
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            all_text += item.lower() + " "
+            
+            # Check if any content values mention image-related descriptions
+            # Look for phrases that describe visual scenes or images
+            visual_phrases = [
+                "image of", "picture of", "photo of", "shows a", "displays a",
+                "depicts a", "illustrates a", "features a", "captures a",
+                "view of", "scene of", "visual of", "rendering of",
+                "drawing of", "sketch of", "diagram of", "chart showing"
+            ]
+            
+            # Strong indicators for visual content
+            for phrase in visual_phrases:
+                if phrase in all_text:
+                    print(f"    ✅ ImagePromptAgent: Found visual phrase: '{phrase}'")
+                    return True
+            
+            # Check individual content values for image descriptions
+            for key, value in content.items():
+                if "LOCKED_Background" in key:
+                    continue
+                    
+                if isinstance(value, str) and len(value) > 20:
+                    value_lower = value.lower()
+                    # Look for content that reads like image descriptions
+                    image_indicators = [
+                        "woman", "man", "person", "people", "scene", "setting",
+                        "background", "foreground", "lighting", "composition",
+                        "color palette", "atmosphere", "mood", "style",
+                        "professional", "medical", "healthcare", "business"
+                    ]
+                    
+                    # If content has multiple visual indicators and describes something tangible
+                    indicator_count = sum(1 for indicator in image_indicators if indicator in value_lower)
+                    if indicator_count >= 2:
+                        print(f"    ✅ ImagePromptAgent: Content '{key}' suggests image ({indicator_count} indicators)")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"    ⚠️ ImagePromptAgent: Error analyzing slide content: {e}")
+            return False
     
     def _generate_detailed_image_prompt(
         self, 
@@ -3095,7 +3180,7 @@ class ImageGenerationAgent:
             
     def _identify_image_slides(self, state: SlideGenerationState) -> list[dict]:
         """
-        Identify slides that need image generation (Layout 2).
+        Identify slides that need image generation by checking both layout and content.
         
         Args:
             state: Current workflow state
@@ -3109,15 +3194,23 @@ class ImageGenerationAgent:
         
         for i, slide_content in enumerate(slide_contents):
             layout_index = getattr(slide_content, 'layout_index', None)
+            layout_info = layouts_info.get(layout_index, {}) if layout_index is not None else {}
             
-            # Check if this is Layout 2 (Title and Picture)
-            if layout_index == 2:
-                layout_info = layouts_info.get(layout_index, {})
-                
-                # Find the picture placeholder
+            # Method 1: Check if this is Layout 2 (Title and Picture) 
+            # OR any layout with picture placeholders
+            if layout_index == 2 or any(p.get("type") == 18 for p in layout_info.get("placeholders", [])):
+                # Find the picture placeholder (but skip LOCKED_ ones)
                 picture_placeholder = None
                 for placeholder in layout_info.get("placeholders", []):
-                    if "Picture 16:9" in placeholder.get("name", ""):
+                    placeholder_name = placeholder.get("name", "")
+                    placeholder_type = placeholder.get("type", 0)
+                    
+                    # Skip LOCKED_ placeholders
+                    if "LOCKED_" in placeholder_name:
+                        continue
+                    
+                    # Check for picture placeholder by type or name
+                    if placeholder_type == 18 or "Picture" in placeholder_name:
                         picture_placeholder = placeholder
                         break
                         
@@ -3133,9 +3226,165 @@ class ImageGenerationAgent:
                         "placeholder_description": picture_placeholder.get("name", "Picture 16:9"),
                         "placeholder_width": picture_placeholder.get("width_px", 1200),
                         "placeholder_height": picture_placeholder.get("height_px", 456),
+                        "detection_method": "layout_2_placeholder"
                     })
+                    print(f"  🎯 Slide {i}: Detected image need via Layout 2 placeholder")
+                    
+            # Method 2: Analyze slide content for image descriptions (for any layout)
+            elif self._slide_content_suggests_image(slide_content):
+                # Find any available picture placeholder in the layout
+                picture_placeholder = self._find_any_picture_placeholder(layout_info)
+                
+                if picture_placeholder:
+                    # Get image prompt for this slide
+                    image_prompt = self._get_image_prompt_for_slide(i, state)
+                    
+                    image_slides.append({
+                        "slide_index": i,
+                        "slide_content": slide_content,
+                        "placeholder": picture_placeholder,
+                        "image_prompt": image_prompt,
+                        "placeholder_description": picture_placeholder.get("name", "Picture"),
+                        "placeholder_width": picture_placeholder.get("width_px", 800),
+                        "placeholder_height": picture_placeholder.get("height_px", 600),
+                        "detection_method": "content_analysis"
+                    })
+                    print(f"  🎯 Slide {i}: Detected image need via content analysis")
+                else:
+                    print(f"  ⚠️ Slide {i}: Content suggests image but no picture placeholder found in layout {layout_index}")
                     
         return image_slides
+    
+    def _slide_content_suggests_image(self, slide_content) -> bool:
+        """
+        Analyze slide content to determine if it suggests an image should be generated.
+        
+        Args:
+            slide_content: SlideContent object with content dictionary
+            
+        Returns:
+            True if content suggests image generation is needed
+        """
+        try:
+            content = getattr(slide_content, 'content', {})
+            if not content or not isinstance(content, dict):
+                return False
+            
+            # Convert all content values to lowercase text for analysis
+            all_text = ""
+            for key, value in content.items():
+                if isinstance(value, str):
+                    all_text += value.lower() + " "
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            all_text += item.lower() + " "
+            
+            # Keywords that suggest visual content is being described
+            image_keywords = [
+                "picture", "image", "photo", "illustration", "diagram", "chart", "graph",
+                "visual", "scene", "view", "landscape", "portrait", "showing", "depicts",
+                "displays", "represents", "features", "captures", "shot of", "view of",
+                "example of", "demonstrates", "visualize", "see", "look at", "observe",
+                "appearance", "looks like", "resembles", "design", "mockup", "screenshot",
+                "rendering", "artwork", "drawing", "sketch", "infographic", "poster"
+            ]
+            
+            # Phrases that strongly suggest image descriptions
+            strong_image_phrases = [
+                "a picture of", "an image of", "a photo of", "shows a", "displays a",
+                "features a", "depicts a", "illustrates a", "represents a", "captures a",
+                "a visual of", "a view of", "a scene of", "a diagram of", "a chart showing",
+                "a graph of", "an example of", "a screenshot of", "a rendering of"
+            ]
+            
+            # Check for strong phrases first
+            for phrase in strong_image_phrases:
+                if phrase in all_text:
+                    print(f"    ✅ Found strong image phrase: '{phrase}'")
+                    return True
+            
+            # Check for individual keywords (need multiple matches for confidence)
+            keyword_matches = []
+            for keyword in image_keywords:
+                if keyword in all_text:
+                    keyword_matches.append(keyword)
+            
+            if len(keyword_matches) >= 2:
+                print(f"    ✅ Found multiple image keywords: {keyword_matches[:3]}")
+                return True
+            elif len(keyword_matches) == 1 and len(all_text.split()) < 50:
+                # If content is short and has one image keyword, likely needs image
+                print(f"    ✅ Found image keyword in short content: {keyword_matches[0]}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"    ⚠️ Error analyzing slide content for images: {e}")
+            return False
+    
+    def _find_any_picture_placeholder(self, layout_info: dict):
+        """
+        Find any picture placeholder in the layout info.
+        
+        Args:
+            layout_info: Layout information from template analysis
+            
+        Returns:
+            Picture placeholder dictionary or None if not found
+        """
+        try:
+            placeholders = layout_info.get("placeholders", [])
+            
+            # First, look for actual PICTURE type placeholders (type 18)
+            # BUT skip LOCKED_ placeholders as they're for backgrounds
+            for placeholder in placeholders:
+                placeholder_name = placeholder.get("name", "")
+                placeholder_type = placeholder.get("type", 0)
+                
+                # Skip LOCKED_ placeholders - they're handled by the background system
+                if "LOCKED_" in placeholder_name:
+                    print(f"    🔒 Skipping locked background placeholder: {placeholder_name}")
+                    continue
+                
+                # Check if it's a PICTURE type (type 18)
+                if placeholder_type == 18:  # PP_PLACEHOLDER.PICTURE
+                    print(f"    🖼️ Found picture placeholder by type 18: {placeholder_name}")
+                    return placeholder
+            
+            # Look for placeholders with picture-related names
+            picture_names = [
+                "Picture 16:9", "Picture", "Image", "Photo", "Visual", 
+                "Diagram", "Chart", "Illustration", "Graphic"
+            ]
+            
+            for placeholder in placeholders:
+                placeholder_name = placeholder.get("name", "")
+                
+                # Skip LOCKED_ placeholders
+                if "LOCKED_" in placeholder_name:
+                    continue
+                
+                # Check by name
+                for pic_name in picture_names:
+                    if pic_name.lower() in placeholder_name.lower():
+                        print(f"    🖼️ Found picture placeholder by name: {placeholder_name}")
+                        return placeholder
+            
+            # Fallback: Use content placeholder if available (but not LOCKED_)
+            for placeholder in placeholders:
+                placeholder_name = placeholder.get("name", "")
+                if "LOCKED_" not in placeholder_name and "content" in placeholder_name.lower():
+                    print(f"    🖼️ Using content placeholder as fallback: {placeholder_name}")
+                    return placeholder
+            
+            print(f"    ⚠️ No suitable picture placeholder found in layout")
+            return None
+            
+        except Exception as e:
+            print(f"    ⚠️ Error finding picture placeholder: {e}")
+            return None
         
     def _get_image_prompt_for_slide(self, slide_index: int, state: SlideGenerationState) -> str:
         """
@@ -3154,11 +3403,22 @@ class ImageGenerationAgent:
             print(f"    🎯 Using detailed prompt from ImagePromptAgent")
             return image_prompts[slide_index]
         
-        # Fallback to simple prompt generation
-        print(f"    ⚠️ No detailed prompt available, using fallback")
+        # Fallback to content-based prompt generation
+        print(f"    ⚠️ No detailed prompt available, analyzing slide content for fallback")
         original_topic = state.get('topic', '')
+        slide_contents = state.get('slide_contents', [])
         
-        if original_topic and 'image of' in original_topic.lower():
+        # Try to extract visual description from slide content
+        content_prompt = None
+        if slide_index < len(slide_contents):
+            slide_content = slide_contents[slide_index]
+            content_prompt = self._extract_visual_description_from_content(slide_content)
+        
+        if content_prompt:
+            # Use content-based description
+            base_prompt = content_prompt
+            print(f"    📝 Using content-based prompt: {base_prompt[:50]}...")
+        elif original_topic and 'image of' in original_topic.lower():
             # User specifically requested an image scene
             base_prompt = original_topic
         else:
@@ -3171,6 +3431,86 @@ class ImageGenerationAgent:
         style_prompt = ". Style: modern, professional, clean design with corporate colors (Swiss red #dc261e, dark grey #2d3748). High quality, detailed illustration suitable for business presentation."
         
         return base_prompt + style_prompt
+    
+    def _extract_visual_description_from_content(self, slide_content) -> str:
+        """
+        Extract visual description from slide content for image generation.
+        
+        Args:
+            slide_content: SlideContent object with content dictionary
+            
+        Returns:
+            Visual description string or None if not found
+        """
+        try:
+            content = getattr(slide_content, 'content', {})
+            if not content or not isinstance(content, dict):
+                return None
+            
+            # Combine all text content
+            all_text = ""
+            for key, value in content.items():
+                if isinstance(value, str):
+                    all_text += value + " "
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            all_text += item + " "
+            
+            if not all_text.strip():
+                return None
+            
+            # Look for sentences that describe visual content
+            import re
+            
+            # Find sentences with image-related keywords
+            sentences = re.split(r'[.!?]+', all_text)
+            visual_sentences = []
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                    
+                lower_sentence = sentence.lower()
+                
+                # Strong indicators for visual descriptions
+                visual_indicators = [
+                    "picture", "image", "photo", "shows", "displays", "depicts",
+                    "illustrates", "represents", "features", "captures", "view",
+                    "scene", "visual", "diagram", "chart", "graph", "design"
+                ]
+                
+                if any(indicator in lower_sentence for indicator in visual_indicators):
+                    visual_sentences.append(sentence)
+            
+            if visual_sentences:
+                # Use the most descriptive sentence
+                longest_sentence = max(visual_sentences, key=len)
+                
+                # Clean up the sentence for image generation
+                description = longest_sentence.strip()
+                
+                # Remove common presentation text
+                cleanup_patterns = [
+                    r'^This slide (shows|displays|features|contains)',
+                    r'^The slide (shows|displays|features|contains)',
+                    r'^Here we (see|have|show)',
+                    r'^This is a',
+                    r'^This shows?',
+                ]
+                
+                for pattern in cleanup_patterns:
+                    description = re.sub(pattern, '', description, flags=re.IGNORECASE).strip()
+                
+                if description and len(description) > 10:
+                    return description
+            
+            return None
+            
+        except Exception as e:
+            print(f"    ⚠️ Error extracting visual description: {e}")
+            return None
         
     def _generate_images_parallel(
         self, state: SlideGenerationState, image_slides: list[dict]

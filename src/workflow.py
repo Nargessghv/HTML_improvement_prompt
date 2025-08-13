@@ -212,6 +212,7 @@ class SlideGenerationWorkflow:
         output_path: str,
         approved_outline: Dict[str, Any],
         title: Optional[str] = None,
+        template_folder_path: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
     ) -> Dict[str, Any]:
         """
@@ -320,6 +321,7 @@ class SlideGenerationWorkflow:
             initial_state: SlideGenerationState = {
                 "topic": topic,
                 "template_path": template_path,
+                "template_folder_path": template_folder_path,
                 "output_path": output_path,
                 "layout_indices": None,
                 "title": title,
@@ -470,6 +472,7 @@ class SlideGenerationWorkflow:
         config: Optional[RunnableConfig] = None,
         title: Optional[str] = None,
         approved_outline: Optional[Dict[str, Any]] = None,
+        template_folder_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute the complete slide generation workflow
@@ -511,6 +514,7 @@ class SlideGenerationWorkflow:
         initial_state: SlideGenerationState = {
             "topic": topic,
             "template_path": template_path,
+            "template_folder_path": template_folder_path,
             "output_path": output_path,
             "layout_indices": layout_indices,
             "title": title,
