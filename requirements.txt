@@ -37,6 +37,10 @@ cairosvg>=2.5.0
 # Image processing for DPI metadata
 Pillow>=10.0.0
 
+# PPTX to Image Conversion
+aspose-slides>=25.7.0  # For PPTX to PNG conversion
+pdf2image>=1.16.0  # Alternative PPTX to image via PDF
+
 # Lucide Static Icons (commented out - not available in PyPI)
 # lucide-static  # For icon management
 

@@ -172,11 +172,39 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
     if (project.status === 'processing' || project.status === 'completed') {
       fetchSlideProgress()
 
-      // Set up polling for slide progress
-      const slideProgressInterval = setInterval(fetchSlideProgress, 15000)
+      // Set up real-time subscription for slides to track progress
+      let slideSubscription: any = null
+      let slideProgressInterval: NodeJS.Timeout | null = null
+
+      try {
+        slideSubscription = supabase
+          .channel(`slides-progress-${project.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'slides',
+              filter: `project_id=eq.${project.id}`
+            },
+            () => {
+              fetchSlideProgress() // Refresh progress when slides change
+            }
+          )
+          .subscribe()
+      } catch (error) {
+        console.warn('Real-time slide subscription failed, using polling fallback')
+        // Fallback to polling only if real-time fails, and at a slower rate
+        slideProgressInterval = setInterval(fetchSlideProgress, 30000) // 30 seconds instead of 15
+      }
       
       return () => {
-        clearInterval(slideProgressInterval)
+        if (slideSubscription) {
+          slideSubscription.unsubscribe()
+        }
+        if (slideProgressInterval) {
+          clearInterval(slideProgressInterval)
+        }
       }
     }
   }, [project?.id, user, supabase, project.status])

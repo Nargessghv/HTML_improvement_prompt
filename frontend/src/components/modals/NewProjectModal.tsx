@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -25,11 +25,9 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
-import { Loader2, Sparkles, FileText, Lightbulb, Target, Users, Zap } from 'lucide-react'
+import { Loader2, Sparkles, FileText } from 'lucide-react'
 
 const projectSchema = z.object({
   title: z.string()
@@ -37,10 +35,21 @@ const projectSchema = z.object({
     .max(100, 'Title must be less than 100 characters'),
   topic: z.string()
     .min(20, 'Topic description must be at least 20 characters')
-    .max(1000, 'Topic description must be less than 1000 characters'),
+    .max(5000, 'Topic description must be less than 5000 characters'),
+  templateName: z.string().optional(),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
+
+interface Template {
+  filename: string
+  name: string
+  display_name: string
+  size_mb: number
+  slide_count: number
+  is_valid: boolean
+  error_message?: string
+}
 
 interface NewProjectModalProps {
   open: boolean
@@ -52,12 +61,15 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
   const router = useRouter()
   const { user, supabase } = useSupabaseAuth()
   const [isCreating, setIsCreating] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
       title: '',
       topic: initialTopic || '',
+      templateName: 'auto',
     },
   })
 
@@ -68,6 +80,38 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
     }
   }, [initialTopic, form])
 
+  // Load templates when modal opens
+  const loadTemplates = useCallback(async () => {
+    if (!user) return
+    
+    setLoadingTemplates(true)
+    try {
+      const response = await fetch('http://localhost:8000/templates', {
+        headers: {
+          'Authorization': `Bearer dummy-token`, // Backend doesn't validate tokens yet
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch templates')
+      }
+      
+      const data = await response.json()
+      setTemplates(data.templates?.filter((t: Template) => t.is_valid) || [])
+    } catch (error) {
+      console.error('Error loading templates:', error)
+      toast.error('Failed to load templates')
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (open && user) {
+      loadTemplates()
+    }
+  }, [open, user, loadTemplates])
+
   const onSubmit = async (data: ProjectFormData) => {
     if (!user) {
       toast.error('You must be logged in to create a project')
@@ -77,14 +121,18 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
     setIsCreating(true)
     
     try {
-      // Create project in Supabase
+      // Create project in Supabase with template selection
       const { data: project, error } = await supabase
         .from('projects')
         .insert({
           user_id: user.id,
           title: data.title,
           topic: data.topic,
-          status: 'draft'
+          status: 'draft',
+          // Store template selection in metadata for now
+          metadata: {
+            template_name: data.templateName === 'auto' ? undefined : data.templateName
+          }
         })
         .select()
         .single()
@@ -161,16 +209,59 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                     <div className="relative">
                       <Textarea
                         placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included."
-                        className="min-h-[120px] focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30 resize-none"
+                        className="min-h-[120px] max-h-[300px] focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30 resize-none overflow-y-auto"
                         {...field}
                       />
                       <div className="absolute bottom-2 right-2 text-xs text-gray-400 dark:text-gray-500">
-                        {field.value.length}/1000
+                        {field.value.length}/5000
                       </div>
                     </div>
                   </FormControl>
                   <FormDescription>
                     Be specific about your content needs. More details help our AI create better presentations.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="templateName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Presentation Template</FormLabel>
+                  <FormControl>
+                    <Select 
+                      value={field.value} 
+                      onValueChange={field.onChange}
+                      disabled={loadingTemplates}
+                    >
+                      <SelectTrigger className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30">
+                        <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Auto-select (recommended)"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium">Auto-select</span>
+                            <span className="text-xs text-gray-500">Use the default template</span>
+                          </div>
+                        </SelectItem>
+                        {templates.map((template) => (
+                          <SelectItem key={template.filename} value={template.filename}>
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">{template.display_name}</span>
+                              <span className="text-xs text-gray-500">
+                                {template.slide_count} slides • {template.size_mb.toFixed(1)} MB
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormDescription>
+                    Choose a PowerPoint template for your presentation, or let us auto-select the best one.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

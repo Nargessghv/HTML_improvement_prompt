@@ -461,6 +461,10 @@ class ParallelSlideWorkflow:
                     "html_content": slide_state.html_content,
                     "refined_html": slide_state.refined_html
                 })
+                
+                # Store the main slide content when completed
+                if slide_state.slide_content and hasattr(slide_state.slide_content, 'content'):
+                    update_data["content"] = slide_state.slide_content.content
             elif status == SlideStatus.FAILED:
                 # Store error in metadata
                 current_content = slide_state.slide_spec.copy()

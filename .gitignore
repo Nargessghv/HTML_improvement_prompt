@@ -58,7 +58,7 @@ package-lock.json
 generated_presentations/
 dist/
 *.pptx
-!ekona_slides_template_new.pptx
+!templates/*.pptx
 
 # Logs
 *.log

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { SlidePreviewModal } from './SlidePreviewModal'
+import { RefinementModal } from '@/components/refinement/RefinementModal'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -14,7 +15,8 @@ import {
   AlertTriangle,
   Play,
   Eye,
-  Download
+  Download,
+  Sparkles
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -114,6 +116,7 @@ const statusConfig = {
 
 export function SlideCard({ slide, projectId, isParallelProcessing = false }: SlideCardProps) {
   const [showPreview, setShowPreview] = useState(false)
+  const [showRefinement, setShowRefinement] = useState(false)
   // Show skeleton if slide is null (loading state)
   if (!slide) {
     return (
@@ -203,6 +206,18 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
                 >
                   <Eye className="w-3 h-3" />
                 </Button>
+                {/* Show refinement button if slide has HTML content */}
+                {(slide.html_content || slide.refined_html) && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 w-6 p-0 hover:bg-purple-100 dark:hover:bg-purple-900"
+                    onClick={(e) => { e.stopPropagation(); setShowRefinement(true); }}
+                    title="View HTML refinements"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                  </Button>
+                )}
                 <Button 
                   variant="ghost" 
                   size="sm" 
@@ -272,12 +287,24 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
           
           {isCompleted && (
             <div className="space-y-3">
-              {slide.processing_time_seconds && (
-                <div className="flex items-center text-sm text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0" />
-                  <span>Completed in {slide.processing_time_seconds}s</span>
-                </div>
-              )}
+              <div className="flex items-center justify-between">
+                {slide.processing_time_seconds && (
+                  <div className="flex items-center text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span>Completed in {slide.processing_time_seconds}s</span>
+                  </div>
+                )}
+                
+                {/* HTML Content Indicator */}
+                {(slide.html_content || slide.refined_html) && (
+                  <div className="flex items-center gap-1">
+                    <Badge variant="outline" className="text-xs px-2 py-0.5 bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-950 dark:border-purple-800 dark:text-purple-300">
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      HTML
+                    </Badge>
+                  </div>
+                )}
+              </div>
               
               {/* Show a preview of the slide content */}
               <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
@@ -329,14 +356,24 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
         )}
       </CardContent>
 
-      {/* Preview Modal */}
+      {/* Modals */}
       {projectId && (
-        <SlidePreviewModal
-          slide={slide}
-          projectId={projectId}
-          isOpen={showPreview}
-          onClose={() => setShowPreview(false)}
-        />
+        <>
+          <SlidePreviewModal
+            slide={slide}
+            projectId={projectId}
+            isOpen={showPreview}
+            onClose={() => setShowPreview(false)}
+          />
+          {(slide.html_content || slide.refined_html) && (
+            <RefinementModal
+              open={showRefinement}
+              onOpenChange={setShowRefinement}
+              projectId={projectId}
+              slideId={slide.id}
+            />
+          )}
+        </>
       )}
     </Card>
   )

@@ -51,8 +51,8 @@ Examples:
     parser.add_argument(
         "--template",
         "-t",
-        help="Path to PowerPoint template file",
-        default="ekona_slides_template_new.pptx",
+        help="Path to PowerPoint template file (auto-selects from templates/ if not provided)",
+        default=None,
     )
 
     parser.add_argument(
@@ -295,9 +295,10 @@ async def generate_presentation_with_parallel_refinement(
     print("🚀 Starting slide generation with parallel HTML refinement...")
     print(f"📋 Topic: {topic}")
 
-    # Use default template if not specified
+    # Resolve template if not specified
     if not template_path:
-        template_path = "ekona_slides_template_new.pptx"  # Default template
+        from .template_manager import resolve_template_path
+        template_path = resolve_template_path()
     print(f"📁 Template: {template_path}")
 
     # Generate output path if not specified

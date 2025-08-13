@@ -85,11 +85,13 @@ class SlideGenerationConfig:
     llm: LLMConfig
     monitoring: MonitoringConfig
     agents: AgentConfig
-    default_template: str = "ekona_slides_template_new.pptx"
+    templates_directory: str = "templates"
+    default_template: Optional[str] = None  # Will auto-select first available template
     output_directory: str = "generated_presentations"
 
     def __post_init__(self):
         """Set defaults from environment"""
+        self.templates_directory = os.getenv("TEMPLATES_DIRECTORY", self.templates_directory)
         self.default_template = os.getenv("DEFAULT_TEMPLATE", self.default_template)
         self.output_directory = os.getenv("OUTPUT_DIRECTORY", self.output_directory)
 
@@ -128,9 +130,21 @@ def validate_config(config: SlideGenerationConfig) -> List[str]:
     else:
         messages.append("✅ Langfuse monitoring enabled")
 
-    # Check template file
-    if not os.path.exists(config.default_template):
-        messages.append(f"⚠️  Default template not found: {config.default_template}")
+    # Check templates directory
+    if not os.path.exists(config.templates_directory):
+        messages.append(f"⚠️  Templates directory not found: {config.templates_directory}")
+    else:
+        from .template_manager import get_template_manager
+        try:
+            manager = get_template_manager()
+            templates = manager.list_templates()
+            valid_templates = [t for t in templates if t.is_valid]
+            if valid_templates:
+                messages.append(f"✅ Found {len(valid_templates)} valid template(s)")
+            else:
+                messages.append(f"⚠️  No valid templates found in {config.templates_directory}")
+        except Exception as e:
+            messages.append(f"❌ Template validation error: {e}")
 
     # Check output directory
     if not os.path.exists(config.output_directory):
@@ -167,7 +181,8 @@ def print_config_status():
     print(f"   Parallel Processing: {parallel_status}")
 
     print("\n📁 Paths:")
-    print(f"   Template: {config.default_template}")
+    print(f"   Templates Dir: {config.templates_directory}")
+    print(f"   Default Template: {config.default_template if config.default_template else 'Auto-select'}")
     print(f"   Output: {config.output_directory}")
 
     print("\n📋 Validation:")
@@ -198,7 +213,8 @@ AGENT_PARALLEL=false
 AGENT_VALIDATION=true
 
 # File Paths
-DEFAULT_TEMPLATE=ekona_slides_template_new.pptx
+TEMPLATES_DIRECTORY=templates
+DEFAULT_TEMPLATE=  # Leave empty to auto-select first available template
 OUTPUT_DIRECTORY=generated_presentations
 
 # HTML Debug Configuration

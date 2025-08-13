@@ -1279,7 +1279,7 @@ class SlideGenerationWorkflow:
 # Convenience function for easy workflow execution
 def create_presentation_with_agents(
     topic: str,
-    template_path: str = "ekona_slides_template_new.pptx",
+    template_path: Optional[str] = None,
     output_path: str = "generated_presentation",
     layout_indices: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
@@ -1288,13 +1288,18 @@ def create_presentation_with_agents(
 
     Args:
         topic: Presentation topic
-        template_path: Path to PowerPoint template
+        template_path: Path to PowerPoint template (optional, will auto-select if None)
         output_path: Output path for generated presentation
         layout_indices: Optional specific layouts to use
 
     Returns:
         Dictionary with creation results and metadata
     """
+    # Resolve template path if not provided
+    if template_path is None:
+        from .template_manager import resolve_template_path
+        template_path = resolve_template_path()
+    
     workflow = SlideGenerationWorkflow()
 
     return workflow.run(

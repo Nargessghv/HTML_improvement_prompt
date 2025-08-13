@@ -52,9 +52,10 @@ interface RefinementModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
+  slideId?: string  // Optional: if provided, show only this slide's refinements
 }
 
-export function RefinementModal({ open, onOpenChange, projectId }: RefinementModalProps) {
+export function RefinementModal({ open, onOpenChange, projectId, slideId }: RefinementModalProps) {
   const { supabase, user } = useSupabaseAuth()
   const [slides, setSlides] = useState<Slide[]>([])
   const [refinements, setRefinements] = useState<Record<string, RefinementIteration[]>>({})
@@ -120,12 +121,20 @@ export function RefinementModal({ open, onOpenChange, projectId }: RefinementMod
     try {
       setIsLoading(true)
       
-      // Fetch slides for this project
-      const { data: slidesData, error: slidesError } = await supabase
+      // Build slides query
+      let slidesQuery = supabase
         .from('slides')
         .select('*')
         .eq('project_id', projectId)
-        .order('slide_number', { ascending: true })
+      
+      // If slideId is provided, fetch only that slide
+      if (slideId) {
+        slidesQuery = slidesQuery.eq('id', slideId)
+      }
+      
+      slidesQuery = slidesQuery.order('slide_number', { ascending: true })
+      
+      const { data: slidesData, error: slidesError } = await slidesQuery
 
       if (slidesError) {
         console.error('Error fetching slides:', slidesError)
@@ -135,12 +144,20 @@ export function RefinementModal({ open, onOpenChange, projectId }: RefinementMod
 
       setSlides(slidesData || [])
 
-      // Fetch all refinements for this project
-      const { data: refinementsData, error: refinementsError } = await supabase
+      // Build refinements query
+      let refinementsQuery = supabase
         .from('html_refinements')
         .select('*')
         .eq('project_id', projectId)
-        .order('iteration_number', { ascending: true })
+      
+      // If slideId is provided, fetch only refinements for that slide
+      if (slideId) {
+        refinementsQuery = refinementsQuery.eq('slide_id', slideId)
+      }
+      
+      refinementsQuery = refinementsQuery.order('iteration_number', { ascending: true })
+      
+      const { data: refinementsData, error: refinementsError } = await refinementsQuery
 
       if (refinementsError) {
         console.error('Error fetching refinements:', refinementsError)
@@ -160,10 +177,15 @@ export function RefinementModal({ open, onOpenChange, projectId }: RefinementMod
 
       setRefinements(grouped)
       
-      // Auto-select first slide with refinements
-      const firstSlideWithRefinements = slidesData?.find(slide => grouped[slide.id]?.length > 0)
-      if (firstSlideWithRefinements && !selectedSlide) {
-        setSelectedSlide(firstSlideWithRefinements.id)
+      // If slideId is provided, auto-select it
+      if (slideId && grouped[slideId]) {
+        setSelectedSlide(slideId)
+      } else {
+        // Auto-select first slide with refinements
+        const firstSlideWithRefinements = slidesData?.find(slide => grouped[slide.id]?.length > 0)
+        if (firstSlideWithRefinements && !selectedSlide) {
+          setSelectedSlide(firstSlideWithRefinements.id)
+        }
       }
 
     } catch (error) {

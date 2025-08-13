@@ -546,6 +546,7 @@ class SupabaseClient:
     def create_html_refinement(self, project_id: str, slide_id: str, iteration_number: int,
                               html_content: str, html_file_url: Optional[str] = None,
                               image_file_url: Optional[str] = None, 
+                              pptx_file_url: Optional[str] = None,
                               refinement_feedback: Optional[str] = None,
                               refinement_prompt: Optional[str] = None,
                               is_final: bool = False) -> Dict[str, Any]:
@@ -573,6 +574,8 @@ class SupabaseClient:
             refinement_data["html_file_url"] = html_file_url
         if image_file_url:
             refinement_data["image_file_url"] = image_file_url
+        if pptx_file_url:
+            refinement_data["pptx_file_url"] = pptx_file_url
         if refinement_feedback:
             refinement_data["refinement_feedback"] = refinement_feedback
         if refinement_prompt:

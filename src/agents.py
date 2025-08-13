@@ -1664,7 +1664,7 @@ class HTMLRefinementAgent:
             print(f"  ❌ Error during image compression: {e}")
             return True  # Return True to continue processing even if compression fails
     
-    def _track_refinement_in_supabase(self, project_id: str, slide_id: str, iteration: int,
+    async def _track_refinement_in_supabase(self, project_id: str, slide_id: str, iteration: int,
                                     html_content: str, image_path: Path, 
                                     refinement_feedback: Optional[str] = None,
                                     refinement_prompt: Optional[str] = None,
@@ -1695,6 +1695,20 @@ class HTMLRefinementAgent:
                 project_id, slide_id, iteration, html_content, image_path
             )
             
+            # Generate PPTX version for this refinement iteration
+            pptx_url = None
+            try:
+                print(f"  📄 Generating PPTX version for iteration {iteration}...")
+                pptx_url = await self._create_pptx_version(
+                    project_id, slide_id, iteration, html_content, image_path
+                )
+                if pptx_url:
+                    print(f"  ✅ PPTX version created: {pptx_url}")
+                else:
+                    print(f"  ⚠️ Failed to create PPTX version for iteration {iteration}")
+            except Exception as e:
+                print(f"  ⚠️ Error creating PPTX version: {e}")
+            
             # Create database record for this refinement iteration
             refinement_record = self.db_client.create_html_refinement(
                 project_id=project_id,
@@ -1703,6 +1717,7 @@ class HTMLRefinementAgent:
                 html_content=html_content,
                 html_file_url=html_url,
                 image_file_url=image_url,
+                pptx_file_url=pptx_url,
                 refinement_feedback=refinement_feedback,
                 refinement_prompt=refinement_prompt,
                 is_final=is_final
@@ -1713,6 +1728,106 @@ class HTMLRefinementAgent:
             
         except Exception as e:
             print(f"  ⚠️ Failed to track refinement in Supabase: {e}")
+            return None
+
+    async def _create_pptx_version(self, project_id: str, slide_id: str, iteration: int, 
+                                 html_content: str, image_path: Path) -> Optional[str]:
+        """
+        Create a PPTX version for a specific refinement iteration
+        
+        Args:
+            project_id: Project UUID
+            slide_id: Slide UUID 
+            iteration: Refinement iteration number
+            html_content: HTML content to render
+            image_path: Path to the rendered image file
+            
+        Returns:
+            Supabase Storage URL of the created PPTX file, or None if failed
+        """
+        try:
+            # Import the individual slide generator
+            from .individual_slide_generator import IndividualSlideGenerator
+            from .llm_models import SlideContent
+            
+            # Get slide data from database to understand layout and content structure
+            slide_data = self.db_client.get_slide_details(slide_id)
+            if not slide_data:
+                print(f"    ❌ Could not find slide data for slide_id {slide_id}")
+                return None
+            
+            # Create a SlideContent object with the refined HTML
+            slide_content = SlideContent(
+                title=slide_data.get('title', 'Untitled'),
+                content={
+                    # Replace any existing HTML content with the refined version
+                    'main_content': html_content,
+                    'html_visualization': html_content
+                },
+                layout_index=slide_data.get('layout_index', 0)
+            )
+            
+            # Get project data to find template path
+            project_data = self.db_client.get_project(project_id)
+            if not project_data:
+                print(f"    ❌ Could not find project data for project_id {project_id}")
+                return None
+            
+            # Resolve template path
+            from .template_manager import resolve_template_path
+            template_path = resolve_template_path()
+            
+            # Create slide generator instance
+            slide_generator = IndividualSlideGenerator()
+            
+            # Create a unique filename for this PPTX version
+            import uuid
+            version_filename = f"slide_{slide_data.get('slide_number', 1):02d}_v{iteration}_{uuid.uuid4().hex[:8]}.pptx"
+            
+            # Generate the individual PPTX slide
+            result = await slide_generator.generate_individual_slide(
+                slide_id=slide_id,
+                project_id=project_id,
+                slide_content=slide_content,
+                template_path=template_path,
+                slide_number=slide_data.get('slide_number', 1),
+                layouts_info={},  # Will be populated by the generator
+                dynamic_models={},  # Will be populated by the generator
+                html_image_path=str(image_path)  # Pass the rendered image path
+            )
+            
+            if not result or not result.get('success'):
+                print(f"    ❌ Failed to generate PPTX: {result.get('error', 'Unknown error')}")
+                return None
+            
+            # Upload PPTX to Supabase Storage
+            pptx_path = result.get('file_path')
+            if not pptx_path or not os.path.exists(pptx_path):
+                print(f"    ❌ PPTX file not found at: {pptx_path}")
+                return None
+            
+            # Upload to storage with version-specific path
+            storage_path = f"projects/{project_id}/slides/{slide_id}/versions/{version_filename}"
+            pptx_url = self.storage_client.upload_file(
+                file_path=pptx_path,
+                storage_path=storage_path,
+                content_type='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            )
+            
+            if pptx_url:
+                print(f"    ✅ PPTX version uploaded to: {pptx_url}")
+                # Clean up local file
+                try:
+                    os.remove(pptx_path)
+                except:
+                    pass
+            else:
+                print(f"    ❌ Failed to upload PPTX to storage")
+            
+            return pptx_url
+            
+        except Exception as e:
+            print(f"    ❌ Error creating PPTX version: {e}")
             return None
     
     def _get_or_create_slide_id(self, project_id: str, slide_index: int, slide_content: Any) -> Optional[str]:
@@ -2236,7 +2351,7 @@ class HTMLRefinementAgent:
                 
                 # Track the updated HTML in Supabase
                 if project_id and slide_id:
-                    self._track_refinement_in_supabase(
+                    await self._track_refinement_in_supabase(
                         project_id, slide_id, iteration, current_html, image_path,
                         refinement_feedback, refinement_prompt, is_final=False
                     )
@@ -2248,7 +2363,7 @@ class HTMLRefinementAgent:
                 
                 # Mark this as the final refinement
                 if project_id and slide_id:
-                    self._track_refinement_in_supabase(
+                    await self._track_refinement_in_supabase(
                         project_id, slide_id, iteration, current_html, image_path,
                         refinement_feedback, refinement_prompt, is_final=True
                     )

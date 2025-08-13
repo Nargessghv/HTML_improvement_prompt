@@ -249,6 +249,7 @@ class ProjectCreateRequest(BaseModel):
     topic: str = Field(..., min_length=1)
     project_id: Optional[str] = None  # For starting workflow on existing project
     approved_outline: Optional[Dict[str, Any]] = None  # Approved outline from interactive planning
+    template_name: Optional[str] = None  # PowerPoint template to use
 
 class ProjectResponse(BaseModel):
     id: str
@@ -725,7 +726,8 @@ async def create_or_start_project(
             project["id"], 
             project["topic"],  # Use topic from database
             user.id,
-            request.approved_outline  # Pass approved outline to workflow
+            request.approved_outline,  # Pass approved outline to workflow
+            request.template_name  # Pass template selection
         )
         
         api_logger.info(f"Workflow background task started for project: {project['id']}")
@@ -1032,7 +1034,8 @@ async def restart_project_workflow(
             project_id,
             project["topic"],
             user.id,
-            None  # No approved outline for restart
+            None,  # No approved outline for restart
+            None   # Use default template for restart
         )
         
         return {"message": "Workflow restarted", "project_id": project_id}
@@ -1471,7 +1474,7 @@ async def get_project_chat_sessions(
         raise HTTPException(status_code=500, detail=f"Error getting chat sessions: {str(e)}")
 
 # Background task function
-async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str, approved_outline: Optional[Dict[str, Any]] = None):
+async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str, approved_outline: Optional[Dict[str, Any]] = None, template_name: Optional[str] = None):
     """Background task to run the slide generation workflow"""
     try:
         # Get project details from database (in case title/topic were updated)
@@ -1483,6 +1486,12 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         # Use the actual topic from the database
         actual_topic = project.get("topic", topic)
         api_logger.info(f"Starting workflow for project {project_id} with topic: {actual_topic[:100]}...")
+        
+        # Extract template selection from project metadata if not provided
+        if not template_name:
+            metadata = project.get("metadata", {})
+            if isinstance(metadata, dict):
+                template_name = metadata.get("template_name")
         
         # Update project status to processing
         db.update_project_status(project_id, "processing")
@@ -1500,7 +1509,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         workflow = SlideGenerationWorkflow()
         
         # Set up paths
-        template_path = "ekona_slides_template_new.pptx"
+        from .template_manager import resolve_template_path
+        template_path = resolve_template_path(template_name)
         output_path = f"generated_presentations/project_{project_id}"
         
         # Create enhanced callback with real-time updates
@@ -1720,6 +1730,123 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
             status="failed",
             data={"error": str(e), "agent": "workflow_error"}
         )
+
+# Template Management Endpoints
+
+@app.get("/templates")
+async def get_templates():
+    """Get list of available PowerPoint templates"""
+    try:
+        from .template_manager import list_available_templates
+        
+        templates = list_available_templates()
+        
+        return {
+            "templates": [
+                {
+                    "filename": template.filename,
+                    "name": template.name,
+                    "display_name": template.display_name,
+                    "size_mb": round(template.size_mb, 2),
+                    "slide_count": template.slide_count,
+                    "is_valid": template.is_valid,
+                    "error_message": template.error_message
+                }
+                for template in templates
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting templates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/templates/default")
+async def get_default_template():
+    """Get the default template path"""
+    try:
+        from .template_manager import get_template_manager
+        
+        manager = get_template_manager()
+        default_path = manager.get_default_template()
+        
+        if not default_path:
+            raise HTTPException(
+                status_code=404, 
+                detail="No valid templates found"
+            )
+        
+        # Extract template info
+        templates = manager.list_templates()
+        default_template = next(
+            (t for t in templates if t.path == default_path),
+            None
+        )
+        
+        if not default_template:
+            raise HTTPException(
+                status_code=404,
+                detail="Default template not found in template list"
+            )
+        
+        return {
+            "filename": default_template.filename,
+            "name": default_template.name,
+            "display_name": default_template.display_name,
+            "path": default_template.path,
+            "size_mb": round(default_template.size_mb, 2),
+            "slide_count": default_template.slide_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting default template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/templates/validate")
+async def validate_template_endpoint(template_name: str = None):
+    """Validate a specific template or all templates"""
+    try:
+        from .template_manager import get_template_manager
+        
+        manager = get_template_manager()
+        
+        if template_name:
+            # Validate specific template
+            template_path = manager.get_template_path(template_name)
+            if not template_path:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Template '{template_name}' not found"
+                )
+            
+            is_valid = manager.validate_template(template_path)
+            return {
+                "template_name": template_name,
+                "is_valid": is_valid,
+                "path": template_path
+            }
+        else:
+            # Validate all templates
+            templates = manager.list_templates()
+            return {
+                "validation_results": [
+                    {
+                        "filename": template.filename,
+                        "is_valid": template.is_valid,
+                        "error_message": template.error_message
+                    }
+                    for template in templates
+                ]
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error validating template(s): {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

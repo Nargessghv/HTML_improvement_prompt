@@ -127,65 +127,88 @@ export function SlidesGrid({
   useEffect(() => {
     fetchSlides()
 
-    // Set up auto-refresh interval for processing projects
+    // Set up auto-refresh interval for processing projects (reduced from 20s to 60s as fallback only)
     let refreshInterval: NodeJS.Timeout | null = null
     let isSubscribed = true
+    let realtimeWorking = false
 
-    if (autoRefreshEnabled && (projectStatus === 'processing' || projectStatus === 'completed')) {
-      refreshInterval = setInterval(() => {
-        if (isSubscribed) {
-          fetchSlides()
+    // Only use polling as a fallback if real-time is not working
+    const setupPollingFallback = () => {
+      if (autoRefreshEnabled && (projectStatus === 'processing') && !realtimeWorking) {
+        refreshInterval = setInterval(() => {
+          if (isSubscribed) {
+            console.log('Using polling fallback for slides refresh')
+            fetchSlides()
+          }
+        }, 60000) // Refresh slides every 60 seconds instead of 20
+      }
+    }
+
+    // Set up real-time subscription first
+    let slideSubscription: any = null
+    try {
+      slideSubscription = supabase
+        .channel(`slides-grid-${projectId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'slides',
+            filter: `project_id=eq.${projectId}`
+          },
+          (payload) => {
+            realtimeWorking = true
+            // Clear polling since real-time is working
+            if (refreshInterval) {
+              clearInterval(refreshInterval)
+              refreshInterval = null
+            }
+            
+            if (payload.eventType === 'INSERT') {
+              setSlides(prev => [...prev, payload.new as Slide].sort((a, b) => a.slide_number - b.slide_number))
+            } else if (payload.eventType === 'UPDATE') {
+              setSlides(prev => 
+                prev.map(slide => 
+                  slide.id === payload.new.id ? payload.new as Slide : slide
+                )
+              )
+            } else if (payload.eventType === 'DELETE') {
+              setSlides(prev => prev.filter(slide => slide.id !== payload.old.id))
+            }
+
+            // Update progress when slides change in parallel processing mode
+            if (isParallelProcessing) {
+              fetchSlideProgress()
+            }
+          }
+        )
+        .subscribe()
+
+      // Give real-time subscription a chance to connect, then setup polling fallback
+      setTimeout(() => {
+        if (isSubscribed && !realtimeWorking) {
+          console.warn('Real-time subscription may not be working, setting up polling fallback')
+          setupPollingFallback()
         }
-      }, 20000) // Refresh slides every 20 seconds
+      }, 5000)
+    } catch (error) {
+      console.warn('Real-time subscription setup failed, using polling fallback', error)
+      setupPollingFallback()
     }
 
     return () => {
       isSubscribed = false
+      realtimeWorking = false
       if (refreshInterval) {
         clearInterval(refreshInterval)
+      }
+      if (slideSubscription) {
+        slideSubscription.unsubscribe()
       }
     }
   }, [projectId, user, supabase, isParallelProcessing, autoRefreshEnabled, projectStatus])
 
-  // Set up real-time subscription for slides
-  useEffect(() => {
-    if (!projectId || !user) return
-
-    const subscription = supabase
-      .channel(`slides-${projectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'slides',
-          filter: `project_id=eq.${projectId}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setSlides(prev => [...prev, payload.new as Slide].sort((a, b) => a.slide_number - b.slide_number))
-          } else if (payload.eventType === 'UPDATE') {
-            setSlides(prev => 
-              prev.map(slide => 
-                slide.id === payload.new.id ? payload.new as Slide : slide
-              )
-            )
-          } else if (payload.eventType === 'DELETE') {
-            setSlides(prev => prev.filter(slide => slide.id !== payload.old.id))
-          }
-
-          // Update progress when slides change in parallel processing mode
-          if (isParallelProcessing) {
-            fetchSlideProgress()
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [projectId, user, supabase, isParallelProcessing])
 
   const handleRefresh = () => {
     fetchSlides(true)

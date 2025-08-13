@@ -274,10 +274,12 @@ def main():
     # 3. Create presentation
     output_dir = Path("generated_presentations")
     output_dir.mkdir(exist_ok=True)
+    from .template_manager import resolve_template_path
+    template_path = resolve_template_path()
     create_presentation_from_layout(
         layout_definition,
         presentation_content,
-        "ekona_slides_template_new.pptx",
+        template_path,
         str(output_dir / "custom_layout_presentation.pptx"),
     )
 
