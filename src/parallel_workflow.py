@@ -32,6 +32,7 @@ from .monitoring import slide_monitor
 from .database import get_supabase_client, DatabaseError
 from .llm_client import SlideContent
 from .individual_slide_generator import IndividualSlideGenerator
+from .debug_variables import get_variable_tracker
 
 
 class SlideStatus:
@@ -115,6 +116,9 @@ class ParallelSlideWorkflow:
         
         # Individual slide generator
         self.slide_generator = IndividualSlideGenerator()
+        
+        # Variable tracker
+        self.variable_tracker = get_variable_tracker()
 
     def set_database_callback(self, callback: Callable):
         """Set database callback for real-time updates"""
@@ -129,6 +133,7 @@ class ParallelSlideWorkflow:
         approved_outline: Dict[str, Any],
         title: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
+        html_refinement_iterations: int = 3,
     ) -> Dict[str, Any]:
         """
         Process entire presentation with parallel slide generation
@@ -150,6 +155,9 @@ class ParallelSlideWorkflow:
         print(f"📋 Topic: {topic}")
         print(f"📄 Slides to process: {len(approved_outline.get('slides', []))}")
 
+        # Track parallel workflow start
+        self.variable_tracker.set_workflow_type("parallel_slide_processing")
+
         try:
             # Step 1: Layout Analysis (once for entire presentation)
             print("⚡ Step 1: Analyzing template layouts...")
@@ -169,7 +177,7 @@ class ParallelSlideWorkflow:
             # Step 3: Process slides in parallel
             print(f"⚡ Step 3: Processing {len(slide_states)} slides in parallel...")
             completed_slides = await self._process_slides_parallel(
-                slide_states, layout_state, config
+                slide_states, layout_state, config, html_refinement_iterations
             )
             
             # Step 4: Assemble final presentation
@@ -179,6 +187,10 @@ class ParallelSlideWorkflow:
             )
             
             print("✅ Parallel slide generation completed successfully!")
+            
+            # Track final results
+            self.variable_tracker.track_final_presentation(final_result)
+            
             return final_result
 
         except Exception as e:
@@ -186,7 +198,8 @@ class ParallelSlideWorkflow:
             # Update project status to failed
             await self._update_project_status(project_id, "failed", str(e))
             
-            return {
+            # Track failed result
+            failed_result = {
                 "success": False,
                 "error": str(e),
                 "presentation_path": None,
@@ -198,6 +211,15 @@ class ParallelSlideWorkflow:
                     "output_path": output_path,
                 },
             }
+            
+            self.variable_tracker.track_final_presentation(failed_result)
+            self.variable_tracker.track_error("parallel_workflow", str(e), {
+                "topic": topic,
+                "template_path": template_path,
+                "slides_count": len(approved_outline.get('slides', []))
+            })
+            
+            return failed_result
 
     async def _run_layout_analysis(
         self, topic: str, template_path: str, output_path: str, config: Optional[RunnableConfig]
@@ -232,7 +254,15 @@ class ParallelSlideWorkflow:
             "project_id": None,
         }
         
-        return self.layout_agent.execute(initial_state, config)
+        result = self.layout_agent.execute(initial_state, config)
+        
+        # Track layout analysis results
+        self.variable_tracker.track_layout_analysis(
+            result.get("layouts_info"), 
+            result.get("dynamic_models")
+        )
+        
+        return result
 
     async def _create_slide_states(
         self,
@@ -241,35 +271,44 @@ class ParallelSlideWorkflow:
         template_path: str,
         layout_state: SlideGenerationState
     ) -> List[IndividualSlideState]:
-        """Create individual slide states and insert into database"""
+        """Create individual slide states and get/update database records"""
         slide_states = []
         slides_data = approved_outline.get('slides', [])
         
+        # Check if slides already exist in database (created during outline approval)
+        existing_slides_result = self.supabase.client.table("slides").select("*").eq("project_id", project_id).execute()
+        existing_slides = {slide["slide_number"]: slide for slide in existing_slides_result.data or []}
+        
         for i, slide_spec in enumerate(slides_data):
             slide_number = i + 1
-            slide_id = str(uuid.uuid4())
             
-            # Insert slide into database
-            try:
-                await self._insert_slide_record(
-                    slide_id, project_id, slide_number, slide_spec
-                )
-                
-                # Create slide state object
-                slide_state = IndividualSlideState(
-                    slide_id=slide_id,
-                    project_id=project_id,
-                    slide_number=slide_number,
-                    slide_spec=slide_spec,
-                    template_path=template_path
-                )
-                
-                slide_states.append(slide_state)
-                print(f"  ✅ Initialized slide {slide_number}: {slide_spec.get('title', 'Untitled')}")
-                
-            except Exception as e:
-                print(f"  ❌ Failed to initialize slide {slide_number}: {e}")
-                continue
+            # Use existing slide if available, otherwise create new one
+            if slide_number in existing_slides:
+                slide_record = existing_slides[slide_number]
+                slide_id = slide_record["id"]
+                print(f"  ✅ Using existing slide record {slide_number}: {slide_spec.get('title', 'Untitled')}")
+            else:
+                slide_id = str(uuid.uuid4())
+                # Insert slide into database if it doesn't exist
+                try:
+                    await self._insert_slide_record(
+                        slide_id, project_id, slide_number, slide_spec
+                    )
+                    print(f"  ✅ Created new slide record {slide_number}: {slide_spec.get('title', 'Untitled')}")
+                except Exception as e:
+                    print(f"  ❌ Failed to create slide {slide_number}: {e}")
+                    continue
+            
+            # Create slide state object
+            slide_state = IndividualSlideState(
+                slide_id=slide_id,
+                project_id=project_id,
+                slide_number=slide_number,
+                slide_spec=slide_spec,
+                template_path=template_path
+            )
+            
+            slide_states.append(slide_state)
         
         return slide_states
 
@@ -285,6 +324,7 @@ class ParallelSlideWorkflow:
                 "title": slide_spec.get("title", "Untitled"),
                 "content": slide_spec,
                 "layout_type": slide_spec.get("layout_type"),
+                "layout_index": slide_spec.get("layout_index"),  # CRITICAL FIX: Store layout_index
             }
             
             result = self.supabase.client.table("slides").insert(slide_data).execute()
@@ -299,7 +339,8 @@ class ParallelSlideWorkflow:
         self,
         slide_states: List[IndividualSlideState],
         layout_state: SlideGenerationState,
-        config: Optional[RunnableConfig]
+        config: Optional[RunnableConfig],
+        html_refinement_iterations: int = 3
     ) -> List[IndividualSlideState]:
         """Process slides in parallel with controlled concurrency, starting in outline order"""
         completed_slides = []
@@ -316,7 +357,7 @@ class ParallelSlideWorkflow:
         
         async def process_single_slide(slide_state: IndividualSlideState):
             return await self._process_individual_slide(
-                slide_state, layout_state, config
+                slide_state, layout_state, config, html_refinement_iterations
             )
         
         # Start initial batch of slides (up to max_concurrent)
@@ -367,7 +408,8 @@ class ParallelSlideWorkflow:
         self,
         slide_state: IndividualSlideState,
         layout_state: SlideGenerationState,
-        config: Optional[RunnableConfig]
+        config: Optional[RunnableConfig],
+        html_refinement_iterations: int = 3
     ) -> IndividualSlideState:
         """Process a single slide through the agent pipeline"""
         slide_state.started_at = datetime.now()
@@ -404,7 +446,7 @@ class ParallelSlideWorkflow:
             if needs_refinement and slide_state.html_content:
                 await self._update_slide_status(slide_state, SlideStatus.HTML_REFINEMENT)
                 slide_state = await self._run_slide_html_refinement(
-                    slide_state, layout_state, config
+                    slide_state, layout_state, config, html_refinement_iterations
                 )
                 if slide_state.status == SlideStatus.FAILED:
                     return slide_state
@@ -461,6 +503,14 @@ class ParallelSlideWorkflow:
                     "html_content": slide_state.html_content,
                     "refined_html": slide_state.refined_html
                 })
+                
+                # Store the layout_index for proper PPTX generation
+                # Extract layout index from slide_content if available
+                if slide_state.slide_content and hasattr(slide_state.slide_content, 'layout_index'):
+                    update_data["layout_index"] = slide_state.slide_content.layout_index
+                    print(f"📝 Storing layout_index {slide_state.slide_content.layout_index} in database for slide {slide_state.slide_number}")
+                else:
+                    print(f"⚠️ No layout_index found in slide_content for slide {slide_state.slide_number}")
                 
                 # Store the main slide content when completed
                 if slide_state.slide_content and hasattr(slide_state.slide_content, 'content'):
@@ -640,7 +690,7 @@ class ParallelSlideWorkflow:
             return slide_state
 
     async def _run_slide_html_refinement(
-        self, slide_state: IndividualSlideState, layout_state: SlideGenerationState, config: Optional[RunnableConfig]
+        self, slide_state: IndividualSlideState, layout_state: SlideGenerationState, config: Optional[RunnableConfig], html_refinement_iterations: int = 3
     ) -> IndividualSlideState:
         """Run HTML refinement for individual slide using the complete refinement process"""
         try:
@@ -664,15 +714,16 @@ class ParallelSlideWorkflow:
                 slide_purpose += f". Key points: {', '.join(slide_state.slide_spec.get('key_points', []))}"
             
             # Call the individual slide refinement method directly (max 5 iterations)
+            # CRITICAL FIX: Use correct global slide index (0-based) instead of hardcoded 0
             refined_html = await self.refinement_agent._refine_one_slide_fully_async(
-                slide_index=0,  # Since this is a single slide, use index 0
+                slide_index=slide_state.slide_number - 1,
                 initial_html_content=slide_state.html_content,
                 slide_purpose=slide_purpose,
                 refinement_id=refinement_id,
                 project_id=slide_state.project_id,
                 slide_content=slide_state.slide_content,
                 config=config,
-                max_iterations=5  # Max 5 iterations as requested
+                max_iterations=html_refinement_iterations
             )
             
             if refined_html:
@@ -887,7 +938,8 @@ class ParallelSlideWorkflow:
                     combination_result = await self.slide_generator.combine_individual_slides(
                         project_id=project_id,
                         output_path=output_path,
-                        template_path=completed_slides[0].template_path if completed_slides else layout_state.get("template_path")
+                        template_path=completed_slides[0].template_path if completed_slides else layout_state.get("template_path"),
+                        dynamic_models=layout_state.get("dynamic_models")
                     )
                     
                     if combination_result.get("success"):
@@ -1044,7 +1096,7 @@ class ParallelSlideWorkflow:
         preferred_type: str
     ) -> int:
         """
-        Find the best layout index for a given content type (copied from PresentationPlanningAgent)
+        Find the best layout index for a given content type dynamically
         
         Args:
             layouts_info: Available layout information
@@ -1060,31 +1112,67 @@ class ParallelSlideWorkflow:
         print(f"🔍 Finding layout for preferred_type: '{preferred_type}'")
         print(f"🔍 Available layouts: {[(idx, info.get('name', 'Unknown')) for idx, info in layouts_info.items()]}")
         
-        # Priority mapping for different content types
-        search_patterns = {
-            "text": ["text content", "content", "text"],
-            "picture": ["title and picture", "picture", "image"],
-            "html": ["html", "picture generated from html", "picture"]
-        }
+        # Special handling for HTML content - look for specific placeholders
+        if preferred_type == "html":
+            # First, look for layouts with HTML-specific picture placeholders
+            for layout_idx, layout_info in layouts_info.items():
+                placeholders = layout_info.get('placeholders', [])
+                for placeholder in placeholders:
+                    ph_name = placeholder.get('name', '').lower()
+                    # Look for HTML picture placeholders
+                    if 'html' in ph_name and ('picture' in ph_name or 'image' in ph_name):
+                        print(f"✅ Found HTML-capable layout {layout_idx} with placeholder '{placeholder.get('name')}'")
+                        return layout_idx
+            
+            # Fallback to any picture layout for HTML
+            preferred_type = "picture"
         
-        patterns = search_patterns.get(preferred_type, ["content", "text"])
-        print(f"🔍 Searching for patterns: {patterns}")
-        
-        # Search for exact matches first
-        for pattern in patterns:
-            for layout_index, layout_info in layouts_info.items():
+        # Look for picture layouts
+        if preferred_type == "picture":
+            for layout_idx, layout_info in layouts_info.items():
+                # Check layout name first
                 layout_name = layout_info.get("name", "").lower()
-                if pattern in layout_name:
-                    print(f"✅ Found matching layout {layout_index} ('{layout_info.get('name')}') for pattern '{pattern}'")
-                    return layout_index
+                if 'picture' in layout_name and 'title' in layout_name:
+                    print(f"✅ Found picture layout {layout_idx} ('{layout_info.get('name')}')")
+                    return layout_idx
+                
+                # Check for picture placeholders
+                placeholders = layout_info.get('placeholders', [])
+                for placeholder in placeholders:
+                    ph_type = placeholder.get('type', 0)
+                    ph_name = placeholder.get('name', '').lower()
+                    # Type 18 is typically PICTURE placeholder
+                    if ph_type == 18 or 'picture' in ph_name or 'image' in ph_name:
+                        print(f"✅ Found layout {layout_idx} with picture placeholder")
+                        return layout_idx
         
-        # Fallback to first available layout
-        if layouts_info:
-            first_layout = next(iter(layouts_info.keys()))
-            first_layout_name = layouts_info[first_layout].get("name", "Unknown")
-            print(f"⚠️ No matching layout found for '{preferred_type}', using first available layout {first_layout} ('{first_layout_name}')")
-            return first_layout
+        # Look for text layouts
+        if preferred_type == "text":
+            for layout_idx, layout_info in layouts_info.items():
+                layout_name = layout_info.get("name", "").lower()
+                # Look for text content layouts
+                if 'text' in layout_name and 'content' in layout_name:
+                    print(f"✅ Found text layout {layout_idx} ('{layout_info.get('name')}')")
+                    return layout_idx
+            
+            # Fallback: find any layout with content placeholders
+            for layout_idx, layout_info in layouts_info.items():
+                placeholders = layout_info.get('placeholders', [])
+                for placeholder in placeholders:
+                    ph_name = placeholder.get('name', '').lower()
+                    if 'content' in ph_name or 'text' in ph_name or 'body' in ph_name:
+                        print(f"✅ Found layout {layout_idx} with text placeholder '{placeholder.get('name')}'")
+                        return layout_idx
+        
+        # Final fallback to first non-special layout
+        for layout_idx, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", "").lower()
+            # Skip special layouts like "Main Logo Start Slide" or "Branding Slide"
+            if not any(skip in layout_name for skip in ['logo', 'start', 'branding', 'end']):
+                print(f"⚠️ Using first general layout {layout_idx} ('{layout_info.get('name')}')")
+                return layout_idx
         
         # Ultimate fallback
-        print(f"❌ No layouts available at all, using default layout 0")
-        return 0
+        first_layout = next(iter(layouts_info.keys())) if layouts_info else 0
+        print(f"❌ No suitable layout found, using first available: {first_layout}")
+        return first_layout

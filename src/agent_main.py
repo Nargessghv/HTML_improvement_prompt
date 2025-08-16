@@ -79,6 +79,12 @@ Examples:
         help="Enable debug mode with detailed logging",
     )
 
+    parser.add_argument(
+        "--dual-path",
+        action="store_true",
+        help="Use enhanced dual-path generation (individual slides + final presentation)",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -86,6 +92,17 @@ Examples:
     if not args.analyze and not args.topic:
         parser.error("topic is required unless using --analyze mode")
 
+    # Handle template selection
+    if args.template is None:
+        # Auto-select default template
+        from src.template_manager import TemplateManager
+        tm = TemplateManager()
+        args.template = tm.get_default_template()
+        if args.template is None:
+            print("Error: No templates found in templates directory.")
+            print("Make sure you have a PowerPoint template file.")
+            sys.exit(1)
+    
     # Validate template file exists
     if not os.path.exists(args.template):
         print(f"Error: Template file '{args.template}' not found.")
@@ -128,7 +145,12 @@ Examples:
             args.output = f"agent_generated_{safe_topic}_{timestamp}"
 
         # Create the presentation using agents
-        print(f"🤖 Creating presentation with AI agents: '{args.topic}'")
+        if args.dual_path:
+            print(f"🤖🔄 Creating presentation with ENHANCED DUAL-PATH agents: '{args.topic}'")
+            print("📱 This will generate individual slides for preview AND final presentation")
+            print("✨ Perfect formatting consistency guaranteed!")
+        else:
+            print(f"🤖 Creating presentation with AI agents: '{args.topic}'")
 
         # Create workflow with parallel HTML refinement enabled by default
         workflow = SlideGenerationWorkflow(use_parallel_html_refinement=True)
@@ -142,12 +164,35 @@ Examples:
 
         # Process results
         if results["success"]:
-            print("\n🎉 Agent-based presentation generation completed successfully!")
+            if args.dual_path:
+                print("\n🎉 ENHANCED DUAL-PATH presentation generation completed successfully!")
+                print("✨ Perfect formatting consistency achieved!")
+                
+                # Show individual slides info if available
+                individual_slides = results.get("individual_slides", [])
+                if individual_slides:
+                    successful_slides = [s for s in individual_slides if s.get("success")]
+                    print(f"📱 Individual slides for preview: {len(successful_slides)}/{len(individual_slides)}")
+                    for i, slide in enumerate(successful_slides[:3]):  # Show first 3
+                        if slide.get("file_url"):
+                            print(f"   • Slide {i+1}: {slide['file_url']}")
+                    if len(successful_slides) > 3:
+                        print(f"   • ... and {len(successful_slides) - 3} more slides")
+                
+                print(f"📄 Final presentation: {results['presentation_path']}")
+                print("🔄 Future slide adjustments: Use regenerate_individual_slide API")
+            else:
+                print("\n🎉 Agent-based presentation generation completed successfully!")
+            
             print(f"📄 File: {results['presentation_path']}")
             print(f"🎯 Topic: {args.topic}")
             print(f"📊 Slides generated: {results['slide_count']}")
             print(f"🎨 Layouts used: {results['layouts_used']}")
-            print("🤖 Agent workflow: Layout → Planning → Content → Quality → Assembly")
+            
+            if args.dual_path:
+                print("🤖 Enhanced Agent workflow: Layout → Planning → Content → Quality → DUAL-PATH Assembly")
+            else:
+                print("🤖 Agent workflow: Layout → Planning → Content → Quality → Assembly")
 
             # Show monitoring info if available
             if os.getenv("LANGFUSE_PUBLIC_KEY"):

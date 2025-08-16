@@ -27,9 +27,11 @@ from .agents import (
     SlideAssemblyAgent,
     SlideGenerationState,
 )
+from .enhanced_slide_assembly_agent import EnhancedSlideAssemblyAgent
 from .html_content_agent import HTMLContentGenerationAgent
 from .monitoring import slide_monitor
 from .parallel_workflow import ParallelSlideWorkflow
+from .debug_variables import get_variable_tracker
 
 
 class SlideGenerationWorkflow:
@@ -54,7 +56,8 @@ class SlideGenerationWorkflow:
         self.image_prompt_agent = ImagePromptAgent()  # Add Image prompt agent
         self.image_generation_agent = ImageGenerationAgent()  # Add Image generation agent
         self.image_refinement_agent = ImageRefinementAgent()  # Add Image refinement agent
-        self.assembly_agent = SlideAssemblyAgent()
+        # Use enhanced slide assembly agent for dual-path generation
+        self.assembly_agent = EnhancedSlideAssemblyAgent()
         self.quality_agent = QualityReviewAgent()
         self.icon_validator = IconValidationAgent()
 
@@ -67,6 +70,9 @@ class SlideGenerationWorkflow:
         # Database callback for real-time updates
         self.database_callback: Optional[Callable] = None
         self.project_id: Optional[str] = None
+
+        # Initialize variable tracker
+        self.variable_tracker = get_variable_tracker()
 
         # Build the workflow graph
         self.workflow = self._build_workflow_graph()
@@ -214,6 +220,7 @@ class SlideGenerationWorkflow:
         title: Optional[str] = None,
         template_folder_path: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
+        html_refinement_iterations: int = 3,
     ) -> Dict[str, Any]:
         """
         Run parallel workflow for approved outlines - processes slides in parallel
@@ -247,6 +254,7 @@ class SlideGenerationWorkflow:
                 approved_outline=approved_outline,
                 title=title,
                 config=config,
+                html_refinement_iterations=html_refinement_iterations,
             )
             
             # Update project status based on result
@@ -302,6 +310,7 @@ class SlideGenerationWorkflow:
         approved_outline: Dict[str, Any],
         title: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
+        html_refinement_iterations: int = 3,
     ) -> Dict[str, Any]:
         """
         Run streamlined workflow for approved outlines - skips planning phase
@@ -378,7 +387,7 @@ class SlideGenerationWorkflow:
 
             # Step 5: HTML refinement loop (use node wrapper if needed)
             refinement_iteration = 0
-            max_refinement_iterations = 3
+            max_refinement_iterations = html_refinement_iterations
             
             # Debug: Check refinement flag
             needs_refinement = html_state.get("needs_html_refinement")
@@ -473,6 +482,7 @@ class SlideGenerationWorkflow:
         title: Optional[str] = None,
         approved_outline: Optional[Dict[str, Any]] = None,
         template_folder_path: Optional[str] = None,
+        html_refinement_iterations: int = 3,
     ) -> Dict[str, Any]:
         """
         Execute the complete slide generation workflow
@@ -495,6 +505,14 @@ class SlideGenerationWorkflow:
         print(f"📁 Template: {template_path}")
         print(f"💾 Output: {output_path}")
 
+        # Initialize variable tracking for this workflow run
+        if approved_outline and os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true":
+            self.variable_tracker.set_workflow_type("parallel_approved_outline")
+        elif approved_outline:
+            self.variable_tracker.set_workflow_type("streamlined_approved_outline")
+        else:
+            self.variable_tracker.set_workflow_type("full_workflow")
+
         # Use parallel workflow if approved outline is provided and parallel processing is enabled
         if approved_outline and os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true":
             print("🚀 Using parallel slide processing workflow for approved outline")
@@ -507,7 +525,7 @@ class SlideGenerationWorkflow:
         elif approved_outline:
             print("🎯 Using streamlined workflow for approved outline")
             return self.run_streamlined_for_approved_outline(
-                topic, template_path, output_path, approved_outline, title, config
+                topic, template_path, output_path, approved_outline, title, config, html_refinement_iterations
             )
 
         # Initialize workflow state
@@ -766,11 +784,22 @@ class SlideGenerationWorkflow:
         start_time = datetime.now()
         self._update_workflow_state("layout_analysis", "in_progress", started_at=start_time.isoformat())
         
+        # Track workflow state
+        self.variable_tracker.track_workflow_state(state)
+        
         try:
             result = self.layout_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track layout analysis results
+            self.variable_tracker.track_layout_analysis(
+                result.get("layouts_info"), 
+                result.get("dynamic_models")
+            )
+            self.variable_tracker.track_performance_metric("layout_analysis_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("layout_analysis", result["error_message"], {"state": state})
                 self._update_workflow_state("layout_analysis", "failed", 
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -780,6 +809,7 @@ class SlideGenerationWorkflow:
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("layout_analysis_exception", str(e), {"state": state})
             self._update_workflow_state("layout_analysis", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -796,7 +826,15 @@ class SlideGenerationWorkflow:
             result = self.planning_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track presentation planning results
+            self.variable_tracker.track_presentation_planning(
+                result.get("presentation_plan"), 
+                result.get("selected_layouts", [])
+            )
+            self.variable_tracker.track_performance_metric("planning_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("planning", result["error_message"], {"state": state})
                 self._update_workflow_state("planning", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -806,6 +844,7 @@ class SlideGenerationWorkflow:
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("planning_exception", str(e), {"state": state})
             self._update_workflow_state("planning", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -822,7 +861,12 @@ class SlideGenerationWorkflow:
             result = self.content_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track content generation results
+            self.variable_tracker.track_content_generation(result.get("slide_contents", []))
+            self.variable_tracker.track_performance_metric("content_generation_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("content_generation", result["error_message"], {"state": state})
                 self._update_workflow_state("content_generation", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -832,6 +876,7 @@ class SlideGenerationWorkflow:
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("content_generation_exception", str(e), {"state": state})
             self._update_workflow_state("content_generation", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -887,11 +932,16 @@ class SlideGenerationWorkflow:
             
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track HTML content generation results
+            self.variable_tracker.track_html_content_generation(result)
+            self.variable_tracker.track_performance_metric("html_generation_time", execution_time, "seconds")
+            
             # Debug: Check if refinement flag was preserved
             needs_refinement = result.get("needs_html_refinement")
             print(f"🔍 HTML node wrapper debug: needs_html_refinement = {needs_refinement}")
             
             if result.get("error_message"):
+                self.variable_tracker.track_error("html_generation", result["error_message"], {"state": state})
                 self._update_workflow_state("html_generation", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -902,6 +952,7 @@ class SlideGenerationWorkflow:
             
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("html_generation_exception", str(e), {"state": state})
             self._update_workflow_state("html_generation", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -955,7 +1006,16 @@ class SlideGenerationWorkflow:
             
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track HTML refinement progress
+            self.variable_tracker.track_html_refinement(
+                result.get("html_refinement_iteration", 0),
+                result.get("html_refinement_slide_index"),
+                result.get("refinement_id")
+            )
+            self.variable_tracker.track_performance_metric("html_refinement_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("html_refinement", result["error_message"], {"state": state})
                 self._update_workflow_state("refinement", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -966,6 +1026,7 @@ class SlideGenerationWorkflow:
             
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("html_refinement_exception", str(e), {"state": state})
             self._update_workflow_state("refinement", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -982,7 +1043,12 @@ class SlideGenerationWorkflow:
             result = self.image_prompt_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track image generation progress
+            self.variable_tracker.track_image_generation(result)
+            self.variable_tracker.track_performance_metric("image_prompt_generation_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("image_prompt_generation", result["error_message"], {"state": state})
                 self._update_workflow_state("image_prompt_generation", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -993,6 +1059,7 @@ class SlideGenerationWorkflow:
             
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("image_prompt_generation_exception", str(e), {"state": state})
             self._update_workflow_state("image_prompt_generation", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -1090,7 +1157,15 @@ class SlideGenerationWorkflow:
             result = self.assembly_agent.execute(state, config)
             execution_time = int((datetime.now() - start_time).total_seconds())
             
+            # Track slide assembly results
+            self.variable_tracker.track_slide_assembly(
+                result.get("presentation_path"),
+                result.get("icon_errors", [])
+            )
+            self.variable_tracker.track_performance_metric("assembly_time", execution_time, "seconds")
+            
             if result.get("error_message"):
+                self.variable_tracker.track_error("assembly", result["error_message"], {"state": state})
                 self._update_workflow_state("assembly", "failed",
                                           error_message=result["error_message"],
                                           execution_time_seconds=execution_time)
@@ -1100,6 +1175,7 @@ class SlideGenerationWorkflow:
             return result
         except Exception as e:
             execution_time = int((datetime.now() - start_time).total_seconds())
+            self.variable_tracker.track_error("assembly_exception", str(e), {"state": state})
             self._update_workflow_state("assembly", "failed",
                                       error_message=str(e),
                                       execution_time_seconds=execution_time)
@@ -1278,6 +1354,168 @@ class SlideGenerationWorkflow:
         if state.get("current_step") == "icon_retry_complete":
             return "success"
         return "error"
+
+    def regenerate_individual_slide(
+        self,
+        template_path: str,
+        slide_id: str,
+        project_id: str,
+        user_adjustments: Dict[str, Any],
+        slide_number: int,
+        original_layouts_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Regenerate a specific individual slide after user adjustments
+        
+        This method allows users to request changes to specific slides
+        and regenerate only that slide while maintaining consistency with
+        the original presentation.
+        
+        Args:
+            template_path: Path to the PowerPoint template
+            slide_id: Unique identifier for the slide
+            project_id: Project identifier
+            user_adjustments: Dictionary of user-requested changes
+            slide_number: Slide number (1-indexed)
+            original_layouts_info: Original layout analysis (optional)
+            
+        Returns:
+            Result dictionary with success status and new slide URLs
+        """
+        try:
+            print(f"🔄 Regenerating slide {slide_number} with user adjustments...")
+            
+            # Step 1: Apply user adjustments to create updated slide specification
+            updated_slide_spec = self._apply_user_adjustments_to_spec(
+                user_adjustments, slide_number
+            )
+            
+            # Step 2: Regenerate content using existing agents
+            print("✍️ Regenerating content with adjustments...")
+            
+            # Use layout analysis if not provided
+            if not original_layouts_info:
+                temp_state = {
+                    "template_path": template_path,
+                    "current_step": "starting",
+                    "error_message": None
+                }
+                analysis_result = self.layout_agent.execute(temp_state)
+                original_layouts_info = analysis_result.get("layouts_info")
+            
+            # Generate updated content
+            updated_slide_content = self._generate_updated_slide_content(
+                updated_slide_spec, original_layouts_info, slide_number
+            )
+            
+            # Step 3: Use enhanced assembly agent to regenerate the individual slide
+            print("🔧 Regenerating individual slide with enhanced assembly...")
+            regeneration_result = self.assembly_agent.execute_individual_slide_regeneration(
+                template_path=template_path,
+                slide_id=slide_id,
+                project_id=project_id,
+                updated_slide_content=updated_slide_content,
+                slide_number=slide_number,
+                layouts_info=original_layouts_info
+            )
+            
+            if regeneration_result["success"]:
+                print(f"✅ Successfully regenerated slide {slide_number}")
+            else:
+                print(f"❌ Failed to regenerate slide {slide_number}: {regeneration_result['error']}")
+            
+            return regeneration_result
+            
+        except Exception as e:
+            print(f"❌ Error regenerating slide {slide_number}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _apply_user_adjustments_to_spec(
+        self, 
+        user_adjustments: Dict[str, Any], 
+        slide_number: int
+    ) -> Dict[str, Any]:
+        """
+        Apply user adjustments to create an updated slide specification
+        
+        Args:
+            user_adjustments: User-requested changes
+            slide_number: Slide number for context
+            
+        Returns:
+            Updated slide specification
+        """
+        # Create updated slide specification based on user adjustments
+        updated_spec = {
+            "slide_number": slide_number,
+            "title": user_adjustments.get("title", f"Updated Slide {slide_number}"),
+            "content_type": user_adjustments.get("content_type", "content"),
+            "layout_index": user_adjustments.get("layout_index", 1),
+            "user_instructions": user_adjustments.get("instructions", ""),
+            "tone": user_adjustments.get("tone", "professional"),
+            "specific_content": user_adjustments.get("content", {}),
+        }
+        
+        return updated_spec
+
+    def _generate_updated_slide_content(
+        self,
+        updated_slide_spec: Dict[str, Any],
+        layouts_info: Dict[str, Any],
+        slide_number: int
+    ) -> Any:
+        """
+        Generate updated slide content using existing content generation agents
+        
+        Args:
+            updated_slide_spec: Updated slide specification
+            layouts_info: Layout analysis information
+            slide_number: Slide number
+            
+        Returns:
+            Updated SlideContent object
+        """
+        try:
+            # Create a minimal state for content generation
+            content_state = {
+                "topic": f"User Adjustment - Slide {slide_number}",
+                "template_path": "",  # Not needed for content generation
+                "layouts_info": layouts_info,
+                "presentation_plan": [updated_slide_spec],  # Single slide plan
+                "selected_layouts": [updated_slide_spec["layout_index"]],
+                "current_step": "content_generation",
+                "error_message": None
+            }
+            
+            # Generate content using the content generation agent
+            content_result = self.content_agent.execute(content_state)
+            
+            # Extract the generated content
+            slide_contents = content_result.get("slide_contents", [])
+            if slide_contents:
+                return slide_contents[0]  # Return first (and only) slide content
+            else:
+                # Fallback: create basic slide content
+                from .llm_client import SlideContent
+                return SlideContent(
+                    layout_index=updated_slide_spec["layout_index"],
+                    content=updated_slide_spec.get("specific_content", {
+                        "Title": updated_slide_spec["title"],
+                        "Content": "Updated content based on user adjustments"
+                    })
+                )
+                
+        except Exception as e:
+            print(f"⚠️ Error generating updated content, using fallback: {e}")
+            # Create fallback content
+            from .llm_client import SlideContent
+            return SlideContent(
+                layout_index=updated_slide_spec.get("layout_index", 1),
+                content={
+                    "Title": updated_slide_spec.get("title", f"Slide {slide_number}"),
+                    "Content": "Updated content based on user adjustments"
+                }
+            )
 
 
 # Convenience function for easy workflow execution

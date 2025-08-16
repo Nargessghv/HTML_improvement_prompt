@@ -1,0 +1,36 @@
+HTML VISUAL DESIGN SPECIFICATIONS:
+
+DEFAULT COLOR PALETTE (PROFESSIONAL CORPORATE STYLE):
+- Primary/Accent: Use a professional accent color for highlights, key metrics, CTAs
+- Headings: Dark Grey (#2d3748) - All H1, H2, H3 tags  
+- Body Text: Black (#000000) - All paragraph and description text
+- HTML Body Background: TRANSPARENT - Required for PowerPoint integration
+- Component Backgrounds: White (#ffffff) - Cards, panels, containers
+
+Note: Template-specific colors will override these defaults when available.
+
+HTML TYPOGRAPHY:
+- Font Stack: 'Segoe UI', system-ui, -apple-system, sans-serif
+- Base Size: 16px (text-base in Tailwind)
+- Headings: 24px (text-2xl), bold, Dark Grey
+- Body: 16px (text-base), regular, Black
+
+HTML COMPONENT GUIDELINES:
+- Use DaisyUI components: cards, stats, badges, alerts, timeline
+- Use Flowbite for additional components if needed
+- Override ALL component default colors with brand colors using inline styles
+- Ensure high contrast between text and backgrounds
+
+HTML VISUALIZATION RULES:
+- Mermaid.js: Use for process flows and organizational charts ONLY
+- D3.js: REQUIRED for all timelines and roadmaps (superior styling control)
+- DaisyUI Timeline: Alternative for simple timelines
+- Icons: Use Lucide icons via <use href="#icon-name"> references only
+- NEVER create custom SVG sprites or symbol definitions
+
+HTML LAYOUT PRINCIPLES:
+- Clean, minimalist design with ample white space
+- Use CSS Grid or Flexbox for responsive layouts
+- Maintain consistent spacing (use Tailwind spacing utilities)
+- Ensure all interactive elements are visually distinct
+- Group related information in cards or panels

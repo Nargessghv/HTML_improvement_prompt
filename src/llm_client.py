@@ -154,6 +154,42 @@ class LangchainLLMClient:
             print(f"❌ Error generating structured vision content: {e}")
             raise
 
+    def generate_vision_content(
+        self,
+        system_prompt: str,
+        user_prompt: List[Dict[str, Any]],
+        config: Optional[RunnableConfig] = None,
+    ) -> str:
+        """
+        Generate content from multimodal input (text + image) without structured output
+        
+        Args:
+            system_prompt: System instructions for the vision model
+            user_prompt: A list of dictionaries representing multimodal content
+            config: Langchain configuration with callbacks
+            
+        Returns:
+            Generated text content
+        """
+        try:
+            # Create messages with multimodal content
+            messages = [
+                ("system", system_prompt),
+                ("human", user_prompt),
+            ]
+            
+            # Generate with callback support
+            response = self.chat_client.invoke(messages, config=config)
+            
+            # Ensure we return a string
+            if hasattr(response, "content"):
+                return str(response.content)
+            return str(response)
+            
+        except Exception as e:
+            print(f"❌ Error generating vision content: {e}")
+            raise
+
     def generate_content(
         self,
         system_prompt: str,

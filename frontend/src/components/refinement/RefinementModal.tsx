@@ -53,15 +53,17 @@ interface RefinementModalProps {
   onOpenChange: (open: boolean) => void
   projectId: string
   slideId?: string  // Optional: if provided, show only this slide's refinements
+  onViewFinalSlide?: (slideId: string) => void  // Callback to transition to final slide view
 }
 
-export function RefinementModal({ open, onOpenChange, projectId, slideId }: RefinementModalProps) {
+export function RefinementModal({ open, onOpenChange, projectId, slideId, onViewFinalSlide }: RefinementModalProps) {
   const { supabase, user } = useSupabaseAuth()
   const [slides, setSlides] = useState<Slide[]>([])
   const [refinements, setRefinements] = useState<Record<string, RefinementIteration[]>>({})
   const [selectedSlide, setSelectedSlide] = useState<string | null>(null)
   const [selectedIteration, setSelectedIteration] = useState<number>(1)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [viewMode, setViewMode] = useState<'preview' | 'html'>('preview')
   const [useNativeImg, setUseNativeImg] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(0.75) // Start at 75% for better fit
@@ -71,7 +73,63 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
     if (!open || !projectId || !user) return
 
     fetchRefinementData()
+
+    // Set up real-time subscription for refinements
+    const subscription = supabase
+      .channel(`refinements-modal-${projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'html_refinements',
+          filter: `project_id=eq.${projectId}`
+        },
+        (payload) => {
+          console.log('Refinement change detected in modal:', payload)
+          // Refresh data when refinements change (silent to prevent flicker)
+          fetchRefinementData(true)
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to refinements in modal')
+        }
+      })
+    
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [open, projectId, user, supabase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh during active processing (silent background refresh)
+  useEffect(() => {
+    if (!open) return
+
+    const interval = setInterval(() => {
+      // Only auto-refresh if we have no refinements yet or if we're waiting for more
+      const hasAnyRefinements = Object.values(refinements).some(arr => arr.length > 0)
+      if (!hasAnyRefinements || (slideId && !refinements[slideId]?.some(r => r.is_final))) {
+        console.log('Auto-refreshing refinements in background...')
+        // Silent refresh - don't trigger loading states or modal flicker
+        fetchRefinementData(true)
+      }
+    }, 3000) // Check every 3 seconds (less frequent)
+
+    return () => clearInterval(interval)
+  }, [open, refinements, slideId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && open) {
+        onOpenChange(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [open, onOpenChange])
 
   const extractFilePathFromUrl = (url: string): string | null => {
     try {
@@ -117,9 +175,13 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
     }
   }
 
-  const fetchRefinementData = async () => {
+  const fetchRefinementData = async (silent = false) => {
     try {
-      setIsLoading(true)
+      if (!silent) {
+        setIsLoading(true)
+      } else {
+        setIsRefreshing(true)
+      }
       
       // Build slides query
       let slidesQuery = supabase
@@ -190,9 +252,12 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
 
     } catch (error) {
       console.error('Error fetching refinement data:', error)
-      toast.error('Failed to load refinement data')
+      if (!silent) {
+        toast.error('Failed to load refinement data')
+      }
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
     }
   }
 
@@ -362,9 +427,19 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
             <DialogTitle>HTML Refinement Viewer</DialogTitle>
           </DialogHeader>
           <div className="text-center py-8 text-gray-500">
-            <ImageIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p>No HTML refinements found for this project</p>
-            <p className="text-sm">Refinements will appear here after the HTML generation process</p>
+            <div className="flex items-center justify-center mb-4">
+              <RefreshCw className="w-8 h-8 text-gray-300 animate-spin mr-3" />
+              <ImageIcon className="w-12 h-12 text-gray-300" />
+            </div>
+            <p className="font-medium mb-2">HTML refinements in progress...</p>
+            <p className="text-sm mb-1">Refinement iterations will appear here as they are generated</p>
+            <p className="text-xs text-gray-400">Auto-refreshing every 3 seconds</p>
+            <div className="mt-4">
+              <Button variant="outline" size="sm" onClick={() => fetchRefinementData(false)}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Now
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -392,24 +467,44 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
             <DialogTitle className="flex items-center gap-2">
               <Monitor className="w-5 h-5" />
               HTML Refinement Viewer
-              {finalRefinement && (
+              {finalRefinement ? (
                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                   <CheckCircle className="w-3 h-3 mr-1" />
-                  Final
+                  Final - Ready for PowerPoint
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                  <Clock className="w-3 h-3 mr-1" />
+                  In Progress
                 </Badge>
               )}
             </DialogTitle>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={fetchRefinementData}>
+            <Button variant="outline" size="sm" onClick={() => fetchRefinementData(false)}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => onOpenChange(false)}
+              className="hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
               <X className="w-4 h-4" />
             </Button>
           </div>
         </DialogHeader>
+
+        {/* Loading indicator at top */}
+        {isRefreshing && (
+          <div className="bg-blue-50 dark:bg-blue-950 border-b border-blue-200 dark:border-blue-800 px-6 py-2">
+            <div className="flex items-center space-x-2 text-blue-700 dark:text-blue-300">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">Checking for new refinement iterations...</span>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Slide Selection & Controls */}
@@ -553,9 +648,24 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId }: Refi
                         HTML Code
                       </TabsTrigger>
                     </TabsList>
+                    {/* Show transition to final slide button if refinement is complete */}
+                    {finalRefinement && onViewFinalSlide && selectedSlide && (
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={() => {
+                          onViewFinalSlide(selectedSlide)
+                          onOpenChange(false)
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Final Slide
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={downloadHtml}>
                       <Download className="w-4 h-4 mr-2" />
-                      Download
+                      Download HTML
                     </Button>
                   </div>
                   

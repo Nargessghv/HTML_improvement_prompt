@@ -1,0 +1,48 @@
+BROCHURE TEMPLATE - HTML VISUAL DESIGN SPECIFICATIONS:
+
+BROCHURE COLOR PALETTE:
+- Primary: Blue - Headlines and call-to-action elements
+- Secondary: Green - Subheadings and secondary information
+- Body Text: Blue - Main content text
+- Accent: Light Grey (#9ca3af) - Supporting elements and dividers
+- HTML Background: TRANSPARENT - For seamless brochure integration
+- Component Backgrounds: White (#ffffff) with subtle borders
+
+BROCHURE HTML TYPOGRAPHY:
+- Display Font: 'Segoe UI', system-ui, sans-serif
+- Heading Hierarchy:
+  - H1: 32px (text-4xl), bold, Blue - Major sections
+  - H2: 24px (text-2xl), semibold, Dark Grey - Subsections
+  - H3: 18px (text-lg), medium, Dark Grey - Points
+- Body: 14px (text-sm), regular, Black - Compact for brochures
+- Fine Print: 12px (text-xs), regular, Grey
+
+BROCHURE HTML COMPONENTS:
+- Info Boxes: Bordered containers with icon headers
+- Feature Lists: Checkmark icons with Blue accents
+- Contact Cards: Prominent with Blue headers
+- Product Showcases: Grid layouts with image placeholders
+- Testimonials: Quote style with large quotation marks
+
+BROCHURE VISUALIZATION STYLE:
+- Infographics: Bold, simple icons with minimal text
+- Statistics: Large numbers with descriptive labels
+- Process Steps: Numbered circles connected by lines
+- Comparison Tables: Alternating row colors for readability
+- Maps/Locations: Simple pin markers with labels
+
+BROCHURE LAYOUT APPROACH:
+- Compact, information-dense design
+- Smaller padding (p-4 to p-6) to fit more content
+- Multi-column layouts (2-3 columns) for efficiency
+- Clear section breaks with visual dividers
+- Balanced text-to-visual ratio
+
+BROCHURE-SPECIFIC HTML RULES:
+- Optimize for print-like appearance
+- Use smaller fonts to fit more information
+- Create scannable content with clear headers
+- Group related information in visual blocks
+- Emphasize key selling points with Blue color
+- Include clear CTAs in every section
+- Design for quick visual scanning

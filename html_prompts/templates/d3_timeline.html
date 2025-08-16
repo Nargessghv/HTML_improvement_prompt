@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            background-color: transparent;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body class="w-[{viewport_width}px] h-[{viewport_height}px] flex items-center justify-center p-8" style="background-color: transparent;">
+    <div class="card w-full h-full bg-white shadow-xl">
+        <div class="card-body flex flex-col p-6">
+            <h1 class="text-2xl font-bold text-center mb-4 shrink-0" style="color: #2d3748;">{title}</h1>
+            <div id="d3-container" class="flex-grow w-full h-full"></div>
+        </div>
+    </div>
+    <script>
+        // Data for visualization
+        const visualizationData = {data};
+        
+        // D3.js visualization implementation
+        const container = d3.select("#d3-container");
+        const width = container.node().getBoundingClientRect().width;
+        const height = container.node().getBoundingClientRect().height;
+        
+        const svg = container
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+        
+        // Add your D3.js visualization code here
+        // Use appropriate brand colors based on the template's visual design specifications
+    </script>
+</body>
+</html>

@@ -12,7 +12,15 @@ from typing import Optional, Tuple
 from PIL import Image
 import io
 
-# Try to import Aspose Slides for direct PPTX to image conversion
+# Try to import Spire.Presentation for direct PPTX to image conversion
+try:
+    from spire.presentation import Presentation as SpirePresentation
+    from spire.presentation import FileFormat, ImageFormat
+    HAS_SPIRE_PRESENTATION = True
+except ImportError:
+    HAS_SPIRE_PRESENTATION = False
+
+# Try to import Aspose Slides for direct PPTX to image conversion (fallback)
 try:
     import aspose.slides as slides
     HAS_ASPOSE_SLIDES = True
@@ -56,21 +64,24 @@ class ThumbnailGenerator:
     
     def _detect_conversion_method(self) -> str:
         """Detect which conversion method is available"""
-        if HAS_ASPOSE_SLIDES:
-            return "aspose"
-        elif HAS_PPTX2PNG:
-            return "pptx2png"
-        elif HAS_PDF2IMAGE:
+        # Use Microsoft Graph API for PPTX to PDF conversion (cloud-native)
+        if os.environ.get('AZURE_CLIENT_ID') and os.environ.get('AZURE_CLIENT_SECRET'):
+            return "microsoft_graph"
+        
+        # Fallback to PDF2Image with LibreOffice for local development
+        if HAS_PDF2IMAGE:
             return "pdf2image"
-        else:
-            return "export_shapes"  # Fallback to exporting shapes as images
+        
+        # Final fallback to shape extraction
+        return "export_shapes"
     
     def generate_thumbnail(
         self,
         pptx_path: str,
         output_path: Optional[str] = None,
         size: Tuple[int, int] = (400, 300),
-        slide_number: int = 0
+        slide_number: int = 0,
+        user_access_token: Optional[str] = None
     ) -> Optional[str]:
         """
         Generate a thumbnail image from a PowerPoint slide
@@ -94,11 +105,9 @@ class ThumbnailGenerator:
                 pptx_name = Path(pptx_path).stem
                 output_path = self.temp_dir / f"{pptx_name}_thumbnail.png"
             
-            # Use appropriate conversion method
-            if self.conversion_method == "aspose":
-                return self._generate_with_aspose(pptx_path, output_path, size, slide_number)
-            elif self.conversion_method == "pptx2png":
-                return self._generate_with_pptx2png(pptx_path, output_path, size, slide_number)
+            # Use appropriate conversion method based on environment
+            if self.conversion_method == "microsoft_graph":
+                return self._generate_with_microsoft_graph(pptx_path, output_path, size, slide_number)
             elif self.conversion_method == "pdf2image":
                 return self._generate_with_pdf2image(pptx_path, output_path, size, slide_number)
             else:
@@ -107,6 +116,248 @@ class ThumbnailGenerator:
         except Exception as e:
             logger.error(f"Error generating thumbnail: {e}")
             return None
+    
+    def _generate_with_microsoft_graph(
+        self,
+        pptx_path: str,
+        output_path: str,
+        size: tuple[int, int],
+        slide_number: int,
+        user_access_token: Optional[str] = None
+    ) -> Optional[str]:
+        """Generate thumbnail using Microsoft Graph API for PPTX to PDF conversion"""
+        import requests
+        import tempfile
+        from pdf2image import convert_from_path
+        
+        try:
+            # Get access token for Microsoft Graph
+            access_token = self._get_graph_access_token(user_access_token)
+            if not access_token:
+                logger.error("Failed to get Microsoft Graph access token")
+                return None
+            
+            # Create temporary PDF file
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
+                temp_pdf_path = temp_pdf.name
+            
+            try:
+                # Upload PPTX file to OneDrive and convert to PDF
+                pdf_content = self._convert_pptx_to_pdf_via_graph(pptx_path, access_token)
+                if not pdf_content:
+                    logger.error("Failed to convert PPTX to PDF via Microsoft Graph")
+                    return None
+                
+                # Save PDF content to temp file
+                with open(temp_pdf_path, 'wb') as f:
+                    f.write(pdf_content)
+                
+                # Convert PDF to image using pdf2image
+                logger.info(f"Converting PDF to image for slide {slide_number}")
+                images = convert_from_path(
+                    temp_pdf_path,
+                    first_page=slide_number + 1,  # pdf2image uses 1-based indexing
+                    last_page=slide_number + 1,
+                    dpi=200  # High quality
+                )
+                
+                if not images:
+                    logger.error("No images generated from PDF")
+                    return None
+                
+                # Resize and save the image
+                image = images[0]
+                image = image.resize(size, Image.Resampling.LANCZOS)
+                image.save(output_path, 'PNG', optimize=True)
+                
+                logger.info(f"Generated thumbnail with Microsoft Graph: {output_path}")
+                return str(output_path)
+                
+            finally:
+                # Clean up temp PDF file
+                try:
+                    if Path(temp_pdf_path).exists():
+                        Path(temp_pdf_path).unlink()
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Microsoft Graph conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _get_graph_access_token(self, user_access_token: Optional[str] = None) -> Optional[str]:
+        """Get access token for Microsoft Graph API"""
+        
+        # If user access token is provided (from authenticated session), use it directly
+        if user_access_token:
+            logger.info("Using provided user access token for Graph API")
+            return user_access_token
+        
+        # Fallback: Try to get from environment (for testing)
+        user_token_env = os.environ.get('AZURE_USER_ACCESS_TOKEN')
+        if user_token_env:
+            logger.info("Using user access token from environment")
+            return user_token_env
+        
+        # Final fallback: client credentials (won't work for /me endpoints)
+        import requests
+        
+        try:
+            client_id = os.environ.get('AZURE_CLIENT_ID')
+            client_secret = os.environ.get('AZURE_CLIENT_SECRET')
+            tenant_id = os.environ.get('AZURE_TENANT_ID', 'common')
+            
+            if not client_id or not client_secret:
+                logger.error("Azure credentials not configured")
+                return None
+            
+            logger.warning("Using client credentials - this won't work for user OneDrive access")
+            
+            # Get access token using client credentials flow
+            token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+            token_data = {
+                'grant_type': 'client_credentials',
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'scope': 'https://graph.microsoft.com/.default'
+            }
+            
+            response = requests.post(token_url, data=token_data)
+            response.raise_for_status()
+            
+            token_result = response.json()
+            access_token = token_result.get('access_token')
+            
+            if access_token:
+                logger.info("Successfully obtained Graph API access token (client credentials)")
+            else:
+                logger.error("No access token in response")
+                
+            return access_token
+            
+        except Exception as e:
+            logger.error(f"Failed to get Graph access token: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _convert_pptx_to_pdf_via_graph(self, pptx_path: str, access_token: str) -> Optional[bytes]:
+        """Convert PPTX to PDF using Microsoft Graph API"""
+        import requests
+        import uuid
+        
+        try:
+            # For client credentials flow, we need to use a different approach
+            # We'll use the conversion service directly rather than uploading to OneDrive
+            
+            # Read PPTX file
+            with open(pptx_path, 'rb') as f:
+                pptx_content = f.read()
+            
+            # Use Microsoft Graph conversion service
+            # This is a direct conversion without needing OneDrive storage
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            }
+            
+            # Try using the conversion API directly
+            # Note: This might require different permissions or approach
+            convert_url = "https://graph.microsoft.com/v1.0/me/drive/root/microsoft.graph.convertTo(format='pdf')"
+            
+            # First attempt: direct conversion API
+            try:
+                response = requests.post(convert_url, headers=headers, data=pptx_content)
+                if response.status_code == 200:
+                    return response.content
+            except Exception as e:
+                logger.warning(f"Direct conversion failed: {e}")
+            
+            # Fallback: Upload to temp location and convert
+            temp_filename = f"temp_presentation_{uuid.uuid4().hex[:8]}.pptx"
+            upload_url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{temp_filename}:/content"
+            
+            upload_headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/octet-stream'
+            }
+            
+            # Upload file
+            upload_response = requests.put(upload_url, headers=upload_headers, data=pptx_content)
+            upload_response.raise_for_status()
+            
+            # Get file ID from upload response
+            file_info = upload_response.json()
+            file_id = file_info.get('id')
+            
+            if not file_id:
+                logger.error("Failed to get file ID from upload")
+                return None
+            
+            # Convert to PDF using Graph API
+            convert_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content?format=pdf"
+            headers_get = {'Authorization': f'Bearer {access_token}'}
+            
+            convert_response = requests.get(convert_url, headers=headers_get)
+            convert_response.raise_for_status()
+            
+            # Clean up uploaded file
+            delete_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}"
+            requests.delete(delete_url, headers=headers_get)
+            
+            return convert_response.content
+            
+        except Exception as e:
+            logger.error(f"Graph API conversion failed: {e}")
+            return None
+    
+    def _generate_with_spire(
+        self,
+        pptx_path: str,
+        output_path: str,
+        size: Tuple[int, int],
+        slide_number: int
+    ) -> Optional[str]:
+        """Generate thumbnail using Spire.Presentation"""
+        try:
+            # Load the presentation
+            presentation = SpirePresentation()
+            presentation.load_from_file(pptx_path)
+            
+            if slide_number >= presentation.slides.count:
+                logger.error(f"Slide number {slide_number} exceeds available slides ({presentation.slides.count})")
+                return None
+            
+            # Get the specific slide
+            slide = presentation.slides[slide_number]
+            
+            # Calculate scale based on desired size
+            # Standard slide size is typically 960x720, scale accordingly
+            scale_x = size[0] / 960.0
+            scale_y = size[1] / 720.0
+            scale = min(scale_x, scale_y)  # Maintain aspect ratio
+            
+            # Generate thumbnail
+            thumbnail = slide.save_as_image(scale, scale)
+            
+            # Save as PNG
+            thumbnail.save(str(output_path), ImageFormat.PNG)
+            
+            # Clean up
+            presentation.dispose()
+            thumbnail.dispose()
+            
+            logger.info(f"Generated thumbnail with Spire.Presentation: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"Spire.Presentation conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return None
     
     def _generate_with_pptx2png(
         self,
@@ -182,18 +433,81 @@ class ThumbnailGenerator:
         self,
         pptx_path: str,
         output_path: str,
-        size: Tuple[int, int],
+        size: tuple[int, int],
         slide_number: int
     ) -> Optional[str]:
-        """Generate thumbnail by first converting to PDF then to image"""
+        """Generate thumbnail by first converting PPTX to PDF then to image"""
+        import subprocess
+        import tempfile
+        from pdf2image import convert_from_path
+        
         try:
-            # This method requires LibreOffice or similar to convert PPTX to PDF
-            # For now, return None as this requires external dependencies
-            logger.warning("PDF conversion method not fully implemented")
-            return None
+            # Create temporary PDF file
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
+                temp_pdf_path = temp_pdf.name
             
+            try:
+                # Convert PPTX to PDF using LibreOffice
+                cmd = [
+                    'libreoffice',
+                    '--headless',
+                    '--convert-to', 'pdf',
+                    '--outdir', str(Path(temp_pdf_path).parent),
+                    pptx_path
+                ]
+                
+                logger.info(f"Converting PPTX to PDF: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                
+                if result.returncode != 0:
+                    logger.error(f"LibreOffice conversion failed: {result.stderr}")
+                    return None
+                
+                # LibreOffice creates PDF with same name as PPTX
+                expected_pdf = Path(temp_pdf_path).parent / (Path(pptx_path).stem + '.pdf')
+                if not expected_pdf.exists():
+                    logger.error(f"Expected PDF not found: {expected_pdf}")
+                    return None
+                
+                # Convert PDF to image using pdf2image
+                logger.info(f"Converting PDF to image: {expected_pdf}")
+                images = convert_from_path(
+                    str(expected_pdf),
+                    first_page=slide_number + 1,  # pdf2image uses 1-based indexing
+                    last_page=slide_number + 1,
+                    dpi=200  # High quality
+                )
+                
+                if not images:
+                    logger.error("No images generated from PDF")
+                    return None
+                
+                # Resize and save the image
+                image = images[0]
+                image = image.resize(size, Image.Resampling.LANCZOS)
+                image.save(output_path, 'PNG', optimize=True)
+                
+                logger.info(f"Generated thumbnail with PDF2Image: {output_path}")
+                return str(output_path)
+                
+            finally:
+                # Clean up temp files
+                try:
+                    if Path(temp_pdf_path).exists():
+                        Path(temp_pdf_path).unlink()
+                    expected_pdf = Path(temp_pdf_path).parent / (Path(pptx_path).stem + '.pdf')
+                    if expected_pdf.exists():
+                        expected_pdf.unlink()
+                except Exception:
+                    pass
+                    
+        except subprocess.TimeoutExpired:
+            logger.error("LibreOffice conversion timed out")
+            return None
         except Exception as e:
             logger.error(f"PDF conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _generate_with_export_shapes(

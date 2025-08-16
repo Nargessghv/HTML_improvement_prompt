@@ -1,0 +1,22 @@
+HTML VISUALIZATION CONTEXT:
+- Presentation Topic: {topic}
+- Current Slide: {slide_number} of {total_slides}
+- HTML Placeholder: {placeholder_name}
+- Content to Visualize: {original_content}
+
+{detailed_specs}
+
+HTML VIEWPORT REQUIREMENTS:
+- Exact dimensions: {viewport_width}x{viewport_height} pixels
+- Body element MUST have: class="w-[{viewport_width}px] h-[{viewport_height}px]"
+- Body background MUST be: style="background-color: transparent;"
+- ALL content MUST fit within these dimensions without scrolling
+- Use responsive layouts (grid, flexbox) to ensure proper fit
+
+HTML GENERATION TASK:
+Create a professional HTML visualization for the above content that:
+1. Converts the descriptive content into compelling visual elements
+2. Uses appropriate components (cards, charts, diagrams, timelines)
+3. Maintains strict brand compliance
+4. Fits perfectly within the specified viewport
+5. Has a transparent background with solid component backgrounds

@@ -84,4 +84,14 @@ debug_*
 
 # HTML Debug Output
 html_debug/
-generated_html/ 
+generated_html/
+
+# HTML Prompts (keep templates but ignore generated)
+html_prompts/generated/
+html_prompts/system/*.bak
+html_prompts/templates/*.bak
+templates/*/html_prompts/generated/
+templates/*/html_prompts/*/*.bak
+
+# Test outputs
+test_output/ 

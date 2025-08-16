@@ -1,0 +1,66 @@
+{
+  "template_name": "Brochure Template - Leaflet",
+  "colors": {
+    "primary": {
+      "name": "Blue",
+      "hex": "#0066cc",
+      "usage": "Headlines, CTAs, key features"
+    },
+    "secondary": {
+      "name": "Green",
+      "hex": "#00a652",
+      "usage": "Subheadings, secondary information, success indicators"
+    },
+    "text": {
+      "body": {
+        "name": "Black",
+        "hex": "#000000",
+        "usage": "Body text, descriptions, main content"
+      },
+      "heading": {
+        "name": "Blue",
+        "hex": "#0066cc",
+        "usage": "Major section headings"
+      }
+    },
+    "background": {
+      "body": {
+        "name": "Transparent",
+        "value": "transparent",
+        "usage": "HTML body background for PowerPoint integration"
+      },
+      "components": {
+        "name": "White",
+        "hex": "#ffffff",
+        "usage": "Cards, info boxes, containers"
+      }
+    },
+    "accent": {
+      "light_grey": {
+        "name": "Light Grey",
+        "hex": "#9ca3af",
+        "usage": "Supporting elements, dividers, borders"
+      },
+      "dark_grey": {
+        "name": "Dark Grey",
+        "hex": "#6b7280",
+        "usage": "Secondary text, captions"
+      }
+    }
+  },
+  "typography": {
+    "font_family": "'Segoe UI', system-ui, sans-serif",
+    "sizes": {
+      "h1": "32px",
+      "h2": "24px",
+      "h3": "18px",
+      "body": "14px",
+      "small": "12px"
+    }
+  },
+  "image_generation": {
+    "primary_accent": "blue (#0066cc)",
+    "secondary_accent": "green (#00a652)",
+    "style": "vibrant, engaging, marketing-oriented"
+  }
+}

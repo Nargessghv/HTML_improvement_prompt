@@ -37,6 +37,10 @@ const projectSchema = z.object({
     .min(20, 'Topic description must be at least 20 characters')
     .max(5000, 'Topic description must be less than 5000 characters'),
   templateName: z.string().optional(),
+  htmlRefinementIterations: z.number()
+    .min(1, 'Must be at least 1 iteration')
+    .max(5, 'Maximum 5 iterations allowed')
+    .default(2),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
@@ -72,6 +76,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
       title: '',
       topic: initialTopic || '',
       templateName: 'auto',
+      htmlRefinementIterations: 2,
     },
   })
 
@@ -123,7 +128,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
     setIsCreating(true)
     
     try {
-      // Create project in Supabase with template selection
+      // Create project in Supabase with template selection and refinement iterations
       const { data: project, error } = await supabase
         .from('projects')
         .insert({
@@ -131,9 +136,10 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
           title: data.title,
           topic: data.topic,
           status: 'draft',
-          // Store template selection in metadata for now
+          // Store template selection and refinement iterations in metadata
           metadata: {
-            template_name: data.templateName === 'auto' ? undefined : data.templateName
+            template_name: data.templateName === 'auto' ? undefined : data.templateName,
+            html_refinement_iterations: data.htmlRefinementIterations
           }
         })
         .select()
@@ -274,6 +280,31 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                   </FormControl>
                   <FormDescription>
                     Choose a PowerPoint template for your presentation, or let us auto-select the best one.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="htmlRefinementIterations"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>HTML Visual Refinement Iterations</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={5}
+                      placeholder="2"
+                      className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30"
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 2)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Number of refinement iterations for HTML visualizations (1-5). More iterations improve visual quality but take longer.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

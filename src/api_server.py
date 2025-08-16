@@ -371,6 +371,36 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         api_logger.error(f"Authentication error: {str(e)}")
         raise HTTPException(status_code=401, detail="Invalid authentication token")
 
+# Helper function to create slide records from outline
+async def create_slide_records_from_outline(project_id: str, approved_outline: Dict[str, Any]):
+    """Create slide records in database immediately when outline is approved"""
+    try:
+        slides_data = approved_outline.get('slides', [])
+        api_logger.info(f"Creating {len(slides_data)} slide records for immediate display")
+        
+        for slide_spec in slides_data:
+            slide_data = {
+                "id": str(uuid.uuid4()),
+                "project_id": project_id,
+                "slide_number": slide_spec.get("slide_number"),
+                "title": slide_spec.get("title", "Untitled"),
+                "content": slide_spec,
+                "layout_type": slide_spec.get("layout_type"),
+                "status": "pending"  # Initially pending, will be updated during processing
+            }
+            
+            result = db.client.table("slides").insert(slide_data).execute()
+            
+            if result.data:
+                api_logger.info(f"✅ Created slide record {slide_spec.get('slide_number')}: {slide_spec.get('title', 'Untitled')}")
+            else:
+                api_logger.error(f"❌ Failed to create slide record {slide_spec.get('slide_number')}")
+                
+    except Exception as e:
+        api_logger.error(f"Error creating slide records from outline: {e}")
+        import traceback
+        traceback.print_exc()
+
 # Real-time notification system
 async def send_realtime_update(project_id: str, user_id: str, event_type: str, **kwargs):
     """Send real-time updates via WebSocket and webhooks"""
@@ -1487,11 +1517,18 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         actual_topic = project.get("topic", topic)
         api_logger.info(f"Starting workflow for project {project_id} with topic: {actual_topic[:100]}...")
         
-        # Extract template selection from project metadata if not provided
+        # Extract template selection and refinement iterations from project metadata
+        html_refinement_iterations = 2  # Default value
         if not template_name:
             metadata = project.get("metadata", {})
             if isinstance(metadata, dict):
                 template_name = metadata.get("template_name")
+                html_refinement_iterations = metadata.get("html_refinement_iterations", 2)
+        else:
+            # Still extract refinement iterations even if template_name is provided
+            metadata = project.get("metadata", {})
+            if isinstance(metadata, dict):
+                html_refinement_iterations = metadata.get("html_refinement_iterations", 2)
         
         # Update project status to processing
         db.update_project_status(project_id, "processing")
@@ -1521,6 +1558,7 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         
         api_logger.info(f"Template path: {template_path}")
         api_logger.info(f"Template folder path: {template_folder_path}")
+        api_logger.info(f"HTML refinement iterations: {html_refinement_iterations}")
         
         # Create enhanced callback with real-time updates
         realtime_callback = create_realtime_callback(project_id, user_id)
@@ -1532,6 +1570,9 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         api_logger.info(f"Approved outline received: {approved_outline is not None}")
         if approved_outline:
             api_logger.info(f"Approved outline slides count: {len(approved_outline.get('slides', []))}")
+            
+            # Create slide records immediately so they appear in the frontend
+            await create_slide_records_from_outline(project_id, approved_outline)
         
         # Check if parallel processing is enabled
         use_parallel_processing = os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true"
@@ -1570,6 +1611,9 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                             ]
                         }
                         api_logger.info(f"✅ Auto-generated outline with {len(approved_outline.get('slides', []))} slides")
+                        
+                        # Create slide records for auto-generated outline too
+                        await create_slide_records_from_outline(project_id, approved_outline)
                     else:
                         api_logger.warning("⚠️ Failed to auto-generate outline - falling back to sequential workflow")
                         use_parallel_processing = False
@@ -1588,7 +1632,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                     output_path=output_path,
                     approved_outline=approved_outline,
                     title=project.get("title"),
-                    template_folder_path=template_folder_path
+                    template_folder_path=template_folder_path,
+                    html_refinement_iterations=html_refinement_iterations
                 )
             else:
                 # Run standard workflow
@@ -1599,7 +1644,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                     template_folder_path=template_folder_path,
                     output_path=output_path,
                     title=project.get("title"),
-                    approved_outline=approved_outline
+                    approved_outline=approved_outline,
+                    html_refinement_iterations=html_refinement_iterations
                 )
         else:
             # Run standard workflow
@@ -1610,7 +1656,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                 template_folder_path=template_folder_path,
                 output_path=output_path,
                 title=project.get("title"),
-                approved_outline=approved_outline
+                approved_outline=approved_outline,
+                html_refinement_iterations=html_refinement_iterations
             )
         
         if result.get("success"):
@@ -1694,7 +1741,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                     content=slide_content.content,
                     html_content=slide_content.get("html_content"),
                     refined_html=slide_content.get("refined_html"),
-                    layout_type=slide_content.get("layout_type")
+                    layout_type=slide_content.get("layout_type"),
+                    layout_index=getattr(slide_content, 'layout_index', 0)  # CRITICAL FIX: Store layout_index
                 )
                 
                 # Send slide generated event

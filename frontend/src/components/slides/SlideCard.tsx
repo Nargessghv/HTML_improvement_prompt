@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { SlidePreviewModal } from './SlidePreviewModal'
 import { RefinementModal } from '@/components/refinement/RefinementModal'
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -30,6 +31,7 @@ interface Slide {
   content: any
   html_content?: string
   refined_html?: string
+  individual_pptx_url?: string
   current_agent?: string
   error_message?: string
   started_at?: string
@@ -37,6 +39,7 @@ interface Slide {
   processing_time_seconds?: number
   created_at: string
   updated_at: string
+  refinement_count?: number  // Track number of refinements available
 }
 
 interface SlideCardProps {
@@ -115,8 +118,60 @@ const statusConfig = {
 }
 
 export function SlideCard({ slide, projectId, isParallelProcessing = false }: SlideCardProps) {
+  const { supabase } = useSupabaseAuth()
   const [showPreview, setShowPreview] = useState(false)
   const [showRefinement, setShowRefinement] = useState(false)
+  const [refinementCount, setRefinementCount] = useState(0)
+  // Fetch refinement count when slide changes
+  useEffect(() => {
+    if (!slide || !projectId || !supabase) return
+    
+    const fetchRefinementCount = async () => {
+      const { count } = await supabase
+        .from('html_refinements')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+        .eq('slide_id', slide.id)
+      
+      setRefinementCount(count || 0)
+    }
+    
+    
+    fetchRefinementCount()
+    
+    // Set up real-time subscription for refinements
+    const subscription = supabase
+      .channel(`refinements-${slide.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'html_refinements',
+          filter: `slide_id=eq.${slide.id}`
+        },
+        (payload) => {
+          console.log('Refinement change detected for slide:', slide.id, payload)
+          fetchRefinementCount()
+          // Force a re-render by updating state
+          setRefinementCount(prev => {
+            // This ensures the component re-renders even if count doesn't change
+            fetchRefinementCount()
+            return prev
+          })
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to refinements for slide:', slide.id)
+        }
+      })
+    
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [slide, projectId, supabase])
+  
   // Show skeleton if slide is null (loading state)
   if (!slide) {
     return (
@@ -165,14 +220,30 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
   const isActive = status !== 'pending' && status !== 'completed' && status !== 'failed'
   const isCompleted = status === 'completed'
   const isFailed = status === 'failed'
+  const hasRefinements = refinementCount > 0
+  const isHtmlRefinementActive = status === 'html_refinement'
+  const isHtmlGenerationActive = status === 'html_generation'
+  const isClickable = (isCompleted || hasRefinements || isHtmlRefinementActive || isHtmlGenerationActive) && projectId
 
   return (
-    <Card className={`relative transition-all duration-300 min-h-[240px] hover:shadow-lg group cursor-pointer ${
+    <Card className={`relative transition-all duration-300 min-h-[240px] hover:shadow-lg group ${
+      isClickable ? 'cursor-pointer' : ''
+    } ${
       isActive ? 'border-primary/30 bg-primary/5 shadow-md ring-1 ring-primary/20' : 
       isCompleted ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950 hover:border-emerald-300' :
       isFailed ? 'border-destructive/30 bg-destructive/5 hover:border-destructive/40' : 
       'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'
-    }`} onClick={() => isCompleted && projectId && setShowPreview(true)}>
+    }`} onClick={() => {
+      if (!isClickable) return
+      
+      // If slide is in HTML processing or has refinements (and not completed), show refinement modal
+      if (isHtmlRefinementActive || isHtmlGenerationActive || (hasRefinements && !isCompleted)) {
+        setShowRefinement(true)
+      } else {
+        // If completed, show the final slide preview
+        setShowPreview(true)
+      }
+    }}>
       {/* Slide number badge */}
       <div className="absolute -top-2 -left-2 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-xs font-semibold">
         {slide.slide_number}
@@ -194,39 +265,56 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
               </Badge>
             </div>
             
-            {/* Action buttons for completed slides - show on hover */}
-            {isCompleted && projectId && (
+            {/* Action buttons for slides with content - show on hover */}
+            {isClickable && (
               <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
-                  onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
-                  title="Preview slide"
-                >
-                  <Eye className="w-3 h-3" />
-                </Button>
-                {/* Show refinement button if slide has HTML content */}
-                {(slide.html_content || slide.refined_html) && (
+                {/* Primary action button - context aware */}
+                {isHtmlRefinementActive || isHtmlGenerationActive || (hasRefinements && !isCompleted) ? (
                   <Button 
                     variant="ghost" 
                     size="sm" 
                     className="h-6 w-6 p-0 hover:bg-purple-100 dark:hover:bg-purple-900"
                     onClick={(e) => { e.stopPropagation(); setShowRefinement(true); }}
-                    title="View HTML refinements"
+                    title="View HTML refinement iterations"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+                    onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+                    title="Preview final slide"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </Button>
+                )}
+                
+                {/* Secondary actions */}
+                {isCompleted && hasRefinements && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 w-6 p-0 hover:bg-purple-100 dark:hover:bg-purple-900"
+                    onClick={(e) => { e.stopPropagation(); setShowRefinement(true); }}
+                    title="View refinement history"
                   >
                     <Sparkles className="w-3 h-3" />
                   </Button>
                 )}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
-                  onClick={(e) => { e.stopPropagation(); window.open(`/api/projects/${projectId}/slides/${slide.id}/download`, '_blank'); }}
-                  title="Download slide"
-                >
-                  <Download className="w-3 h-3" />
-                </Button>
+                
+                {isCompleted && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
+                    onClick={(e) => { e.stopPropagation(); window.open(`/api/projects/${projectId}/slides/${slide.id}/download`, '_blank'); }}
+                    title="Download slide"
+                  >
+                    <Download className="w-3 h-3" />
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -295,23 +383,39 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
                   </div>
                 )}
                 
-                {/* HTML Content Indicator */}
-                {(slide.html_content || slide.refined_html) && (
+                {/* HTML Content Indicator with refinement count */}
+                {hasRefinements && (
                   <div className="flex items-center gap-1">
                     <Badge variant="outline" className="text-xs px-2 py-0.5 bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-950 dark:border-purple-800 dark:text-purple-300">
                       <Sparkles className="w-3 h-3 mr-1" />
-                      HTML
+                      {refinementCount} {refinementCount === 1 ? 'iteration' : 'iterations'}
                     </Badge>
                   </div>
                 )}
               </div>
               
-              {/* Show a preview of the slide content */}
-              <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
-                <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed overflow-hidden" style={{display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical'}}>
-                  {getSlidePreview(slide)}
-                </p>
-              </div>
+              {/* Show online PPTX viewer if available, otherwise show text content */}
+              {slide.individual_pptx_url ? (
+                <div className="space-y-2">
+                  <div className="relative rounded-lg border overflow-hidden bg-white dark:bg-neutral-800" style={{ aspectRatio: '16/9' }}>
+                    <iframe
+                      src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(slide.individual_pptx_url)}`}
+                      className="w-full h-full border-0"
+                      title={`Slide ${slide.slide_number} preview`}
+                      allowFullScreen
+                    />
+                  </div>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
+                    Live PowerPoint preview
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
+                  <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed overflow-hidden" style={{display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical'}}>
+                    {getSlidePreview(slide)}
+                  </p>
+                </div>
+              )}
             </div>
           )}
           
@@ -365,12 +469,16 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
             isOpen={showPreview}
             onClose={() => setShowPreview(false)}
           />
-          {(slide.html_content || slide.refined_html) && (
+          {(hasRefinements || isHtmlRefinementActive || isHtmlGenerationActive) && (
             <RefinementModal
               open={showRefinement}
               onOpenChange={setShowRefinement}
               projectId={projectId}
               slideId={slide.id}
+              onViewFinalSlide={(slideId) => {
+                setShowRefinement(false)
+                setShowPreview(true)
+              }}
             />
           )}
         </>

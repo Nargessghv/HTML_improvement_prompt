@@ -206,6 +206,77 @@ class SupabaseStorageClient:
             logger.error(f"❌ Failed to upload image file: {e}")
             raise SupabaseStorageError(f"Image upload failed: {str(e)}")
     
+    def upload_file(self, file_path: str, storage_path: str, content_type: Optional[str] = None, bucket_name: Optional[str] = None) -> str:
+        """
+        Upload a file to Supabase Storage
+        
+        Args:
+            file_path: Local path to the file
+            storage_path: Remote storage path (key) for the file
+            content_type: MIME type of the file (auto-detected if not provided)
+            bucket_name: Storage bucket name (uses default if not provided)
+            
+        Returns:
+            Public URL of uploaded file
+            
+        Raises:
+            SupabaseStorageError: If upload fails
+        """
+        try:
+            file_path_obj = Path(file_path)
+            
+            if not file_path_obj.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            # Use specified bucket or default
+            target_bucket = bucket_name or self.bucket_name
+            
+            # Auto-detect content type if not provided
+            if not content_type:
+                content_type, _ = mimetypes.guess_type(file_path)
+                content_type = content_type or "application/octet-stream"
+            
+            logger.info(f"📁 Found file: {file_path} (size: {file_path_obj.stat().st_size} bytes)")
+            
+            # Read file
+            with open(file_path, 'rb') as f:
+                file_bytes = f.read()
+            
+            # Upload to Supabase Storage
+            result = self.client.storage.from_(target_bucket).upload(
+                path=storage_path,
+                file=file_bytes,
+                file_options={
+                    "content-type": content_type,
+                    "cache-control": "3600"
+                }
+            )
+            
+            # Check if upload was successful
+            if not result or (hasattr(result, 'error') and result.error):
+                error_msg = getattr(result, 'error', 'Unknown upload error')
+                raise SupabaseStorageError(f"File upload failed: {error_msg}")
+            
+            # Generate signed URL for private bucket (valid for 1 hour)
+            signed_url_response = self.client.storage.from_(target_bucket).create_signed_url(storage_path, 3600)
+            
+            if signed_url_response.get('error'):
+                raise SupabaseStorageError(f"Failed to generate signed URL: {signed_url_response['error']}")
+            
+            signed_url = signed_url_response.get('signedURL') or signed_url_response.get('url')
+            
+            # Clean up any trailing parameters that might cause issues
+            if isinstance(signed_url, str) and signed_url.endswith('?'):
+                signed_url = signed_url.rstrip('?')
+            
+            logger.info(f"✅ Uploaded file to bucket '{target_bucket}': {storage_path}")
+            logger.info(f"   - Signed URL: {signed_url}")
+            return signed_url
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to upload file: {e}")
+            raise SupabaseStorageError(f"File upload failed: {str(e)}")
+
     def upload_refinement_files(self, project_id: str, slide_id: str, iteration: int,
                                html_content: str, image_path: Path) -> Tuple[str, str]:
         """

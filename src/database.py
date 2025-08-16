@@ -206,7 +206,7 @@ class SupabaseClient:
     
     # Project operations
     @log_database_operation("create_project", "projects")
-    def create_project(self, user_id: str, title: str, topic: str, jwt_token: Optional[str] = None) -> Dict[str, Any]:
+    def create_project(self, user_id: str, title: str, topic: str, template_path: Optional[str] = None, jwt_token: Optional[str] = None) -> Dict[str, Any]:
         """Create a new project with validation and error handling"""
         # Validate inputs
         self._validate_uuid(user_id, "user_id")
@@ -218,12 +218,23 @@ class SupabaseClient:
         if len(topic.strip()) > 1000:
             raise DatabaseValidationError("Project topic must be 1000 characters or less")
         
+        # Get default template path if not provided
+        if not template_path:
+            try:
+                from .template_manager import resolve_template_path
+                template_path = resolve_template_path()
+                db_logger.info(f"Using default template for project: {template_path}")
+            except Exception as e:
+                db_logger.warning(f"Could not resolve template path: {e}")
+                template_path = None
+        
         project_data = {
             "id": str(uuid.uuid4()),
             "user_id": user_id,
             "title": title.strip(),
             "topic": topic.strip(),
             "status": "draft",
+            "template_path": template_path,
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
@@ -430,7 +441,7 @@ class SupabaseClient:
             slide_data["content"] = content
         
         # Add optional fields
-        for field in ["html_content", "refined_html", "layout_type"]:
+        for field in ["html_content", "refined_html", "layout_type", "layout_index"]:
             if field in kwargs:
                 slide_data[field] = kwargs[field]
         

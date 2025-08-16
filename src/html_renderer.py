@@ -466,7 +466,7 @@ class HTMLRenderer:
     def _render_with_playwright(
         self, html_content: str, output_path: str, width: int, height: int, **kwargs
     ) -> bool:
-        """Render using Playwright for highest quality"""
+        """Render using Playwright for highest quality with transparent background support"""
         try:
             with sync_playwright() as p:
                 # Launch browser with high DPI settings
@@ -506,6 +506,7 @@ class HTMLRenderer:
                         path=output_path,
                         type="png",
                         full_page=True,
+                        omit_background=True,  # Enable transparency
                     )
                 else:
                     print(f"  - Content fits in viewport, using clipped screenshot")
@@ -516,6 +517,7 @@ class HTMLRenderer:
                         type="png",
                         full_page=False,
                         clip={"x": 0, "y": 0, "width": viewport_width, "height": viewport_height},
+                        omit_background=True,  # Enable transparency
                     )
 
                 browser.close()
@@ -667,7 +669,7 @@ class HTMLRenderer:
     async def _render_with_playwright_async(
         self, html_content: str, output_path: str, width: int, height: int, **kwargs
     ) -> bool:
-        """Async version of Playwright rendering for use in async contexts"""
+        """Async version of Playwright rendering with transparent background support"""
         try:
             async with async_playwright() as p:
                 # Launch browser with high DPI settings
@@ -707,6 +709,7 @@ class HTMLRenderer:
                         path=output_path,
                         type="png",
                         full_page=True,
+                        omit_background=True,  # Enable transparency
                     )
                 else:
                     print(f"  - Content fits in viewport, using clipped screenshot")
@@ -717,6 +720,7 @@ class HTMLRenderer:
                         type="png",
                         full_page=False,
                         clip={"x": 0, "y": 0, "width": viewport_width, "height": viewport_height},
+                        omit_background=True,  # Enable transparency
                     )
 
                 await browser.close()

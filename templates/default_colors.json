@@ -1,0 +1,61 @@
+{
+  "template_name": "Default Template",
+  "colors": {
+    "primary": {
+      "name": "Professional Blue",
+      "hex": "#0052cc",
+      "usage": "Key elements, highlights, CTAs"
+    },
+    "secondary": {
+      "name": "Dark Grey",
+      "hex": "#2d3748",
+      "usage": "Headings, secondary information"
+    },
+    "text": {
+      "body": {
+        "name": "Black",
+        "hex": "#000000",
+        "usage": "Body text, descriptions"
+      },
+      "heading": {
+        "name": "Dark Grey",
+        "hex": "#2d3748",
+        "usage": "All headings"
+      }
+    },
+    "background": {
+      "body": {
+        "name": "Transparent",
+        "value": "transparent",
+        "usage": "HTML body background for PowerPoint integration"
+      },
+      "components": {
+        "name": "White",
+        "hex": "#ffffff",
+        "usage": "Cards, panels, containers"
+      }
+    },
+    "accent": {
+      "light_grey": {
+        "name": "Light Grey",
+        "hex": "#e5e7eb",
+        "usage": "Dividers, borders, subtle elements"
+      }
+    }
+  },
+  "typography": {
+    "font_family": "'Segoe UI', system-ui, -apple-system, sans-serif",
+    "sizes": {
+      "h1": "24px",
+      "h2": "20px",
+      "h3": "18px",
+      "body": "16px",
+      "small": "14px"
+    }
+  },
+  "image_generation": {
+    "primary_accent": "professional blue",
+    "secondary_accent": "dark grey",
+    "style": "modern, professional, clean"
+  }
+}

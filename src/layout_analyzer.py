@@ -87,6 +87,38 @@ class LayoutAnalyzer:
         # Note: Using direct layout analysis preserves custom names and instructions
 
         return layout_info
+    
+    def export_layouts_to_file(self, output_path: str = "layouts_export.json") -> bool:
+        """
+        Export analyzed layouts to a JSON file for backward compatibility
+        
+        Args:
+            output_path: Path where to save the layouts export file
+            
+        Returns:
+            True if export successful, False otherwise
+        """
+        try:
+            import json
+            import os
+            
+            # Analyze layouts if not already done
+            if not self.layouts_info:
+                self.analyze_all_layouts()
+            
+            # Create the export directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+            
+            # Export to JSON file
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(self.layouts_info, f, indent=2, ensure_ascii=False)
+            
+            print(f"✅ Exported layouts to: {output_path}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to export layouts: {e}")
+            return False
 
     def _extract_placeholder_instructions(self, placeholder) -> str:
         """

@@ -1,0 +1,61 @@
+{
+  "template_name": "Ekona Slides Template",
+  "colors": {
+    "primary": {
+      "name": "Swiss Red",
+      "hex": "#dc261e",
+      "usage": "Key metrics, highlights, CTAs, accent elements"
+    },
+    "secondary": {
+      "name": "Dark Grey",
+      "hex": "#2d3748",
+      "usage": "Headings, titles, secondary information"
+    },
+    "text": {
+      "body": {
+        "name": "Black",
+        "hex": "#000000",
+        "usage": "Body text, descriptions, main content"
+      },
+      "heading": {
+        "name": "Dark Grey",
+        "hex": "#2d3748",
+        "usage": "All headings (H1, H2, H3)"
+      }
+    },
+    "background": {
+      "body": {
+        "name": "Transparent",
+        "value": "transparent",
+        "usage": "HTML body background for PowerPoint integration"
+      },
+      "components": {
+        "name": "White",
+        "hex": "#ffffff",
+        "usage": "Cards, panels, containers"
+      }
+    },
+    "accent": {
+      "light_grey": {
+        "name": "Light Grey",
+        "hex": "#e5e7eb",
+        "usage": "Dividers, borders, subtle elements"
+      }
+    }
+  },
+  "typography": {
+    "font_family": "'Segoe UI', system-ui, -apple-system, sans-serif",
+    "sizes": {
+      "h1": "28px",
+      "h2": "24px",
+      "h3": "20px",
+      "body": "16px",
+      "small": "14px"
+    }
+  },
+  "image_generation": {
+    "primary_accent": "Swiss red (#dc261e)",
+    "secondary_accent": "dark grey (#2d3748)",
+    "style": "modern, professional, corporate"
+  }
+}

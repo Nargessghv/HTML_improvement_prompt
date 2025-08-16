@@ -1,0 +1,43 @@
+MERMAID.JS HTML EXAMPLES FOR POWERPOINT:
+
+1. PROCESS FLOW HTML:
+<div class="mermaid max-h-[400px] w-full">
+flowchart LR
+    A["Start"] --> B["Process Data"]
+    B --> C{"Decision"}
+    C -->|Yes| D["Action 1"]
+    C -->|No| E["Action 2"]
+    D --> F["End"]
+    E --> F
+</div>
+
+2. ORGANIZATIONAL CHART HTML:
+<div class="mermaid max-h-[400px] w-full">
+graph TD
+    CEO["CEO"]
+    CEO --> CTO["CTO"]
+    CEO --> CFO["CFO"]
+    CEO --> CMO["CMO"]
+    CTO --> Dev1["Dev Team"]
+    CTO --> Dev2["QA Team"]
+    CFO --> Fin["Finance"]
+    CMO --> Mark["Marketing"]
+</div>
+
+3. DECISION TREE HTML:
+<div class="mermaid max-h-[400px] w-full">
+graph TD
+    Start["Analyze Problem"] --> Q1{"Is it urgent?"}
+    Q1 -->|Yes| Q2{"High impact?"}
+    Q1 -->|No| Q3{"Strategic value?"}
+    Q2 -->|Yes| A1["Priority 1"]
+    Q2 -->|No| A2["Priority 2"]
+    Q3 -->|Yes| A3["Priority 3"]
+    Q3 -->|No| A4["Priority 4"]
+</div>
+
+IMPORTANT HTML NOTES:
+- Always wrap Mermaid in a constrained div: max-h-[400px]
+- Use simple text in nodes, avoid HTML tags
+- Use quotes for node text: A["Text"]
+- Keep diagrams simple for better rendering

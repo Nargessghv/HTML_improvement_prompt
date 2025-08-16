@@ -359,7 +359,7 @@ class SlideGenerator:
         self, presentation: Any, slide_content: SlideContent, topic: str
     ) -> None:
         """
-        Add a single slide to the presentation with full icon support
+        Add a single slide to the presentation with full icon support using SAME APPROACH as individual slides
 
         Args:
             presentation: PowerPoint presentation object
@@ -372,26 +372,33 @@ class SlideGenerator:
         # Add slide with the specified layout
         slide = presentation.slides.add_slide(layout)
 
-        # Get the actual placeholder names and info from the created slide
-        actual_placeholders = self._get_actual_placeholder_info(slide)
-
-        if slide_content.content and actual_placeholders:
-            # Use icon-aware population method
-            self._populate_slide_with_icons(
-                slide, slide_content.content, actual_placeholders, topic
+        if slide_content.content:
+            # CRITICAL FIX: Use EXACT same approach as individual slide generation for icon-aware slides too
+            from .individual_slide_generator import IndividualSlideGenerator
+            
+            # Create temporary IndividualSlideGenerator instance to use its PROVEN methods
+            individual_generator = IndividualSlideGenerator()
+            
+            # Apply content using the EXACT same method that works for individual slides
+            individual_generator._apply_content_to_slide(
+                slide,
+                slide_content,
+                self.template_path,
+                getattr(self.content_generator, 'layouts_info', None),
+                None,  # dynamic_models
+                getattr(slide_content, 'html_image_path', None)
             )
-        elif actual_placeholders:
+            
+            print(f"✅ Applied icon-aware content using PROVEN individual slide method")
+        else:
             # No content provided but slide has placeholders
-            print(
-                f"  → Slide created with {len(actual_placeholders)} placeholders, "
-                "no content"
-            )
+            print(f"  → Icon-aware slide created with no content")
 
     def _add_slide_to_presentation(
         self, presentation: Any, slide_content: SlideContent, generated_images: dict = None, slide_index: int = 0
     ) -> None:
         """
-        Add a single slide to the presentation
+        Add a single slide to the presentation using EXACT SAME APPROACH as individual slides
 
         Args:
             presentation: PowerPoint presentation object
@@ -405,21 +412,28 @@ class SlideGenerator:
         # Add slide with the specified layout
         slide = presentation.slides.add_slide(layout)
 
-        # Get the actual placeholder names from the created slide
-        actual_placeholders = self._get_actual_placeholder_info(slide)
-
-        # If we have content to place, use the working layout mapping approach
-        # If not, we might need to generate content based on actual placeholders
+        # CRITICAL FIX: Use EXACT same approach as individual slide generation
         if slide_content.content:
-            # Use the same approach as the working system - layout mapping
-            self._populate_slide_placeholders(slide, slide_content.content)
-        elif actual_placeholders:
-            # No content provided but slide has placeholders
-            # This could happen if content generation was skipped
-            print(
-                f"  → Slide created with {len(actual_placeholders)} placeholders, "
-                "no content"
+            # Import here to avoid circular imports (same as individual slides)
+            from .individual_slide_generator import IndividualSlideGenerator
+            
+            # Create temporary IndividualSlideGenerator instance to use its PROVEN methods
+            individual_generator = IndividualSlideGenerator()
+            
+            # Apply content using the EXACT same method that works for individual slides
+            individual_generator._apply_content_to_slide(
+                slide,
+                slide_content,
+                self.template_path,
+                getattr(self.content_generator, 'layouts_info', None),
+                None,  # dynamic_models
+                getattr(slide_content, 'html_image_path', None)
             )
+            
+            print(f"✅ Applied content using PROVEN individual slide method")
+        else:
+            # No content provided but slide has placeholders
+            print(f"  → Slide created with no content for slide {slide_index + 1}")
         
         # Handle generated images if available (using same approach as HTML method)
         if generated_images is not None and slide_index in generated_images:
@@ -484,14 +498,187 @@ class SlideGenerator:
             }
         return placeholder_info
 
+    def _get_layout_placeholder_formatting(self, slide, placeholder_idx: int) -> dict:
+        """
+        Get formatting from the layout placeholder
+        
+        Args:
+            slide: PowerPoint slide object
+            placeholder_idx: Index of the placeholder
+            
+        Returns:
+            Dictionary with formatting properties from layout
+        """
+        formatting = {}
+        try:
+            layout = slide.slide_layout
+            for layout_ph in layout.placeholders:
+                if layout_ph.placeholder_format.idx == placeholder_idx:
+                    if hasattr(layout_ph, 'text_frame') and layout_ph.text_frame:
+                        text_frame = layout_ph.text_frame
+                        if text_frame.paragraphs:
+                            first_para = text_frame.paragraphs[0]
+                            # Try to get font from runs first (most specific)
+                            if first_para.runs:
+                                font = first_para.runs[0].font
+                                formatting['font_name'] = font.name
+                                formatting['font_size'] = font.size
+                            # Fall back to paragraph font
+                            elif hasattr(first_para, 'font'):
+                                font = first_para.font
+                                formatting['font_name'] = font.name
+                                formatting['font_size'] = font.size
+                    break
+        except Exception as e:
+            print(f"Could not get layout formatting: {e}")
+        return formatting
+    
+    def _capture_original_placeholders(self, slide) -> None:
+        """
+        Capture all original placeholders and their properties before modification
+        
+        Args:
+            slide: PowerPoint slide object
+        """
+        self._original_placeholders = {}
+        
+        for placeholder in slide.placeholders:
+            idx = placeholder.placeholder_format.idx
+            
+            # Capture placeholder properties
+            properties = {
+                'name': placeholder.name,
+                'left': placeholder.left,
+                'top': placeholder.top,
+                'width': placeholder.width,
+                'height': placeholder.height,
+                'placeholder_format_type': placeholder.placeholder_format.type,
+                'z_order_position': None  # Will be set based on position in shapes
+            }
+            
+            # Find z-order position
+            for i, shape in enumerate(slide.shapes):
+                if shape == placeholder:
+                    properties['z_order_position'] = i
+                    break
+            
+            # Capture text properties if it's a text placeholder
+            if hasattr(placeholder, 'text_frame'):
+                text_frame = placeholder.text_frame
+                properties['text'] = text_frame.text if text_frame else ""
+                
+                # Capture paragraph and font properties from first paragraph
+                if text_frame and text_frame.paragraphs:
+                    first_para = text_frame.paragraphs[0]
+                    properties['paragraph_alignment'] = first_para.alignment
+                    properties['paragraph_level'] = first_para.level
+                    
+                    # Capture font properties from first run if exists
+                    if first_para.runs:
+                        first_run = first_para.runs[0]
+                        font = first_run.font
+                        properties['font_name'] = font.name
+                        properties['font_size'] = font.size
+                        properties['font_bold'] = font.bold
+                        properties['font_italic'] = font.italic
+                        # Safely get font color
+                        try:
+                            properties['font_color'] = font.color.rgb if font.color else None
+                        except AttributeError:
+                            properties['font_color'] = None
+            
+            self._original_placeholders[idx] = properties
+    
+    def _restore_unused_placeholders(self, slide, content: Dict[str, str], layout_info: Dict = None) -> None:
+        """
+        Restore placeholders that weren't filled with content as text boxes with original styling
+        
+        Args:
+            slide: PowerPoint slide object
+            content: Dictionary of content that was applied
+            layout_info: Optional layout information with custom names
+        """
+        if not hasattr(self, '_original_placeholders'):
+            return
+        
+        # Determine which placeholders were used
+        used_placeholder_names = set()
+        
+        # Add content keys to used names
+        used_placeholder_names.update(content.keys())
+        
+        # Get mapping of idx to custom names if available
+        idx_to_custom_name = {}
+        if layout_info:
+            for placeholder_info in layout_info.get("placeholders", []):
+                idx = placeholder_info.get("index")
+                custom_name = placeholder_info.get("name")
+                if idx is not None and custom_name:
+                    idx_to_custom_name[idx] = custom_name
+        
+        # Check each original placeholder
+        for idx, properties in self._original_placeholders.items():
+            custom_name = idx_to_custom_name.get(idx, properties['name'])
+            
+            # Skip if this placeholder was used
+            if custom_name in used_placeholder_names:
+                continue
+            
+            # Skip if it's a picture placeholder that was replaced
+            if properties['placeholder_format_type'] == 18:  # PICTURE type
+                # Check if the placeholder still exists (wasn't replaced)
+                placeholder_exists = False
+                for placeholder in slide.placeholders:
+                    if placeholder.placeholder_format.idx == idx:
+                        placeholder_exists = True
+                        break
+                
+                if not placeholder_exists:
+                    continue  # Was replaced with an image
+            
+            # Find if placeholder still exists
+            current_placeholder = None
+            for placeholder in slide.placeholders:
+                if placeholder.placeholder_format.idx == idx:
+                    current_placeholder = placeholder
+                    break
+            
+            # If placeholder exists and has no new content, ensure it keeps original text
+            if current_placeholder and hasattr(current_placeholder, 'text_frame'):
+                if properties.get('text'):
+                    # Restore original text if it was cleared
+                    if not current_placeholder.text_frame.text:
+                        current_placeholder.text_frame.text = properties['text']
+    
     def _populate_slide_placeholders(self, slide, content: Dict[str, str]) -> None:
         """
         Populate slide placeholders with content using intelligent mapping
+        Also preserves unused placeholders with their original styling
 
         Args:
             slide: PowerPoint slide object
             content: Dictionary mapping placeholder names to content
         """
+        # First, capture all original placeholders and their properties
+        self._capture_original_placeholders(slide)
+        
+        # Auto-add LOCKED_ backgrounds from template folder
+        from pathlib import Path
+        template_folder = Path(self.template_path).parent
+        if template_folder.exists():
+            # Check the slide layout for LOCKED_ placeholders
+            slide_layout = slide.slide_layout
+            for layout_ph in slide_layout.placeholders:
+                ph_name = layout_ph.name
+                if ph_name and ph_name.startswith("LOCKED_"):
+                    # Check if we have a PNG file for this LOCKED_ placeholder
+                    png_path = template_folder / f"{ph_name}.png"
+                    if png_path.exists() and ph_name not in content:
+                        # Auto-add the LOCKED_ background to content
+                        content[ph_name] = str(png_path)
+                        print(f"  🔒 Auto-adding LOCKED_ background: {ph_name}")
+        
+        
         # Get layout information for this slide to access custom placeholder mapping
         slide_layout_index = None
         for i, layout in enumerate(slide.slide_layout.slide_master.slide_layouts):
@@ -504,16 +691,21 @@ class SlideGenerator:
             layout_info = self.content_generator.layouts_info.get(slide_layout_index)
             if layout_info:
                 self._populate_with_layout_mapping(slide, content, layout_info)
+                # Restore any unused placeholders
+                self._restore_unused_placeholders(slide, content, layout_info)
                 return
 
         # Fallback to original method if no layout mapping available
         self._populate_with_name_matching(slide, content)
+        # Restore any unused placeholders
+        self._restore_unused_placeholders(slide, content)
 
     def _populate_with_layout_mapping(
         self, slide, content: Dict[str, str], layout_info: Dict
     ) -> None:
         """
         Populate placeholders using layout analysis mapping (handles custom names)
+        MAINTAINS EXACT Z-ORDER from template
 
         Args:
             slide: PowerPoint slide object
@@ -527,62 +719,151 @@ class SlideGenerator:
             placeholder_by_index[idx] = placeholder
 
         print("  → Mapping content using layout analysis:")
+        
+        # Track original z-order positions before any replacements
+        original_z_order = {}
+        for i, shape in enumerate(slide.shapes):
+            if hasattr(shape, 'placeholder_format'):
+                original_z_order[shape.placeholder_format.idx] = i
+        
+        # Track which placeholders will be replaced with images
+        replaced_placeholders = {}
 
-        # Map content using layout analysis custom name -> index mapping
+        # Process ALL placeholders in any order (we'll fix z-order after)
         for layout_placeholder in layout_info.get("placeholders", []):
             custom_name = layout_placeholder["name"]
             placeholder_index = layout_placeholder["index"]
             
-            # Don't skip LOCKED_ placeholders if they have content (they should have image paths)
-            # Only skip if no content is provided
-            if custom_name.startswith("LOCKED_") and custom_name not in content:
-                print(f"  - No content for locked placeholder '{custom_name}'")
-                continue
-
             if custom_name in content:
                 if placeholder_index in placeholder_by_index:
                     placeholder_obj = placeholder_by_index[placeholder_index]
                     text_content = content[custom_name]
-
+                    
+                    # Track if this will be replaced with an image
+                    is_image = (hasattr(placeholder_obj, 'placeholder_format') and 
+                               placeholder_obj.placeholder_format.type == 18 and  # PICTURE type
+                               (custom_name.startswith("LOCKED_") or 
+                                self._is_image_path(text_content)))
+                    
+                    if is_image:
+                        replaced_placeholders[placeholder_index] = original_z_order.get(placeholder_index, 0)
+                    
                     # Pass custom name info to determine if this is an icon placeholder
                     self._set_placeholder_content_with_custom_name(
                         placeholder_obj, text_content, custom_name
                     )
-                    print(f"    ✓ '{custom_name}' → Index {placeholder_index}")
+                    
+                    if custom_name.startswith("LOCKED_"):
+                        print(f"    🔒 '{custom_name}' → Index {placeholder_index} (z-order: {original_z_order.get(placeholder_index, 'unknown')})")
+                    else:
+                        print(f"    ✓ '{custom_name}' → Index {placeholder_index}")
                 else:
-                    print(
-                        f"    ✗ Index {placeholder_index} not found in slide "
-                        f"for '{custom_name}'"
-                    )
+                    print(f"    ✗ Index {placeholder_index} not found in slide for '{custom_name}'")
             else:
                 print(f"    - No content for '{custom_name}'")
+        
+        # After all replacements, fix z-order to match template
+        self._restore_z_order(slide, original_z_order, replaced_placeholders)
+
+    def _restore_z_order(self, slide, original_z_order: dict, replaced_placeholders: dict) -> None:
+        """
+        Restore z-order to match the original template order
+        
+        Args:
+            slide: PowerPoint slide object
+            original_z_order: Original z-order positions from template
+            replaced_placeholders: Dict of placeholder indices that were replaced with images
+        """
+        try:
+            # For each replaced placeholder, find its image and ensure correct position
+            for placeholder_idx, target_position in sorted(replaced_placeholders.items(), key=lambda x: x[1]):
+                # The image that replaced this placeholder should be at target_position
+                # Find all images
+                images = [shape for shape in slide.shapes if hasattr(shape, 'image')]
+                
+                # Try to identify which image replaced this placeholder
+                # Images are usually added in order, so we can match by position
+                for img_shape in images:
+                    current_position = list(slide.shapes).index(img_shape)
+                    
+                    # Check if this image is close to where we expect it
+                    # (within reasonable range considering other replacements)
+                    if abs(current_position - target_position) <= len(images):
+                        # This is likely our replacement image
+                        if current_position != target_position:
+                            # Need to move it
+                            shape_element = img_shape._element
+                            parent = shape_element.getparent()
+                            
+                            # Remove from current position
+                            parent.remove(shape_element)
+                            
+                            # Insert at target position
+                            # Get all current children for reference
+                            children = list(parent)
+                            
+                            if target_position < len(children):
+                                # Insert before the element at target position
+                                parent.insert(target_position, shape_element)
+                            else:
+                                # Append at the end
+                                parent.append(shape_element)
+                            
+                            print(f"  → Moved {img_shape.name} from position {current_position} to {target_position}")
+                        break
+                        
+        except Exception as e:
+            print(f"  ⚠️ Warning: Could not fully restore z-order: {e}")
 
     def _populate_with_name_matching(self, slide, content: Dict[str, str]) -> None:
         """
-        Fallback method using name matching (original approach)
-
+        Fallback method using name matching with layout placeholder names
         Args:
             slide: PowerPoint slide object
             content: Dictionary mapping placeholder names to content
         """
-        # Create a mapping from placeholder names to placeholder objects
+        # Create mapping from layout placeholder names to slide placeholders by index
         placeholder_map = {}
+        layout_placeholder_map = {}
+        
+        # Get the slide's layout
+        slide_layout = slide.slide_layout
+        
+        # Build a map of layout placeholder names by index
+        for layout_ph in slide_layout.placeholders:
+            idx = layout_ph.placeholder_format.idx
+            layout_placeholder_map[idx] = layout_ph.name
+        
+        # Map slide placeholders using their indices to get layout names
         for placeholder in slide.placeholders:
-            name = (
-                placeholder.name or f"Placeholder_{placeholder.placeholder_format.idx}"
-            )
+            idx = placeholder.placeholder_format.idx
+            
+            # Use layout name if available, otherwise use slide placeholder name
+            if idx in layout_placeholder_map:
+                name = layout_placeholder_map[idx]
+                print(f"  📍 Mapped placeholder idx {idx}: '{name}'")
+            else:
+                name = placeholder.name or f"Placeholder_{idx}"
+            
             placeholder_map[name] = placeholder
-
+        
+        # Debug: Show available placeholder names
+        print(f"  🔍 Available placeholders for content mapping:")
+        for name in placeholder_map.keys():
+            ph = placeholder_map[name]
+            ph_type = "PICTURE" if ph.placeholder_format.type == 18 else "TEXT"
+            print(f"     • '{name}' ({ph_type})")
+        
         # Fill placeholders with content
         for placeholder_name, text_content in content.items():
             # Don't skip LOCKED_ placeholders if they have content (they should have image paths)
-            # Only skip if no content is provided
-            if placeholder_name.startswith("LOCKED_") and placeholder_name not in content:
+            if placeholder_name.startswith("LOCKED_") and not text_content:
                 print(f"  - No content for locked placeholder '{placeholder_name}'")
                 continue
                 
             if placeholder_name in placeholder_map:
                 placeholder = placeholder_map[placeholder_name]
+                print(f"  ✅ Found placeholder '{placeholder_name}'")
                 self._set_placeholder_content(placeholder, text_content)
             else:
                 # Try to find placeholder by partial name match
@@ -590,9 +871,10 @@ class SlideGenerator:
                     placeholder_map, placeholder_name
                 )
                 if matched_placeholder:
+                    print(f"  ✅ Found placeholder '{placeholder_name}' by partial match")
                     self._set_placeholder_content(matched_placeholder, text_content)
                 else:
-                    print(f"Warning: Placeholder '{placeholder_name}' not found")
+                    print(f"  ⚠️ Warning: Placeholder '{placeholder_name}' not found in mapping")
 
     def _find_placeholder_by_partial_match(
         self, placeholder_map: Dict[str, Any], target_name: str
@@ -724,8 +1006,17 @@ class SlideGenerator:
                 # If chart creation fails, fall through to text insertion
 
             if hasattr(placeholder, "text_frame"):
-                # Text placeholder - preserve original formatting
-                self._set_text_preserving_formatting(placeholder.text_frame, content)
+                # Text placeholder - preserve original formatting from layout
+                # Get the placeholder's index to find layout formatting
+                placeholder_idx = placeholder.placeholder_format.idx
+                layout_formatting = self._get_layout_placeholder_formatting(
+                    placeholder.part.slide, placeholder_idx
+                )
+                
+                # Set text while preserving formatting
+                self._set_text_preserving_formatting_with_layout(
+                    placeholder, content, layout_formatting
+                )
             elif hasattr(placeholder, "text"):
                 # Simple text placeholder
                 placeholder.text = content
@@ -1030,7 +1321,7 @@ class SlideGenerator:
         self, placeholder, image_path: str, name: str
     ) -> None:
         """
-        Replace a placeholder with an image file
+        Replace a placeholder with an image file while maintaining z-order
 
         Args:
             placeholder: PowerPoint placeholder object
@@ -1043,19 +1334,28 @@ class SlideGenerator:
             top = placeholder.top
             width = placeholder.width
             height = placeholder.height
+            
+            # Store the placeholder's z-order position
+            z_order_position = None
 
             # Get the slide and shapes collection
             slide = placeholder.part.slide
             shapes = slide.shapes
 
-            # Remove the original placeholder
+            # Find the placeholder's position in shapes for z-order
             placeholder_idx = None
             for i, shape in enumerate(shapes):
                 if shape == placeholder:
                     placeholder_idx = i
+                    z_order_position = i
                     break
 
             if placeholder_idx is not None:
+                # Store reference to the element's parent and next sibling for z-order preservation
+                placeholder_element = placeholder._element
+                parent = placeholder_element.getparent()
+                next_sibling = placeholder_element.getnext()
+                
                 # Delete the placeholder
                 shapes._spTree.remove(placeholder._element)
 
@@ -1138,6 +1438,23 @@ class SlideGenerator:
                     print(f"  - Auto-sizing worked correctly, keeping auto dimensions")
                 
                 picture.name = f"{name}_visualization"
+                
+                # Restore z-order position if we have it
+                if z_order_position is not None and z_order_position < len(shapes):
+                    # Move the picture to the original z-order position
+                    picture_element = picture._element
+                    
+                    # Remove from current position
+                    parent.remove(picture_element)
+                    
+                    # Insert at the original position
+                    if next_sibling is not None:
+                        parent.insert(parent.index(next_sibling), picture_element)
+                    else:
+                        # Was at the end, append
+                        parent.append(picture_element)
+                    
+                    print(f"  - Maintained z-order position: {z_order_position}")
 
                 print("✅ Replaced placeholder with visualization image")
             else:
@@ -1146,15 +1463,33 @@ class SlideGenerator:
         except Exception as e:
             print(f"Error replacing placeholder with image: {e}")
 
-    def _set_placeholder_content(self, placeholder, content: str) -> None:
+    def _set_placeholder_content(self, placeholder, content) -> None:
         """
         Set content for a placeholder while preserving original formatting
 
         Args:
             placeholder: PowerPoint placeholder object
-            content: Text content to set, chart data, icon name, or HTML content
+            content: Text content (str), list of items, chart data, icon name, or HTML content
         """
         try:
+            # Handle list content first (for bullet points)
+            if isinstance(content, list):
+                if hasattr(placeholder, "text_frame"):
+                    # Join list items with newlines for bullet points
+                    bullet_text = "\n".join(str(item) for item in content)
+                    # Get layout formatting
+                    placeholder_idx = placeholder.placeholder_format.idx
+                    layout_formatting = self._get_layout_placeholder_formatting(
+                        placeholder.part.slide, placeholder_idx
+                    )
+                    # Set text with preserved formatting
+                    self._set_text_preserving_formatting_with_layout(
+                        placeholder, bullet_text, layout_formatting
+                    )
+                else:
+                    print(f"Warning: Cannot set list content on non-text placeholder")
+                return
+            
             # Check if this is a picture placeholder
             if (
                 hasattr(placeholder, "placeholder_format")
@@ -1197,8 +1532,17 @@ class SlideGenerator:
                 # If chart creation fails, fall through to text insertion
 
             if hasattr(placeholder, "text_frame"):
-                # Text placeholder - preserve original formatting
-                self._set_text_preserving_formatting(placeholder.text_frame, content)
+                # Text placeholder - preserve original formatting from layout
+                # Get the placeholder's index to find layout formatting
+                placeholder_idx = placeholder.placeholder_format.idx
+                layout_formatting = self._get_layout_placeholder_formatting(
+                    placeholder.part.slide, placeholder_idx
+                )
+                
+                # Set text while preserving formatting
+                self._set_text_preserving_formatting_with_layout(
+                    placeholder, content, layout_formatting
+                )
             elif hasattr(placeholder, "text"):
                 # Simple text placeholder
                 placeholder.text = content
@@ -1368,6 +1712,185 @@ class SlideGenerator:
             ],
         }
 
+    def _set_text_preserving_formatting_with_layout(
+        self, placeholder, text: str, layout_formatting: Dict[str, Any]
+    ) -> None:
+        """
+        Set text while preserving ALL formatting from layout template including colors
+        
+        Args:
+            placeholder: PowerPoint placeholder object
+            text: Text content to set
+            layout_formatting: Formatting from layout template
+        """
+        if not hasattr(placeholder, 'text_frame'):
+            return
+        
+        text_frame = placeholder.text_frame
+        
+        # First, check if we have actual layout formatting by looking at the layout directly
+        try:
+            slide = placeholder.part.slide
+            layout = slide.slide_layout
+            placeholder_idx = placeholder.placeholder_format.idx
+            
+            # Find the corresponding layout placeholder
+            for layout_ph in layout.placeholders:
+                if layout_ph.placeholder_format.idx == placeholder_idx:
+                    # Get font info directly from layout
+                    if hasattr(layout_ph, 'text_frame') and layout_ph.text_frame:
+                        if layout_ph.text_frame.paragraphs:
+                            first_para = layout_ph.text_frame.paragraphs[0]
+                            
+                            # Capture bullet formatting
+                            if hasattr(first_para, 'bullet'):
+                                layout_formatting['bullet_char'] = first_para.bullet.char
+                                layout_formatting['bullet_type'] = first_para.bullet.type
+                                
+                            # Get font from paragraph or runs
+                            if first_para.runs:
+                                run = first_para.runs[0]
+                                if hasattr(run, 'font') and run.font:
+                                    if run.font.name:
+                                        layout_formatting['font_name'] = run.font.name
+                                    if run.font.size:
+                                        layout_formatting['font_size'] = run.font.size
+                                    if run.font.bold is not None:
+                                        layout_formatting['font_bold'] = run.font.bold
+                                    if run.font.italic is not None:
+                                        layout_formatting['font_italic'] = run.font.italic
+                                    # IMPORTANT: Capture font color
+                                    if hasattr(run.font, 'color') and run.font.color:
+                                        try:
+                                            if hasattr(run.font.color, 'rgb') and run.font.color.rgb:
+                                                layout_formatting['font_color_rgb'] = run.font.color.rgb
+                                            elif hasattr(run.font.color, 'theme_color'):
+                                                layout_formatting['font_color_theme'] = run.font.color.theme_color
+                                                layout_formatting['font_color_brightness'] = run.font.color.brightness
+                                        except:
+                                            pass
+                            elif hasattr(first_para, 'font') and first_para.font:
+                                if first_para.font.name:
+                                    layout_formatting['font_name'] = first_para.font.name
+                                if first_para.font.size:
+                                    layout_formatting['font_size'] = first_para.font.size
+                                if first_para.font.bold is not None:
+                                    layout_formatting['font_bold'] = first_para.font.bold
+                                if first_para.font.italic is not None:
+                                    layout_formatting['font_italic'] = first_para.font.italic
+                                # Capture font color from paragraph
+                                if hasattr(first_para.font, 'color') and first_para.font.color:
+                                    try:
+                                        if hasattr(first_para.font.color, 'rgb') and first_para.font.color.rgb:
+                                            layout_formatting['font_color_rgb'] = first_para.font.color.rgb
+                                        elif hasattr(first_para.font.color, 'theme_color'):
+                                            layout_formatting['font_color_theme'] = first_para.font.color.theme_color
+                                            layout_formatting['font_color_brightness'] = first_para.font.color.brightness
+                                    except:
+                                        pass
+                    break
+        except Exception as e:
+            print(f"  → Could not extract layout formatting: {e}")
+        
+        # Apply markdown formatting while preserving template styling
+        self.markdown_formatter.format_text_frame(text_frame, text)
+        
+        # Now apply the layout formatting to ALL paragraphs and runs
+        # This ensures fonts, colors, and bullet styles are preserved
+        if layout_formatting:
+            print(f"  ✓ Applying complete formatting from layout")
+            
+            for paragraph in text_frame.paragraphs:
+                # Apply bullet formatting if this is a bulleted list
+                if layout_formatting.get('bullet_char'):
+                    try:
+                        paragraph.bullet.char = layout_formatting['bullet_char']
+                    except:
+                        pass
+                
+                # Apply to paragraph font if possible
+                if hasattr(paragraph, 'font') and paragraph.font:
+                    try:
+                        if layout_formatting.get('font_name'):
+                            paragraph.font.name = layout_formatting['font_name']
+                    except:
+                        pass
+                    
+                    # Apply bold/italic from template if not overridden by markdown
+                    if layout_formatting.get('font_bold') is not None and paragraph.font.bold is None:
+                        try:
+                            paragraph.font.bold = layout_formatting['font_bold']
+                        except:
+                            pass
+                    
+                    if layout_formatting.get('font_italic') is not None and paragraph.font.italic is None:
+                        try:
+                            paragraph.font.italic = layout_formatting['font_italic']
+                        except:
+                            pass
+                    
+                    # Apply font color
+                    if layout_formatting.get('font_color_rgb'):
+                        try:
+                            paragraph.font.color.rgb = layout_formatting['font_color_rgb']
+                        except:
+                            pass
+                    elif layout_formatting.get('font_color_theme'):
+                        try:
+                            paragraph.font.color.theme_color = layout_formatting['font_color_theme']
+                            if layout_formatting.get('font_color_brightness'):
+                                paragraph.font.color.brightness = layout_formatting['font_color_brightness']
+                        except:
+                            pass
+                
+                # Apply to all runs
+                for run in paragraph.runs:
+                    if hasattr(run, 'font') and run.font:
+                        # Always apply font name
+                        try:
+                            if layout_formatting.get('font_name'):
+                                run.font.name = layout_formatting['font_name']
+                        except:
+                            pass
+                        
+                        # Apply size if available
+                        if layout_formatting.get('font_size'):
+                            try:
+                                run.font.size = layout_formatting['font_size']
+                            except:
+                                pass
+                        
+                        # Apply base bold/italic if the run doesn't have markdown overrides
+                        if run.font.bold is None and layout_formatting.get('font_bold') is not None:
+                            try:
+                                run.font.bold = layout_formatting['font_bold']
+                            except:
+                                pass
+                        
+                        if run.font.italic is None and layout_formatting.get('font_italic') is not None:
+                            try:
+                                run.font.italic = layout_formatting['font_italic']
+                            except:
+                                pass
+                        
+                        # IMPORTANT: Apply font color to runs
+                        if layout_formatting.get('font_color_rgb'):
+                            try:
+                                from pptx.dml.color import RGBColor
+                                run.font.color.rgb = layout_formatting['font_color_rgb']
+                                print(f"    → Applied RGB color to run")
+                            except Exception as e:
+                                print(f"    → Could not apply RGB color: {e}")
+                        elif layout_formatting.get('font_color_theme'):
+                            try:
+                                from pptx.enum.dml import MSO_THEME_COLOR
+                                run.font.color.theme_color = layout_formatting['font_color_theme']
+                                if layout_formatting.get('font_color_brightness'):
+                                    run.font.color.brightness = layout_formatting['font_color_brightness']
+                                print(f"    → Applied theme color to run")
+                            except Exception as e:
+                                print(f"    → Could not apply theme color: {e}")
+
     def _set_text_preserving_formatting(self, text_frame, content: str) -> None:
         """
         Set text content with markdown formatting while preserving template styling
@@ -1377,9 +1900,24 @@ class SlideGenerator:
             content: Markdown-formatted text content to set
         """
         try:
+            # First capture the CURRENT formatting from the placeholder
+            # This is important because it may have template-specific fonts like Helvetica
+            original_format = self._capture_original_formatting(text_frame)
+            
             # Use markdown formatter to apply proper formatting
             self.markdown_formatter.format_text_frame(text_frame, content)
-            print("  ✓ Applied markdown formatting to content")
+            
+            # After markdown formatting, ensure we restore the original font name
+            # if it was captured (markdown formatter might miss it)
+            if original_format.get("font_name") and text_frame.paragraphs:
+                for paragraph in text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        try:
+                            run.font.name = original_format["font_name"]
+                        except:
+                            pass  # Some fonts might be theme-controlled
+            
+            print("  ✓ Applied markdown formatting with font preservation")
 
         except Exception as e:
             print(f"Error applying markdown formatting: {e}")

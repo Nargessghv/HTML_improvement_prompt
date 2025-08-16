@@ -87,8 +87,8 @@ class TemplateManager:
         """
         try:
             pptx_files = list(folder_path.glob("*.pptx"))
-            svg_files = list(folder_path.glob("*.svg"))
-            locked_backgrounds = [f for f in svg_files if f.stem.startswith("LOCKED_")]
+            png_files = list(folder_path.glob("*.png"))
+            locked_backgrounds = [f for f in png_files if f.stem.startswith("LOCKED_")]
             
             if not pptx_files:
                 return None  # No PPTX file found
@@ -99,7 +99,7 @@ class TemplateManager:
                 "folder_path": str(folder_path),
                 "pptx_path": str(pptx_files[0]),
                 "pptx_count": len(pptx_files),
-                "svg_count": len(svg_files),
+                "png_count": len(png_files),
                 "locked_backgrounds": len(locked_backgrounds),
                 "locked_background_files": [f.stem for f in locked_backgrounds]
             }
@@ -110,23 +110,23 @@ class TemplateManager:
     
     def get_locked_background_files(self, template_name: str) -> List[str]:
         """
-        Get list of locked background SVG files for a template
+        Get list of locked background PNG files for a template
         
         Args:
             template_name: Name of the template
             
         Returns:
-            List of SVG file paths for locked backgrounds
+            List of PNG file paths for locked backgrounds
         """
         template_folder = self.templates_root / template_name
         if not template_folder.exists():
             return []
         
-        locked_svgs = []
-        for svg_file in template_folder.glob("LOCKED_*.svg"):
-            locked_svgs.append(str(svg_file))
+        locked_pngs = []
+        for png_file in template_folder.glob("LOCKED_*.png"):
+            locked_pngs.append(str(png_file))
         
-        return locked_svgs
+        return locked_pngs
     
     def convert_old_template_path(self, old_path: str) -> str:
         """

@@ -1,0 +1,67 @@
+{
+  "tracking_metadata": {
+    "session_start": "2025-08-16T23:55:28.816389",
+    "workflow_type": "parallel_slide_processing",
+    "total_slides": 1,
+    "completed_slides": 1,
+    "failed_slides": 0,
+    "last_updated": "2025-08-16T23:56:36.202717"
+  },
+  "workflow_state": {},
+  "layout_analysis": {
+    "total_layouts": 12,
+    "layout_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "has_dynamic_models": true,
+    "dynamic_models_count": 12,
+    "timestamp": "2025-08-16T23:55:31.892679",
+    "sample_layout": {
+      "index": 0,
+      "placeholder_count": 0,
+      "placeholder_names": []
+    }
+  },
+  "presentation_planning": {},
+  "content_generation": {},
+  "html_content": {},
+  "html_refinement": {},
+  "image_generation": {},
+  "slide_assembly": {},
+  "individual_slides": [
+    {
+      "slide_id": "0dba55d5-9113-43ae-b7a5-1eb7ab96d914",
+      "slide_number": 1,
+      "status": "completed",
+      "timestamp": "2025-08-16T23:56:35.014335",
+      "template_path": "templates/ekona_slides_template_new/ekona_slides_template_new.pptx",
+      "has_html_image": false,
+      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250816_235634_e9aecdc9.pptx",
+      "storage_path": "projects/d0d99061-f0a8-4024-8d5b-fb0f032e4838/individual_slides/0dba55d5-9113-43ae-b7a5-1eb7ab96d914/slide_1_20250816_235634.pptx",
+      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/d0d99061-f0a8-4024-8d5b-fb0f032e4838/individual_slides/0dba55d5-9113-43ae-b7a5-1eb7ab96d914/slide_1_20250816_235634.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2QwZDk5MDYxLWYwYTgtNDAyNC04ZDViLWZiMGYwMzJlNDgzOC9pbmRpdmlkdWFsX3NsaWRlcy8wZGJhNTVkNS05MTEzLTQzYWUtYjdhNS0xZWI3YWI5NmQ5MTQvc2xpZGVfMV8yMDI1MDgxNl8yMzU2MzQucHB0eCIsImlhdCI6MTc1NTM4MTM5NCwiZXhwIjoxNzU1NDY3Nzk0fQ.onuIdKDgykuM-w7WAHWcRveTVNpwIIeC2u7ywklD_Vc",
+      "file_size": 1718335
+    }
+  ],
+  "final_presentation": {
+    "success": true,
+    "output_path": null,
+    "slides_combined": 0,
+    "total_slides": 0,
+    "file_size": 0,
+    "error": null,
+    "timestamp": "2025-08-16T23:56:36.202715"
+  },
+  "errors": [],
+  "performance_metrics": {}
+}

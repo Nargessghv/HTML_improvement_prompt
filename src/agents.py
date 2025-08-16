@@ -8,6 +8,7 @@ Each agent handles a specific step in the presentation creation process.
 import asyncio
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -41,7 +42,9 @@ class SlideGenerationState(TypedDict):
     # Input parameters
     topic: str
     template_path: str
-    template_folder_path: Optional[str]  # Path to template folder for locked backgrounds
+    template_folder_path: Optional[
+        str
+    ]  # Path to template folder for locked backgrounds
     output_path: str
     layout_indices: Optional[List[int]]
     title: Optional[str]
@@ -85,7 +88,7 @@ class SlideGenerationState(TypedDict):
 
     # Monitoring context
     monitor_trace: Optional[Any]
-    
+
     # Project tracking for Supabase integration
     project_id: Optional[str]
 
@@ -131,6 +134,7 @@ class LayoutAnalysisAgent:
             state["current_step"] = "layout_analysis_complete"
 
             print(f"✅ {self.name}: Analyzed {len(layouts_info)} layouts")
+            print(f"✅ {self.name}: Layout_info: {layouts_info}")
             print(f"✅ {self.name}: Created {len(dynamic_models)} dynamic models")
 
             return state
@@ -187,13 +191,19 @@ class PresentationPlanningAgent:
             approved_outline = state.get("approved_outline")
 
             # Debug logging for approved outline
-            print(f"📋 {self.name}: Approved outline present: {approved_outline is not None}")
+            print(
+                f"📋 {self.name}: Approved outline present: {approved_outline is not None}"
+            )
             if approved_outline:
-                print(f"📋 {self.name}: Approved outline slides count: {len(approved_outline.get('slides', []))}")
+                print(
+                    f"📋 {self.name}: Approved outline slides count: {len(approved_outline.get('slides', []))}"
+                )
 
             # Check if we have an approved outline from interactive planning
             if approved_outline:
-                print(f"📋 {self.name}: Using approved outline from interactive planning")
+                print(
+                    f"📋 {self.name}: Using approved outline from interactive planning"
+                )
                 presentation_plan = self._convert_approved_outline_to_plan(
                     approved_outline, layouts_info
                 )
@@ -203,6 +213,7 @@ class PresentationPlanningAgent:
                 presentation_plan = self._plan_presentation_with_tracing(
                     layouts_info, topic, title, config
                 )
+                print(f"✅ {self.name}: Presentation plan: {presentation_plan}")
 
             # Extract layout indices from the plan
             selected_layouts = [spec.layout_index for spec in presentation_plan]
@@ -225,6 +236,19 @@ class PresentationPlanningAgent:
             state["current_step"] = "planning_complete"
 
             print(f"✅ {self.name}: Created plan with {len(presentation_plan)} slides")
+            # Print each step of the presentation plan for debugging and transparency
+            print("📋 Presentation Plan Steps:")
+            for idx, slide_spec in enumerate(presentation_plan, 1):
+                # Try to print key details for each slide step
+                # SlideSpec may have attributes like title, layout_index, content_type, etc.
+                # We'll print the most common ones, but use getattr for safety
+                slide_title = getattr(slide_spec, "title", "Untitled")
+                layout_index = getattr(slide_spec, "layout_index", "N/A")
+                content_type = getattr(slide_spec, "content_type", "N/A")
+                print(
+                    f"  Step {idx}: Title='{slide_title}', "
+                    f"Layout={layout_index}, ContentType={content_type}"
+                )
             print(f"✅ {self.name}: Selected layouts: {selected_layouts}")
 
             return state
@@ -282,47 +306,46 @@ class PresentationPlanningAgent:
             return self._create_default_plan(layouts_info)
 
     def _convert_approved_outline_to_plan(
-        self, 
-        approved_outline: Dict[str, Any], 
-        layouts_info: Dict[int, Dict[str, Any]]
+        self, approved_outline: Dict[str, Any], layouts_info: Dict[int, Dict[str, Any]]
     ) -> List[SlideSpec]:
         """
         Convert approved outline from interactive planning to SlideSpec format
-        
+
         Args:
             approved_outline: The approved outline from interactive planning
             layouts_info: Available layout information for layout selection
-            
+
         Returns:
             List of SlideSpec objects matching the approved outline
         """
         from .llm_models import SlideSpec
-        
+
         slides = approved_outline.get("slides", [])
         slide_specs = []
-        
+
         # Content type to layout mapping strategy
         content_type_to_layout = {
             "text": self._find_best_layout_for_content(layouts_info, "text"),
             "visual": self._find_best_layout_for_content(layouts_info, "picture"),
             "chart": self._find_best_layout_for_content(layouts_info, "html"),
             "timeline": self._find_best_layout_for_content(layouts_info, "html"),
-            "comparison": self._find_best_layout_for_content(layouts_info, "html")
+            "comparison": self._find_best_layout_for_content(layouts_info, "html"),
         }
-        
+
         for slide_data in slides:
             slide_number = slide_data.get("slide_number", len(slide_specs) + 1)
             title = slide_data.get("title", f"Slide {slide_number}")
             content_type = slide_data.get("content_type", "text")
             key_points = slide_data.get("key_points", [])
-            
+
             # Select appropriate layout based on content type
-            layout_index = content_type_to_layout.get(content_type, 
-                self._find_best_layout_for_content(layouts_info, "text"))
-            
+            layout_index = content_type_to_layout.get(
+                content_type, self._find_best_layout_for_content(layouts_info, "text")
+            )
+
             # Determine if HTML visualization is needed
             needs_html = content_type in ["chart", "timeline", "comparison"]
-            
+
             # Create slide specification
             slide_spec = SlideSpec(
                 layout_index=layout_index,
@@ -331,28 +354,33 @@ class PresentationPlanningAgent:
                 is_html=needs_html,
                 detailed_purpose=f"Content from approved outline - slide {slide_number}",
                 content_structure=f"Key points: {', '.join(key_points)}",
-                html_requirements=f"Create {content_type} visualization" if needs_html else None,
+                html_requirements=(
+                    f"Create {content_type} visualization" if needs_html else None
+                ),
                 visual_elements=content_type if needs_html else None,
-                key_information=key_points
+                key_information=key_points,
             )
-            
+
             slide_specs.append(slide_spec)
-            
-        print(f"✅ Converted approved outline to {len(slide_specs)} slide specifications")
+
+        print(
+            f"✅ Converted approved outline to {len(slide_specs)} slide specifications"
+        )
+        # Print out each SlideSpec for debugging and traceability
+        for idx, spec in enumerate(slide_specs, 1):
+            print(f"    Slide {idx}: {spec}")
         return slide_specs
 
     def _find_best_layout_for_content(
-        self, 
-        layouts_info: Dict[int, Dict[str, Any]], 
-        preferred_type: str
+        self, layouts_info: Dict[int, Dict[str, Any]], preferred_type: str
     ) -> int:
         """
         Find the best layout index for a given content type
-        
+
         Args:
             layouts_info: Available layout information
             preferred_type: Preferred layout type (text, picture, html)
-            
+
         Returns:
             Layout index (defaults to first text layout if no match found)
         """
@@ -360,30 +388,30 @@ class PresentationPlanningAgent:
         search_patterns = {
             "text": ["text content", "content", "text"],
             "picture": ["title and picture", "picture"],
-            "html": ["html", "picture generated from html", "picture"]
+            "html": ["html", "picture generated from html", "picture"],
         }
-        
+
         patterns = search_patterns.get(preferred_type, ["content", "text"])
-        
+
         # Search for exact matches first
         for pattern in patterns:
             for layout_index, layout_info in layouts_info.items():
                 layout_name = layout_info.get("name", "").lower()
                 if pattern in layout_name:
                     return layout_index
-        
+
         # Fallback to any content layout
         for layout_index, layout_info in layouts_info.items():
             layout_name = layout_info.get("name", "").lower()
             if any(keyword in layout_name for keyword in ["content", "text", "title"]):
                 return layout_index
-                
+
         # Final fallback to first non-logo layout
         for layout_index, layout_info in layouts_info.items():
             layout_name = layout_info.get("name", "").lower()
             if "logo" not in layout_name and "branding" not in layout_name:
                 return layout_index
-                
+
         # Ultimate fallback to first available layout
         return list(layouts_info.keys())[0] if layouts_info else 0
 
@@ -445,7 +473,7 @@ class PresentationPlanningAgent:
         # Build title/topic section
         title_section = f'TITLE: "{title}"\n' if title else ""
         topic_label = "TOPIC" if not title else "DESCRIPTION"
-        
+
         return f"""📋 CREATE STRATEGIC PRESENTATION PLAN
 
 {title_section}{topic_label}: "{topic}"
@@ -767,11 +795,12 @@ class ContentGenerationAgent:
         """
         # Handle both List[SlideSpec] and PresentationPlan object
         from .llm_models import PresentationPlan
+
         if isinstance(presentation_plan, PresentationPlan):
             slides_to_process = presentation_plan.slides
         else:
             slides_to_process = presentation_plan
-            
+
         print("  📋 Presentation Outline:")
         for i, slide_spec in enumerate(slides_to_process, 1):
             html_indicator = " (HTML)" if slide_spec.is_html else ""
@@ -792,6 +821,15 @@ class ContentGenerationAgent:
         if slide_contents:
             print(f"  ✅ Generated unified content for {len(slide_contents)} slides")
             return slide_contents
+        # Print the first 50 characters of each generated slide content for inspection
+        if slide_contents:
+            for idx, slide_content in enumerate(slide_contents, 1):
+                # Get the content dict for this slide
+                content_dict = getattr(slide_content, "content", {})
+                # Concatenate all placeholder values into a single string
+                all_content = " ".join(str(v) for v in content_dict.values())
+                preview = all_content[:50]
+                print(f"    Slide {idx} content preview: {preview!r}")
         print("  ⚠️ Unified generation failed, falling back to individual generation")
         # Fallback to individual generation if unified fails
         return self._generate_individual_slide_content(
@@ -813,9 +851,13 @@ class ContentGenerationAgent:
         slide_contents = []
 
         print("  🔄 Fallback: Generating slides individually...")
-        
+
         # Ensure we have a list of slides to process
-        slides_to_process = presentation_plan if isinstance(presentation_plan, list) else presentation_plan.slides
+        slides_to_process = (
+            presentation_plan
+            if isinstance(presentation_plan, list)
+            else presentation_plan.slides
+        )
 
         # Generate content for all slides with awareness of the full presentation
         for i, slide_spec in enumerate(slides_to_process, 1):
@@ -868,7 +910,12 @@ class SlideAssemblyAgent:
         self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
     ) -> SlideGenerationState:
         """
-        Assemble final PowerPoint presentation from generated content
+        Merge individual slides into final PowerPoint presentation
+
+        This method now:
+        1. Uses already-generated individual slides
+        2. Merges them into a final deck
+        3. Preserves all formatting, LOCKED_ backgrounds, and z-order
 
         Args:
             state: Current workflow state
@@ -877,82 +924,128 @@ class SlideAssemblyAgent:
         Returns:
             Updated state with final presentation path
         """
-        print(f"🔧 {self.name}: Assembling PowerPoint presentation...")
+        print(f"🔧 {self.name}: Merging individual slides into final presentation...")
 
         try:
-            # Check prerequisites
-            slide_contents = state.get("slide_contents")
-            layouts_info = state.get("layouts_info")
+            # Get project ID and template path from state
+            project_id = state.get("project_id")
+            template_path = state.get("template_path")
+            topic = state.get("topic", "presentation")
 
-            if not slide_contents or not layouts_info:
-                raise ValueError("Slide contents and layout info required")
+            if not project_id:
+                # If no project_id, we need to use the slide_contents to identify slides
+                print("⚠️ No project_id in state, using alternative approach...")
 
-            # Import here to avoid circular imports
-            from .slide_generator import SlideGenerator
+                # Import here to avoid circular imports
+                from .slide_generator import SlideGenerator
 
-            # Initialize slide generator with icon management
-            slide_generator = SlideGenerator(state["template_path"])
+                # Fall back to old behavior if no individual slides exist
+                slide_contents = state.get("slide_contents")
+                layouts_info = state.get("layouts_info")
 
-            # Set up layout information for proper placeholder mapping
-            # Use the layouts_info from the LayoutAnalysisAgent
-            slide_generator.content_generator.layouts_info = layouts_info
+                if not slide_contents or not layouts_info:
+                    raise ValueError("Slide contents and layout info required")
 
-            # Pass topic to slide generator for icon-aware content population
-            slide_generator._current_topic = state["topic"]
+                # Initialize slide generator
+                slide_generator = SlideGenerator(template_path)
+                slide_generator.content_generator.layouts_info = layouts_info
+                slide_generator._current_topic = topic
 
-            # Capture icon errors during presentation creation
-            import io
-            from contextlib import redirect_stderr, redirect_stdout
+                # Set output path for fallback
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_topic = "".join(
+                    c for c in topic if c.isalnum() or c in " -_"
+                ).strip()
+                safe_topic = safe_topic.replace(" ", "_")[:50]
+                output_filename = f"{safe_topic}_{timestamp}.pptx"
+                output_path = os.path.join("generated_presentations", output_filename)
+                
+                # Ensure output directory exists
+                os.makedirs("generated_presentations", exist_ok=True)
 
-            # Capture stdout and stderr to collect icon warning messages
-            captured_output = io.StringIO()
-            captured_errors = io.StringIO()
-
-            with redirect_stdout(captured_output), redirect_stderr(captured_errors):
-                # Create presentation using existing working method
-                # The SlideGenerator already has icon support built-in
-                generated_images = state.get("generated_images", {})
-                presentation = slide_generator._create_powerpoint_presentation(
-                    slide_contents, generated_images
+                # Generate presentation (old way - for backwards compatibility)
+                presentation_path = slide_generator.create_presentation(
+                    topic, output_path
                 )
-
-            # Extract icon errors from captured output
-            all_output = captured_output.getvalue() + captured_errors.getvalue()
-            icon_errors = self._extract_icon_errors_from_output(all_output)
-
-            # Print the captured output to user so they can see progress
-            if captured_output.getvalue():
-                print(captured_output.getvalue(), end="")
-
-            # Determine if we need icon validation
-            needs_icon_retry = len(icon_errors) > 0
-
-            # Save the presentation
-            full_output_path = slide_generator._ensure_output_path(state["output_path"])
-            presentation.save(full_output_path)
-
-            # Update state with results
-            state["presentation_path"] = full_output_path
-            state["icon_errors"] = icon_errors
-            state["needs_icon_retry"] = needs_icon_retry
-            state["current_step"] = "assembly_complete"
-            state["success"] = True
-
-            if icon_errors:
-                print(f"⚠️ {self.name}: Found {len(icon_errors)} icon errors")
-                print(f"🔄 {self.name}: Will proceed to icon validation")
             else:
-                print(f"✅ {self.name}: No icon errors detected")
+                # Use the new approach - merge individual slides
+                print(f"✅ Using individual slides for project: {project_id}")
 
-            print(f"✅ {self.name}: Presentation saved to {full_output_path}")
+                # Import the individual slide generator
+                from .individual_slide_generator import IndividualSlideGenerator
+
+                # Create instance
+                individual_generator = IndividualSlideGenerator()
+
+                # Set output path
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_topic = "".join(
+                    c for c in topic if c.isalnum() or c in " -_"
+                ).strip()
+                safe_topic = safe_topic.replace(" ", "_")[:50]
+                output_filename = f"{safe_topic}_{timestamp}.pptx"
+                output_path = os.path.join("generated_presentations", output_filename)
+
+                # Ensure output directory exists
+                os.makedirs("generated_presentations", exist_ok=True)
+
+                # Combine individual slides into final presentation
+                print(f"📚 Combining individual slides into: {output_path}")
+
+                # This method preserves all formatting, images, LOCKED_ backgrounds
+                import asyncio
+
+                # Run the async combine method
+                if loop.is_running():
+                    # We're already in an async context
+                    import concurrent.futures
+
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(
+                            asyncio.run,
+                            individual_generator.combine_individual_slides(
+                                project_id=project_id,
+                                output_path=output_path,
+                                template_path=template_path,
+                                dynamic_models=state.get("dynamic_models")
+                            ),
+                        )
+                        result = future.result()
+                else:
+                    # Run normally
+                    result = asyncio.run(
+                        individual_generator.combine_individual_slides(
+                            project_id=project_id,
+                            output_path=output_path,
+                            template_path=template_path,
+                            dynamic_models=state.get("dynamic_models")
+                        )
+                    )
+
+                if result.get("success"):
+                    presentation_path = result["output_path"]
+                    print(
+                        f"✅ Successfully combined {result.get('slides_combined', 0)} slides"
+                    )
+                else:
+                    raise Exception(
+                        f"Failed to combine slides: {result.get('error', 'Unknown error')}"
+                    )
+
+            # Store presentation path
+            state["presentation_path"] = presentation_path
+
+            # No icon errors when using individual slides
+            state["icon_errors"] = []
+
+            print(f"✅ {self.name}: Final presentation created at {presentation_path}")
 
             return state
 
         except Exception as e:
-            print(f"❌ {self.name}: Error during slide assembly: {e}")
-            state["error_message"] = f"Slide assembly failed: {str(e)}"
-            state["current_step"] = "error"
-            state["success"] = False
+            print(f"❌ {self.name}: Failed to assemble presentation: {e}")
+            state["error_message"] = str(e)
+            state["presentation_path"] = None
             return state
 
     def _extract_icon_errors_from_output(self, output: str) -> List[str]:
@@ -1340,18 +1433,29 @@ class HTMLRefinementAgent:
         self.temp_dir = Path("html_debug")
         self.temp_dir.mkdir(exist_ok=True)
 
+        # Initialize HTML prompt manager for refinement
+        from .html_prompt_manager import HTMLPromptManager
+
+        self.html_prompt_manager = HTMLPromptManager()
+        print(f"✅ {self.name}: HTML prompt manager initialized for refinement")
+
         # Initialize the Azure Blob Uploader
         self.uploader = AzureBlobUploader()
-        
+
         # Initialize Supabase storage and database clients for refinement tracking
         try:
-            from .supabase_storage import get_storage_client
             from .database import get_supabase_client
+            from .supabase_storage import get_storage_client
+
             self.storage_client = get_storage_client()
             self.db_client = get_supabase_client()
-            print("✅ Supabase storage and database clients initialized for refinement tracking")
+            print(
+                "✅ Supabase storage and database clients initialized for refinement tracking"
+            )
         except Exception as e:
-            print(f"⚠️ Failed to initialize Supabase clients for refinement tracking: {e}")
+            print(
+                f"⚠️ Failed to initialize Supabase clients for refinement tracking: {e}"
+            )
             self.storage_client = None
             self.db_client = None
 
@@ -1664,15 +1768,21 @@ class HTMLRefinementAgent:
         except Exception as e:
             print(f"  ❌ Error during image compression: {e}")
             return True  # Return True to continue processing even if compression fails
-    
-    async def _track_refinement_in_supabase(self, project_id: str, slide_id: str, iteration: int,
-                                    html_content: str, image_path: Path, 
-                                    refinement_feedback: Optional[str] = None,
-                                    refinement_prompt: Optional[str] = None,
-                                    is_final: bool = False) -> Optional[str]:
+
+    async def _track_refinement_in_supabase(
+        self,
+        project_id: str,
+        slide_id: str,
+        iteration: int,
+        html_content: str,
+        image_path: Path,
+        refinement_feedback: Optional[str] = None,
+        refinement_prompt: Optional[str] = None,
+        is_final: bool = False,
+    ) -> Optional[str]:
         """
         Track HTML refinement iteration in Supabase storage and database
-        
+
         Args:
             project_id: Project UUID
             slide_id: Slide UUID
@@ -1682,34 +1792,24 @@ class HTMLRefinementAgent:
             refinement_feedback: LLM feedback from this iteration
             refinement_prompt: Prompt used for this iteration
             is_final: Whether this is the final refinement
-            
+
         Returns:
             Refinement record ID if successful, None otherwise
         """
         if not self.storage_client or not self.db_client:
             print("  - Supabase clients not available, skipping refinement tracking")
             return None
-        
+
         try:
             # Upload HTML and image to Supabase Storage
             html_url, image_url = self.storage_client.upload_refinement_files(
                 project_id, slide_id, iteration, html_content, image_path
             )
-            
-            # Generate PPTX version for this refinement iteration
+
+            # Skip PPTX creation during iterations - only create PNG files
             pptx_url = None
-            try:
-                print(f"  📄 Generating PPTX version for iteration {iteration}...")
-                pptx_url = await self._create_pptx_version(
-                    project_id, slide_id, iteration, html_content, image_path
-                )
-                if pptx_url:
-                    print(f"  ✅ PPTX version created: {pptx_url}")
-                else:
-                    print(f"  ⚠️ Failed to create PPTX version for iteration {iteration}")
-            except Exception as e:
-                print(f"  ⚠️ Error creating PPTX version: {e}")
-            
+            print(f"  🖼️ Iteration {iteration}: PNG saved for refinement preview")
+
             # Create database record for this refinement iteration
             refinement_record = self.db_client.create_html_refinement(
                 project_id=project_id,
@@ -1721,162 +1821,360 @@ class HTMLRefinementAgent:
                 pptx_file_url=pptx_url,
                 refinement_feedback=refinement_feedback,
                 refinement_prompt=refinement_prompt,
-                is_final=is_final
+                is_final=is_final,
             )
-            
-            print(f"  ✅ Tracked refinement iteration {iteration} in Supabase: {refinement_record['id']}")
-            return refinement_record['id']
-            
+
+            print(
+                f"  ✅ Tracked refinement iteration {iteration} in Supabase: {refinement_record['id']}"
+            )
+            return refinement_record["id"]
+
         except Exception as e:
             print(f"  ⚠️ Failed to track refinement in Supabase: {e}")
             return None
 
-    async def _create_pptx_version(self, project_id: str, slide_id: str, iteration: int, 
-                                 html_content: str, image_path: Path) -> Optional[str]:
+    async def _create_pptx_version(
+        self,
+        project_id: str,
+        slide_id: str,
+        iteration: int,
+        html_content: str,
+        image_path: Path,
+    ) -> Optional[str]:
         """
         Create a PPTX version for a specific refinement iteration
-        
+
         Args:
             project_id: Project UUID
-            slide_id: Slide UUID 
+            slide_id: Slide UUID
             iteration: Refinement iteration number
             html_content: HTML content to render
             image_path: Path to the rendered image file
-            
+
         Returns:
             Supabase Storage URL of the created PPTX file, or None if failed
         """
         try:
             # Import the individual slide generator
             from .individual_slide_generator import IndividualSlideGenerator
-            from .llm_models import SlideContent
-            
+            from .llm_client import SlideContent
+
+            # Get project data to retrieve layouts_info
+            project_data = self.db_client.get_project(project_id)
+            layouts_info = {}
+            if project_data:
+                layouts_info = project_data.get("layouts_info", {})
+                print(f"🔍 DEBUG: Retrieved layouts_info from project: {bool(layouts_info)}")
+            else:
+                print(f"⚠️ Could not retrieve project data for project_id {project_id}")
+
             # Get slide data from database to understand layout and content structure
             slide_data = self.db_client.get_slide_details(slide_id)
             if not slide_data:
                 print(f"    ❌ Could not find slide data for slide_id {slide_id}")
                 return None
-            
-            # Create a SlideContent object with the refined HTML
-            slide_content = SlideContent(
-                title=slide_data.get('title', 'Untitled'),
-                content={
-                    # Replace any existing HTML content with the refined version
-                    'main_content': html_content,
-                    'html_visualization': html_content
-                },
-                layout_index=slide_data.get('layout_index', 0)
+
+            # DEBUGGING: Print what we got from database
+            print("🔍 DEBUG: Retrieved slide_data from database:")
+            print(f"  - slide_id: {slide_id}")
+            print(f"  - layout_index: {slide_data.get('layout_index')}")
+            print(f"  - layout_type: {slide_data.get('layout_type')}")
+            print(f"  - slide_number: {slide_data.get('slide_number')}")
+            print(f"  - title: {slide_data.get('title')}")
+            print(
+                f"  - content keys: {list(slide_data.get('content', {}).keys()) if slide_data.get('content') else 'None'}"
             )
-            
+
+            # Create a SlideContent object with the refined HTML
+            # Start with original content from the slide
+            content_dict = slide_data.get("content", {}) or {}
+
+            # Update with title and refined HTML
+            content_dict.update(
+                {
+                    # Include title in content if available
+                    "title": slide_data.get("title", "Untitled"),
+                    # Replace any existing HTML content with the refined version
+                    "main_content": html_content,
+                    "html_visualization": html_content,
+                }
+            )
+
+            # CRITICAL FIX: Get layout_index from database, with fallback to dynamic detection
+            layout_index = slide_data.get("layout_index")
+            print(
+                f"🔍 DEBUG: Raw layout_index from database: {layout_index} (type: {type(layout_index)})"
+            )
+
+            if layout_index is None and layouts_info:
+                # Dynamically find the right layout based on content characteristics
+                layout_type = slide_data.get("layout_type", "")
+                content_type = slide_data.get("content_type", "")
+                print(
+                    f"🔍 DEBUG: layout_type: '{layout_type}', content_type: '{content_type}'"
+                )
+
+                # Check if this is HTML/visual content and find appropriate layout
+                is_html_content = any(
+                    keyword in str(layout_type).lower()
+                    for keyword in [
+                        "html",
+                        "chart",
+                        "visual",
+                        "timeline",
+                        "diagram",
+                        "interactive",
+                    ]
+                )
+                is_visual_content = any(
+                    keyword in str(content_type).lower()
+                    for keyword in ["chart", "timeline", "visual", "comparison"]
+                )
+
+                if is_html_content or is_visual_content:
+                    # Find layout with HTML picture placeholder
+                    layout_index = self._find_html_capable_layout(layouts_info)
+                    if layout_index is not None:
+                        print(f"🎯 Found HTML-capable layout: {layout_index}")
+                    else:
+                        # Fallback to any picture layout
+                        layout_index = self._find_picture_layout(layouts_info)
+                        print(f"🎯 Using picture layout as fallback: {layout_index}")
+                else:
+                    # Find appropriate text layout
+                    layout_index = self._find_text_layout(layouts_info)
+                    print(f"🎯 Using text layout: {layout_index}")
+
+                # Final fallback if no suitable layout found
+                if layout_index is None:
+                    layout_index = (
+                        next(iter(layouts_info.keys())) if layouts_info else 0
+                    )
+                    print(
+                        f"⚠️ No suitable layout found, using first available: {layout_index}"
+                    )
+            elif layout_index is None:
+                # No layouts_info available, use default
+                layout_index = 0
+                print("⚠️ No layouts_info available, using default layout 0")
+            else:
+                # Ensure layout_index is an integer
+                try:
+                    layout_index = int(layout_index)
+                    print(f"🎯 Using stored layout_index: {layout_index}")
+                except (ValueError, TypeError):
+                    print(
+                        f"⚠️ Invalid layout_index format: {layout_index}, defaulting to 0"
+                    )
+                    layout_index = 0
+
+            slide_content = SlideContent(
+                layout_index=layout_index, content=content_dict
+            )
+
+            # DEBUGGING: Verify SlideContent object was created correctly
+            print("🔍 DEBUG: Created SlideContent object:")
+            print(f"  - layout_index: {slide_content.layout_index}")
+            print(
+                f"  - content keys: {list(slide_content.content.keys()) if slide_content.content else 'None'}"
+            )
+
             # Get project data to find template path
             project_data = self.db_client.get_project(project_id)
             if not project_data:
                 print(f"    ❌ Could not find project data for project_id {project_id}")
                 return None
-            
-            # Resolve template path
-            from .template_manager import resolve_template_path
-            template_path = resolve_template_path()
-            
+
+            # CRITICAL FIX: Use project's original template instead of defaulting to alphabetically first
+            # Get template from project data to maintain consistency
+            if project_data and project_data.get("template_path"):
+                template_path = project_data["template_path"]
+                print(f"🎯 Using project template: {template_path}")
+            else:
+                # Fallback to default only if project has no template
+                from .template_manager import resolve_template_path
+
+                template_path = resolve_template_path()
+                print(f"⚠️ Using fallback template: {template_path}")
+
             # Create slide generator instance
             slide_generator = IndividualSlideGenerator()
-            
+
             # Create a unique filename for this PPTX version
             import uuid
+
             version_filename = f"slide_{slide_data.get('slide_number', 1):02d}_v{iteration}_{uuid.uuid4().hex[:8]}.pptx"
-            
+
+            # Analyze template layout to get proper placeholder mapping
+            try:
+                from .layout_analyzer import LayoutAnalyzer
+
+                layout_analyzer = LayoutAnalyzer(template_path)
+                layouts_info = layout_analyzer.analyze_all_layouts()
+                print(
+                    f"✅ Analyzed template layouts: {len(layouts_info)} layouts found"
+                )
+
+                # Generate layouts export file if missing (for backward compatibility)
+                layouts_export_path = "layouts_export.json"
+                if not os.path.exists(layouts_export_path):
+                    print("📄 Generating missing layouts export file...")
+                    layout_analyzer.export_layouts_to_file(layouts_export_path)
+
+            except Exception as e:
+                print(f"⚠️ Layout analysis failed, using empty layouts_info: {e}")
+                layouts_info = {}
+
             # Generate the individual PPTX slide
             result = await slide_generator.generate_individual_slide(
                 slide_id=slide_id,
                 project_id=project_id,
                 slide_content=slide_content,
                 template_path=template_path,
-                slide_number=slide_data.get('slide_number', 1),
-                layouts_info={},  # Will be populated by the generator
+                slide_number=slide_data.get("slide_number", 1),
+                layouts_info=layouts_info,  # Use analyzed layout info
                 dynamic_models={},  # Will be populated by the generator
-                html_image_path=str(image_path)  # Pass the rendered image path
+                html_image_path=str(image_path),  # Pass the rendered image path
             )
-            
-            if not result or not result.get('success'):
-                print(f"    ❌ Failed to generate PPTX: {result.get('error', 'Unknown error')}")
+
+            if not result or not result.get("success"):
+                print(
+                    f"    ❌ Failed to generate PPTX: {result.get('error', 'Unknown error')}"
+                )
                 return None
-            
+
             # Upload PPTX to Supabase Storage
-            pptx_path = result.get('file_path')
+            pptx_path = result.get("file_path")
             if not pptx_path or not os.path.exists(pptx_path):
                 print(f"    ❌ PPTX file not found at: {pptx_path}")
                 return None
-            
+
             # Upload to storage with version-specific path
-            storage_path = f"projects/{project_id}/slides/{slide_id}/versions/{version_filename}"
+            storage_path = (
+                f"projects/{project_id}/slides/{slide_id}/versions/{version_filename}"
+            )
             pptx_url = self.storage_client.upload_file(
                 file_path=pptx_path,
                 storage_path=storage_path,
-                content_type='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                bucket_name="presentations",  # Use presentations bucket for PPTX files
             )
-            
+
             if pptx_url:
                 print(f"    ✅ PPTX version uploaded to: {pptx_url}")
-                # Clean up local file
-                try:
+
+            # Clean up local file after processing
+            try:
+                if os.path.exists(pptx_path):
                     os.remove(pptx_path)
-                except:
-                    pass
+            except Exception as cleanup_e:
+                print(f"    ⚠️ Failed to clean up temp file: {cleanup_e}")
             else:
-                print(f"    ❌ Failed to upload PPTX to storage")
-            
+                print("    ❌ Failed to upload PPTX to storage")
+
             return pptx_url
-            
+
         except Exception as e:
             print(f"    ❌ Error creating PPTX version: {e}")
             return None
-    
-    def _get_or_create_slide_id(self, project_id: str, slide_index: int, slide_content: Any) -> Optional[str]:
+
+    def _find_html_capable_layout(self, layouts_info: Dict[int, Dict]) -> Optional[int]:
+        """
+        Find a layout that has HTML picture placeholders
+        """
+        for layout_idx, layout_data in layouts_info.items():
+            placeholders = layout_data.get("placeholders", [])
+            for placeholder in placeholders:
+                ph_name = placeholder.get("name", "").lower()
+                # Look for HTML-specific picture placeholders
+                if "html" in ph_name and ("picture" in ph_name or "image" in ph_name):
+                    return layout_idx
+        return None
+
+    def _find_picture_layout(self, layouts_info: Dict[int, Dict]) -> Optional[int]:
+        """
+        Find a layout with picture placeholders
+        """
+        for layout_idx, layout_data in layouts_info.items():
+            placeholders = layout_data.get("placeholders", [])
+            for placeholder in placeholders:
+                ph_name = placeholder.get("name", "").lower()
+                ph_type = placeholder.get("type", 0)
+                # Look for picture placeholders (type 18 is typically PICTURE)
+                if "picture" in ph_name or "image" in ph_name or ph_type == 18:
+                    return layout_idx
+        return None
+
+    def _find_text_layout(self, layouts_info: Dict[int, Dict]) -> Optional[int]:
+        """
+        Find a layout suitable for text content
+        """
+        for layout_idx, layout_data in layouts_info.items():
+            layout_name = layout_data.get("name", "").lower()
+            # Look for text-focused layouts
+            if "text" in layout_name and "content" in layout_name:
+                return layout_idx
+
+        # Fallback: find any layout with content placeholders
+        for layout_idx, layout_data in layouts_info.items():
+            placeholders = layout_data.get("placeholders", [])
+            for placeholder in placeholders:
+                ph_name = placeholder.get("name", "").lower()
+                if "content" in ph_name or "text" in ph_name or "body" in ph_name:
+                    return layout_idx
+
+        return None
+
+    def _get_or_create_slide_id(
+        self, project_id: str, slide_index: int, slide_content: Any
+    ) -> Optional[str]:
         """
         Get existing slide ID or create a new slide record for refinement tracking
-        
+
         Args:
             project_id: Project UUID
             slide_index: Zero-based slide index
             slide_content: Slide content object
-            
+
         Returns:
             Slide UUID if successful, None otherwise
         """
         if not self.db_client:
             return None
-        
+
         try:
             # Check if slide already exists
             existing_slides = self.db_client.get_project_slides(project_id)
             slide_number = slide_index + 1  # Convert to 1-based
-            
+
             for slide in existing_slides:
-                if slide['slide_number'] == slide_number:
-                    return slide['id']
-            
+                if slide["slide_number"] == slide_number:
+                    return slide["id"]
+
             # Create new slide record
             slide_title = f"Slide {slide_number}"
             content_dict = {}
-            
-            if hasattr(slide_content, 'content') and slide_content.content:
+
+            if hasattr(slide_content, "content") and slide_content.content:
                 content_dict = slide_content.content
                 # Try to get a better title from content
                 for key, value in slide_content.content.items():
-                    if 'title' in key.lower() and isinstance(value, str):
+                    if "title" in key.lower() and isinstance(value, str):
                         slide_title = value[:100]  # Limit length
                         break
-            
+
+            layout_index = getattr(slide_content, "layout_index", 0)
             slide_record = self.db_client.create_slide(
                 project_id=project_id,
                 slide_number=slide_number,
                 title=slide_title,
                 content=content_dict,
-                layout_type=f"layout_{getattr(slide_content, 'layout_index', 0)}"
+                layout_type=f"layout_{layout_index}",
+                layout_index=layout_index,  # CRITICAL FIX: Store layout_index for HTML refinement
             )
-            
-            return slide_record['id']
-            
+
+            return slide_record["id"]
+
         except Exception as e:
             print(f"  ⚠️ Failed to get/create slide ID: {e}")
             return None
@@ -1893,6 +2191,31 @@ class HTMLRefinementAgent:
 
         # Clean up old debug files at the start
         self._cleanup_old_debug_files()
+
+        # Set template for HTML prompt selection if available
+        template_name = None
+        template_folder_path = state.get("template_folder_path")
+        if template_folder_path:
+            from pathlib import Path
+
+            template_name = Path(template_folder_path).name
+
+        if not template_name:
+            template_path = state.get("template_path")
+            if template_path and "templates/" in template_path:
+                from pathlib import Path
+
+                path_parts = Path(template_path).parts
+                if "templates" in path_parts:
+                    idx = path_parts.index("templates")
+                    if idx + 1 < len(path_parts):
+                        template_name = path_parts[idx + 1]
+
+        if template_name:
+            self.html_prompt_manager.set_template(template_name)
+            print(
+                f"📁 {self.name}: Using template '{template_name}' for refinement prompts"
+            )
 
         slide_contents = state.get("slide_contents")
         if not slide_contents:
@@ -2037,7 +2360,7 @@ class HTMLRefinementAgent:
             # Get refinement history for this slide
             refinement_history_key = f"html_refinement_history_{current_slide_index}"
             refinement_history = state.get(refinement_history_key, [])
-            
+
             correction_response = self._get_html_correction(
                 html_content, image_url, slide_purpose, refinement_history, config
             )
@@ -2113,6 +2436,31 @@ class HTMLRefinementAgent:
 
         # Clean up old debug files at the start
         self._cleanup_old_debug_files()
+
+        # Set template for HTML prompt selection if available
+        template_name = None
+        template_folder_path = state.get("template_folder_path")
+        if template_folder_path:
+            from pathlib import Path
+
+            template_name = Path(template_folder_path).name
+
+        if not template_name:
+            template_path = state.get("template_path")
+            if template_path and "templates/" in template_path:
+                from pathlib import Path
+
+                path_parts = Path(template_path).parts
+                if "templates" in path_parts:
+                    idx = path_parts.index("templates")
+                    if idx + 1 < len(path_parts):
+                        template_name = path_parts[idx + 1]
+
+        if template_name:
+            self.html_prompt_manager.set_template(template_name)
+            print(
+                f"📁 {self.name}: Using template '{template_name}' for parallel refinement prompts"
+            )
 
         slide_contents = state.get("slide_contents")
         if not slide_contents:
@@ -2200,7 +2548,107 @@ class HTMLRefinementAgent:
         print(
             f"🎉 {self.name}: TRUE parallel refinement complete! {success_count}/{len(slide_data)} slides refined successfully."
         )
+        
+        # Trigger final PPTX creation for slides with HTML content
+        await self._create_final_pptx_files(state, slide_data)
+        
         return state
+
+    async def _create_final_pptx_files(
+        self, 
+        state: SlideGenerationState, 
+        slide_data: List[Dict[str, Any]]
+    ):
+        """
+        Create final PPTX files for slides with HTML content using the final refined HTML
+        """
+        print(f"📄 {self.name}: Creating final PPTX files for refined HTML slides...")
+        
+        try:
+            # Import here to avoid circular imports
+            from .individual_slide_generator import IndividualSlideGenerator
+            
+            slide_generator = IndividualSlideGenerator()
+            
+            # Get required state information
+            project_id = state.get("project_id")
+            template_path = state.get("template_path")
+            layouts_info = state.get("layouts_info")
+            dynamic_models = state.get("dynamic_models")
+            
+            if not all([project_id, template_path, layouts_info]):
+                print(f"  ❌ Missing required information for PPTX generation")
+                return
+            
+            # Create final PPTX for each slide with HTML content
+            for slide_info in slide_data:
+                slide_index = slide_info["slide_index"]
+                slide_content = slide_info["slide_content"]
+                
+                # Get slide ID from database
+                slide_id = await self._get_slide_id_from_database(project_id, slide_index + 1)
+                if not slide_id:
+                    print(f"  ⚠️ Could not find slide ID for slide {slide_index + 1}")
+                    continue
+                
+                # Get final refined HTML from database
+                final_html_image_path = await self._get_final_html_image_path(project_id, slide_id)
+                
+                if final_html_image_path:
+                    print(f"  📄 Creating final PPTX for slide {slide_index + 1} with HTML image")
+                    
+                    # Generate individual PPTX with final HTML image
+                    result = await slide_generator.generate_individual_slide(
+                        slide_id=slide_id,
+                        project_id=project_id,
+                        slide_content=slide_content,
+                        template_path=template_path,
+                        slide_number=slide_index + 1,
+                        layouts_info=layouts_info,
+                        dynamic_models=dynamic_models,
+                        html_image_path=final_html_image_path
+                    )
+                    
+                    if result.get("success"):
+                        print(f"  ✅ Final PPTX created for slide {slide_index + 1}")
+                    else:
+                        print(f"  ❌ Failed to create final PPTX for slide {slide_index + 1}: {result.get('error')}")
+                else:
+                    print(f"  ℹ️ No HTML content for slide {slide_index + 1}, skipping PPTX generation")
+                    
+        except Exception as e:
+            print(f"  ❌ Error creating final PPTX files: {e}")
+
+    async def _get_slide_id_from_database(self, project_id: str, slide_number: int) -> Optional[str]:
+        """Get slide ID from database using project_id and slide_number"""
+        try:
+            response = self.db_client.table('slides').select('id').eq('project_id', project_id).eq('slide_number', slide_number).execute()
+            if response.data:
+                return response.data[0]['id']
+            return None
+        except Exception as e:
+            print(f"  ❌ Error getting slide ID: {e}")
+            return None
+
+    async def _get_final_html_image_path(self, project_id: str, slide_id: str) -> Optional[str]:
+        """Get the final HTML image path from the last refinement iteration"""
+        try:
+            # Get the final refinement iteration (is_final=true)
+            response = self.db_client.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).eq('is_final', True).execute()
+            
+            if response.data:
+                return response.data[0]['image_file_url']
+            
+            # Fallback: get the latest iteration if no final iteration found
+            response = self.db_client.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).order('iteration_number', desc=True).limit(1).execute()
+            
+            if response.data:
+                return response.data[0]['image_file_url']
+                
+            return None
+        except Exception as e:
+            print(f"  ❌ Error getting final HTML image path: {e}")
+            return None
 
     async def _refine_all_slides_parallel(
         self,
@@ -2221,12 +2669,16 @@ class HTMLRefinementAgent:
         # Extract project ID and slide contents from state
         project_id = state.get("project_id")
         slide_contents = state.get("slide_contents", [])
-        
+
         tasks = []
         for data in slide_data:
             slide_index = data["slide_index"]
-            slide_content = slide_contents[slide_index] if slide_index < len(slide_contents) else None
-            
+            slide_content = (
+                slide_contents[slide_index]
+                if slide_index < len(slide_contents)
+                else None
+            )
+
             task = self._refine_one_slide_fully_async(
                 slide_index=slide_index,
                 initial_html_content=data["html_content"],
@@ -2274,11 +2726,13 @@ class HTMLRefinementAgent:
         current_html = initial_html_content
         slide_number = slide_index + 1
         print(f"  🚀 Starting full refinement loop for slide {slide_number}...")
-        
+
         # Get or create slide ID for Supabase tracking
         slide_id = None
         if project_id and slide_content:
-            slide_id = self._get_or_create_slide_id(project_id, slide_index, slide_content)
+            slide_id = self._get_or_create_slide_id(
+                project_id, slide_index, slide_content
+            )
             if slide_id:
                 print(f"      📋 Using slide ID {slide_id} for Supabase tracking")
 
@@ -2321,21 +2775,23 @@ class HTMLRefinementAgent:
 
             # Get refinement history for this slide (starts empty for each slide)
             refinement_history = []
-            
+
             # Get LLM correction
             correction_response = await self._get_html_correction_async(
                 current_html, image_url, slide_purpose, refinement_history, config
             )
-            
+
             # Track this refinement iteration in Supabase
             refinement_feedback = None
             refinement_prompt = slide_purpose
             is_final = False
-            
+
             if correction_response:
                 refinement_feedback = correction_response.reasoning
-                if hasattr(correction_response, 'changes_applied'):
-                    refinement_feedback += f"\nChanges: {correction_response.changes_applied}"
+                if hasattr(correction_response, "changes_applied"):
+                    refinement_feedback += (
+                        f"\nChanges: {correction_response.changes_applied}"
+                    )
 
             if (
                 correction_response
@@ -2347,28 +2803,40 @@ class HTMLRefinementAgent:
                 )
                 current_html = correction_response.html_code
                 # Track changes in history to prevent flip-flopping
-                if hasattr(correction_response, 'changes_applied'):
+                if hasattr(correction_response, "changes_applied"):
                     refinement_history.extend(correction_response.changes_applied)
-                
+
                 # Track the updated HTML in Supabase
                 if project_id and slide_id:
                     await self._track_refinement_in_supabase(
-                        project_id, slide_id, iteration, current_html, image_path,
-                        refinement_feedback, refinement_prompt, is_final=False
+                        project_id,
+                        slide_id,
+                        iteration,
+                        current_html,
+                        image_path,
+                        refinement_feedback,
+                        refinement_prompt,
+                        is_final=False,
                     )
-                
+
             else:
                 print(
                     f"      ⚪ Slide {slide_number}, Iteration {iteration}: No changes from LLM. Refinement complete for this slide."
                 )
-                
+
                 # Mark this as the final refinement
                 if project_id and slide_id:
                     await self._track_refinement_in_supabase(
-                        project_id, slide_id, iteration, current_html, image_path,
-                        refinement_feedback, refinement_prompt, is_final=True
+                        project_id,
+                        slide_id,
+                        iteration,
+                        current_html,
+                        image_path,
+                        refinement_feedback,
+                        refinement_prompt,
+                        is_final=True,
                     )
-                
+
                 break  # Early exit if no changes are needed
 
         print(f"  ✅ Finished refinement loop for slide {slide_number}.")
@@ -2421,11 +2889,13 @@ class HTMLRefinementAgent:
     def _render_html_to_image(self, html_content: str, image_path: str) -> bool:
         # Extract dimensions from HTML content
         width, height = self._extract_html_dimensions(html_content)
-        
+
         # Try to render with default method first
         try:
             print("  - Attempting to render HTML with default method...")
-            self.html_renderer.render_html_to_image(html_content, image_path, width, height)
+            self.html_renderer.render_html_to_image(
+                html_content, image_path, width, height
+            )
             if os.path.exists(image_path):
                 print("  - Successfully rendered HTML to image with default method")
                 return True
@@ -2442,7 +2912,9 @@ class HTMLRefinementAgent:
                     print(f"  - Attempting to render HTML with {method}...")
                     # Create a temporary renderer with this method
                     temp_renderer = HTMLRenderer(preferred_method=method)
-                    temp_renderer.render_html_to_image(html_content, image_path, width, height)
+                    temp_renderer.render_html_to_image(
+                        html_content, image_path, width, height
+                    )
                     if os.path.exists(image_path):
                         print(f"  - Successfully rendered HTML to image with {method}")
                         return True
@@ -2458,7 +2930,7 @@ class HTMLRefinementAgent:
         """Async version of _render_html_to_image for use in async contexts"""
         # Extract dimensions from HTML content
         width, height = self._extract_html_dimensions(html_content)
-        
+
         # Try to render with async method first
         try:
             print("  - Attempting to render HTML with async method...")
@@ -2487,7 +2959,11 @@ class HTMLRefinementAgent:
 
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(
-                            temp_renderer.render_html_to_image, html_content, image_path, width, height
+                            temp_renderer.render_html_to_image,
+                            html_content,
+                            image_path,
+                            width,
+                            height,
                         )
                         result = await asyncio.wrap_future(future)
 
@@ -2506,33 +2982,37 @@ class HTMLRefinementAgent:
 
     def _extract_html_dimensions(self, html_content: str) -> tuple[int, int]:
         """Extract viewport dimensions from HTML content body class
-        
+
         Args:
             html_content: HTML content with body class containing dimensions
-            
+
         Returns:
             Tuple of (width, height) in pixels
         """
         import re
-        
+
         # Default fallback dimensions
         default_width, default_height = 1577, 603
-        
+
         try:
             # Look for patterns like w-[1577px] h-[603px] in body class
-            width_match = re.search(r'w-\[(\d+)px\]', html_content)
-            height_match = re.search(r'h-\[(\d+)px\]', html_content)
-            
+            width_match = re.search(r"w-\[(\d+)px\]", html_content)
+            height_match = re.search(r"h-\[(\d+)px\]", html_content)
+
             if width_match and height_match:
                 width = int(width_match.group(1))
                 height = int(height_match.group(1))
                 return width, height
-            
-            print(f"  - Could not extract dimensions from HTML, using defaults: {default_width}x{default_height}")
+
+            print(
+                f"  - Could not extract dimensions from HTML, using defaults: {default_width}x{default_height}"
+            )
             return default_width, default_height
-                
+
         except Exception as e:
-            print(f"  - Error extracting HTML dimensions: {e}, using defaults: {default_width}x{default_height}")
+            print(
+                f"  - Error extracting HTML dimensions: {e}, using defaults: {default_width}x{default_height}"
+            )
             return default_width, default_height
 
     async def _get_html_correction_async(
@@ -2548,21 +3028,71 @@ class HTMLRefinementAgent:
         """
         import concurrent.futures
 
-        system_prompt = self._get_system_prompt()
-        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose, refinement_history)
+        from .llm_models import RefinedHTML
 
-        # Run the LLM call in a thread executor for true parallelism
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                self.llm_client.generate_structured_vision_content,
-                system_prompt,
-                user_prompt,
-                RefinedHTML,
-                config,
-            )
-            response = await asyncio.wrap_future(future)
+        system_prompt = self._get_system_prompt(
+            html_content
+        )  # Pass HTML to extract dimensions
+        user_prompt = self._create_user_prompt(
+            html_content, image_url, slide_purpose, refinement_history
+        )
 
-        return response if response else None
+        try:
+            # Run the LLM call in a thread executor for true parallelism
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    self.llm_client.generate_structured_vision_content,
+                    system_prompt,
+                    user_prompt,
+                    RefinedHTML,
+                    config,
+                )
+                response = await asyncio.wrap_future(future)
+
+            return response if response else None
+        except Exception as e:
+            # Fallback: Try with a simpler non-structured approach for Gemini
+            print(f"⚠️ Structured output failed in async, trying fallback: {e}")
+            try:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        self.llm_client.generate_vision_content,
+                        system_prompt
+                        + "\n\nRETURN ONLY THE CORRECTED HTML CODE. No explanations.",
+                        user_prompt,
+                        config,
+                    )
+                    fallback_response = await asyncio.wrap_future(future)
+
+                if fallback_response:
+                    # Extract HTML from the response
+                    import re
+
+                    html_match = re.search(
+                        r"```html\s*\n(.*?)\n```", fallback_response, re.DOTALL
+                    )
+                    if not html_match:
+                        # Try without code blocks
+                        html_match = re.search(
+                            r"<!DOCTYPE.*?</html>", fallback_response, re.DOTALL
+                        )
+
+                    if html_match:
+                        html_code = (
+                            html_match.group(1)
+                            if "```" in fallback_response
+                            else html_match.group(0)
+                        )
+                        # Create RefinedHTML manually
+                        return RefinedHTML(
+                            html_code=html_code,
+                            reasoning="Fallback generation - structured output not available",
+                            changes_applied=["HTML refined using fallback approach"],
+                        )
+                return None
+            except Exception as fallback_e:
+                print(f"❌ Fallback approach also failed in async: {fallback_e}")
+                return None
 
     def _get_html_correction(
         self,
@@ -2575,16 +3105,64 @@ class HTMLRefinementAgent:
         """
         Synchronous version (kept for compatibility with sequential processing)
         """
-        system_prompt = self._get_system_prompt()
-        user_prompt = self._create_user_prompt(html_content, image_url, slide_purpose, refinement_history)
-
-        response = self.llm_client.generate_structured_vision_content(
-            system_prompt,
-            user_prompt,  # This will now be a list of messages
-            response_model=RefinedHTML,
-            config=config,
+        system_prompt = self._get_system_prompt(
+            html_content
+        )  # Pass HTML to extract dimensions
+        user_prompt = self._create_user_prompt(
+            html_content, image_url, slide_purpose, refinement_history
         )
-        return response if response else None
+
+        try:
+            response = self.llm_client.generate_structured_vision_content(
+                system_prompt,
+                user_prompt,  # This will now be a list of messages
+                response_model=RefinedHTML,
+                config=config,
+            )
+            return response if response else None
+        except Exception as e:
+            # Fallback: Try with a simpler non-structured approach for Gemini
+            print(f"⚠️ Structured output failed, trying fallback approach: {e}")
+            try:
+                # Use generate_vision_content without structured output
+                fallback_response = self.llm_client.generate_vision_content(
+                    system_prompt
+                    + "\n\nRETURN ONLY THE CORRECTED HTML CODE. No explanations.",
+                    user_prompt,
+                    config=config,
+                )
+
+                if fallback_response:
+                    # Extract HTML from the response
+                    import re
+
+                    html_match = re.search(
+                        r"```html\s*\n(.*?)\n```", fallback_response, re.DOTALL
+                    )
+                    if not html_match:
+                        # Try without code blocks
+                        html_match = re.search(
+                            r"<!DOCTYPE.*?</html>", fallback_response, re.DOTALL
+                        )
+
+                    if html_match:
+                        html_code = (
+                            html_match.group(1)
+                            if "```" in fallback_response
+                            else html_match.group(0)
+                        )
+                        # Create RefinedHTML manually
+                        from .llm_models import RefinedHTML
+
+                        return RefinedHTML(
+                            html_code=html_code,
+                            reasoning="Fallback generation - structured output not available",
+                            changes_applied=["HTML refined using fallback approach"],
+                        )
+                return None
+            except Exception as fallback_e:
+                print(f"❌ Fallback approach also failed: {fallback_e}")
+                return None
 
     def _update_slide_content(
         self, slide_contents: list[SlideContent], slide_index: int, new_html: str
@@ -2607,13 +3185,17 @@ class HTMLRefinementAgent:
                 updated_contents.append(slide)
         return updated_contents
 
-    def _format_refinement_history_context(self, refinement_history: Optional[list[str]]) -> str:
+    def _format_refinement_history_context(
+        self, refinement_history: Optional[list[str]]
+    ) -> str:
         """Format refinement history to provide context to avoid flip-flopping"""
         if not refinement_history:
             return ""
-        
-        history_text = "\n".join([f"• {change}" for change in refinement_history[-3:]])  # Last 3 changes
-        
+
+        history_text = "\n".join(
+            [f"• {change}" for change in refinement_history[-3:]]
+        )  # Last 3 changes
+
         return f"""**🔄 PREVIOUS REFINEMENT ATTEMPTS (AVOID REPEATING):**
 The following changes were already tried in previous iterations. DO NOT reverse these decisions:
 {history_text}
@@ -2623,7 +3205,11 @@ The following changes were already tried in previous iterations. DO NOT reverse 
 """
 
     def _create_user_prompt(
-        self, html_content: str, image_url: str, slide_purpose: str, refinement_history: Optional[list[str]] = None
+        self,
+        html_content: str,
+        image_url: str,
+        slide_purpose: str,
+        refinement_history: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
         return [
             {
@@ -2661,7 +3247,37 @@ If any content is missing in the image it means it is either outside the boundar
             },
         ]
 
-    def _get_system_prompt(self) -> str:
+    def _extract_viewport_dimensions(self, html_content: str) -> tuple[int, int]:
+        """Extract viewport dimensions from HTML body class."""
+        import re
+
+        # Default dimensions
+        width, height = 1577, 603
+
+        # Try to extract from body class
+        width_match = re.search(r"w-\[(\d+)px\]", html_content)
+        height_match = re.search(r"h-\[(\d+)px\]", html_content)
+
+        if width_match:
+            width = int(width_match.group(1))
+        if height_match:
+            height = int(height_match.group(1))
+
+        return width, height
+
+    def _get_system_prompt(self, html_content: str = None) -> str:
+        """Get the system prompt for HTML refinement with template-aware colors."""
+        # Extract viewport dimensions from HTML if provided
+        if html_content:
+            width, height = self._extract_viewport_dimensions(html_content)
+        else:
+            width, height = 1577, 603  # Default dimensions
+
+        # Use HTML prompt manager to get template-aware refinement prompt
+        return self.html_prompt_manager.get_html_refinement_prompt(width, height)
+
+    def _get_system_prompt_legacy(self) -> str:
+        """DEPRECATED: Old hardcoded system prompt - DO NOT USE"""
         return """You are an expert web developer and presentation design specialist.
 Your task is to evaluate HTML code against slide requirements and refine it for optimal purpose fulfillment.
 
@@ -2829,8 +3445,13 @@ class ImagePromptAgent:
     """
 
     def __init__(self):
-        self.name = "image_prompt_agent" 
+        self.name = "image_prompt_agent"
         self.llm_client = LangchainLLMClient()
+
+        # Initialize HTML prompt manager to get template colors
+        from .html_prompt_manager import HTMLPromptManager
+
+        self.html_prompt_manager = HTMLPromptManager()
 
     @monitor_agent_execution("image_prompt_agent")
     def execute(
@@ -2838,39 +3459,98 @@ class ImagePromptAgent:
     ) -> SlideGenerationState:
         """
         Create detailed image generation prompts for slides that need images.
-        
+
         Args:
             state: Current workflow state
             config: Optional LangGraph configuration
-            
+
         Returns:
             Updated state with optimized image prompts
         """
         print(f"🎨 {self.name}: Crafting detailed image generation prompts...")
-        
+
+        # Set template for color selection if available
+        template_name = self._extract_template_name(state)
+        if template_name:
+            self.html_prompt_manager.set_template(template_name)
+            print(
+                f"📁 {self.name}: Using template '{template_name}' for image prompt colors"
+            )
+
         # Check if we have slides that need images
         if not state.get("slide_contents"):
             print("  - No slide contents available")
             return state
-            
+
         # Identify slides that need images and create prompts
         image_prompts = self._create_image_prompts(state)
-        
+
         if image_prompts:
             state["image_prompts"] = image_prompts
             print(f"  ✅ Created {len(image_prompts)} detailed image prompts")
         else:
             print("  - No slides identified for image generation")
-            
+
         return state
-    
+
+    def _extract_template_name(self, state: SlideGenerationState) -> Optional[str]:
+        """Extract template name from state."""
+        template_name = None
+        template_folder_path = state.get("template_folder_path")
+        if template_folder_path:
+            from pathlib import Path
+
+            template_name = Path(template_folder_path).name
+
+        if not template_name:
+            template_path = state.get("template_path")
+            if template_path and "templates/" in template_path:
+                from pathlib import Path
+
+                path_parts = Path(template_path).parts
+                if "templates" in path_parts:
+                    idx = path_parts.index("templates")
+                    if idx + 1 < len(path_parts):
+                        template_name = path_parts[idx + 1]
+
+        return template_name
+
+    def _get_brand_colors(self) -> tuple[str, str]:
+        """Get brand colors from the current template's JSON configuration."""
+        # Get colors from JSON configuration
+        colors = self.html_prompt_manager.get_template_colors()
+
+        # Extract image generation colors if specified
+        image_gen = colors.get("image_generation", {})
+        if image_gen:
+            primary_color = image_gen.get("primary_accent", "professional accent color")
+            secondary_color = image_gen.get("secondary_accent", "dark grey")
+        else:
+            # Fall back to main color config
+            color_config = colors.get("colors", {})
+            primary = color_config.get("primary", {})
+            secondary = color_config.get("secondary", {})
+
+            primary_color = (
+                f"{primary.get('name', 'accent color')} ({primary.get('hex', '')})"
+                if primary.get("hex")
+                else primary.get("name", "accent color")
+            )
+            secondary_color = (
+                f"{secondary.get('name', 'dark grey')} ({secondary.get('hex', '')})"
+                if secondary.get("hex")
+                else secondary.get("name", "dark grey")
+            )
+
+        return primary_color, secondary_color
+
     def _create_image_prompts(self, state: SlideGenerationState) -> dict:
         """
         Create detailed image prompts for all slides that need images.
-        
+
         Args:
             state: Current workflow state
-            
+
         Returns:
             Dictionary mapping slide indices to detailed image prompts
         """
@@ -2879,174 +3559,219 @@ class ImagePromptAgent:
         layouts_info = state.get("layouts_info", {})
         presentation_plan = state.get("presentation_plan", [])
         topic = state.get("topic", "")
-        
+
         # Handle both List[SlideSpec] and PresentationPlan object
         from .llm_models import PresentationPlan
+
         if isinstance(presentation_plan, PresentationPlan):
             slides_list = presentation_plan.slides
         else:
             slides_list = presentation_plan
-        
+
         for i, slide_content in enumerate(slide_contents):
             # Get layout info
-            layout_index = getattr(slide_content, 'layout_index', None)
-            if not layout_index or layout_index not in layouts_info:
+            layout_index = getattr(slide_content, "layout_index", None)
+            if layout_index is None or layout_index not in layouts_info:
                 continue
-                
+
             layout_info = layouts_info[layout_index]
-            
+
             # Method 1: Check if this layout has picture placeholders
             has_picture = False
             for placeholder in layout_info.get("placeholders", []):
                 if "Picture" in placeholder.get("name", ""):
                     has_picture = True
                     break
-            
+
             # Method 2: Check if content describes images (regardless of layout)
-            content_suggests_image = self._slide_content_suggests_image_prompt(slide_content)
-            
+            content_suggests_image = self._slide_content_suggests_image_prompt(
+                slide_content
+            )
+
             # Skip if neither layout nor content suggests images
             if not has_picture and not content_suggests_image:
                 continue
-                
+
             # Log detection method
             if has_picture and content_suggests_image:
-                print(f"  🎯 Slide {i}: Detected image need via both layout and content analysis")
+                print(
+                    f"  🎯 Slide {i}: Detected image need via both layout and content analysis"
+                )
             elif has_picture:
-                print(f"  🎯 Slide {i}: Detected image need via picture placeholder in layout")
+                print(
+                    f"  🎯 Slide {i}: Detected image need via picture placeholder in layout"
+                )
             else:
                 print(f"  🎯 Slide {i}: Detected image need via content analysis")
-                
+
             # Get slide context
             slide_spec = slides_list[i] if i < len(slides_list) else None
-            slide_title = getattr(slide_spec, 'slide_title', 'Slide') if slide_spec else 'Slide'
-            
+            slide_title = (
+                getattr(slide_spec, "slide_title", "Slide") if slide_spec else "Slide"
+            )
+
             # Create detailed prompt using LLM
             detailed_prompt = self._generate_detailed_image_prompt(
                 topic=topic,
                 slide_title=slide_title,
                 slide_content=slide_content,
-                slide_spec=slide_spec
+                slide_spec=slide_spec,
             )
-            
+
             if detailed_prompt:
                 image_prompts[i] = detailed_prompt
                 print(f"  📝 Created prompt for slide {i + 1}: {slide_title}")
-                
+
         return image_prompts
-    
+
     def _slide_content_suggests_image_prompt(self, slide_content) -> bool:
         """
         Analyze slide content to determine if it describes visual content that needs image generation.
         This is specifically for the ImagePromptAgent to detect image needs for prompt creation.
-        
+
         Args:
             slide_content: SlideContent object with content dictionary
-            
+
         Returns:
             True if content suggests image generation is needed
         """
         try:
-            content = getattr(slide_content, 'content', {})
+            content = getattr(slide_content, "content", {})
             if not content or not isinstance(content, dict):
                 return False
-            
+
             # Convert all content values to lowercase text for analysis
             all_text = ""
             for key, value in content.items():
                 # Skip background placeholders - they're handled separately
                 if "LOCKED_Background" in key:
                     continue
-                    
+
                 if isinstance(value, str):
                     all_text += value.lower() + " "
                 elif isinstance(value, list):
                     for item in value:
                         if isinstance(item, str):
                             all_text += item.lower() + " "
-            
+
             # Check if any content values mention image-related descriptions
             # Look for phrases that describe visual scenes or images
             visual_phrases = [
-                "image of", "picture of", "photo of", "shows a", "displays a",
-                "depicts a", "illustrates a", "features a", "captures a",
-                "view of", "scene of", "visual of", "rendering of",
-                "drawing of", "sketch of", "diagram of", "chart showing"
+                "image of",
+                "picture of",
+                "photo of",
+                "shows a",
+                "displays a",
+                "depicts a",
+                "illustrates a",
+                "features a",
+                "captures a",
+                "view of",
+                "scene of",
+                "visual of",
+                "rendering of",
+                "drawing of",
+                "sketch of",
+                "diagram of",
+                "chart showing",
             ]
-            
+
             # Strong indicators for visual content
             for phrase in visual_phrases:
                 if phrase in all_text:
                     print(f"    ✅ ImagePromptAgent: Found visual phrase: '{phrase}'")
                     return True
-            
+
             # Check individual content values for image descriptions
             for key, value in content.items():
                 if "LOCKED_Background" in key:
                     continue
-                    
+
                 if isinstance(value, str) and len(value) > 20:
                     value_lower = value.lower()
                     # Look for content that reads like image descriptions
                     image_indicators = [
-                        "woman", "man", "person", "people", "scene", "setting",
-                        "background", "foreground", "lighting", "composition",
-                        "color palette", "atmosphere", "mood", "style",
-                        "professional", "medical", "healthcare", "business"
+                        "woman",
+                        "man",
+                        "person",
+                        "people",
+                        "scene",
+                        "setting",
+                        "background",
+                        "foreground",
+                        "lighting",
+                        "composition",
+                        "color palette",
+                        "atmosphere",
+                        "mood",
+                        "style",
+                        "professional",
+                        "medical",
+                        "healthcare",
+                        "business",
                     ]
-                    
+
                     # If content has multiple visual indicators and describes something tangible
-                    indicator_count = sum(1 for indicator in image_indicators if indicator in value_lower)
+                    indicator_count = sum(
+                        1 for indicator in image_indicators if indicator in value_lower
+                    )
                     if indicator_count >= 2:
-                        print(f"    ✅ ImagePromptAgent: Content '{key}' suggests image ({indicator_count} indicators)")
+                        print(
+                            f"    ✅ ImagePromptAgent: Content '{key}' suggests image ({indicator_count} indicators)"
+                        )
                         return True
-            
+
             return False
-            
+
         except Exception as e:
             print(f"    ⚠️ ImagePromptAgent: Error analyzing slide content: {e}")
             return False
-    
+
     def _generate_detailed_image_prompt(
-        self, 
-        topic: str, 
-        slide_title: str, 
-        slide_content, 
-        slide_spec
+        self, topic: str, slide_title: str, slide_content, slide_spec
     ) -> str:
         """
         Use LLM to generate a detailed, descriptive image prompt.
-        
+
         Args:
             topic: Original presentation topic
             slide_title: Title of the slide
             slide_content: Slide content object
             slide_spec: Slide specification from planning
-            
+
         Returns:
             Detailed image generation prompt
         """
         try:
             # Build context for the LLM
             context_parts = [f"Topic: {topic}", f"Slide: {slide_title}"]
-            
+
             if slide_spec:
-                if hasattr(slide_spec, 'slide_purpose'):
+                if hasattr(slide_spec, "slide_purpose"):
                     context_parts.append(f"Purpose: {slide_spec.slide_purpose}")
-                if hasattr(slide_spec, 'key_information'):
-                    context_parts.append(f"Key Info: {', '.join(slide_spec.key_information)}")
-            
+                if hasattr(slide_spec, "key_information"):
+                    context_parts.append(
+                        f"Key Info: {', '.join(slide_spec.key_information)}"
+                    )
+
             # Get text content from slide
             text_content = []
             for attr_name, attr_value in slide_content.__dict__.items():
-                if isinstance(attr_value, str) and attr_value.strip() and attr_name != 'layout_index':
+                if (
+                    isinstance(attr_value, str)
+                    and attr_value.strip()
+                    and attr_name != "layout_index"
+                ):
                     text_content.append(f"{attr_name}: {attr_value}")
-            
+
             if text_content:
                 context_parts.append(f"Content: {'; '.join(text_content)}")
-            
+
             context = "\n".join(context_parts)
-            
+
+            # Get brand colors for this template
+            primary_color, secondary_color = self._get_brand_colors()
+
             prompt = f"""You are an expert at creating specific visual descriptions for AI image generation.
 
 TASK: Based on the context below, create a detailed visual description focusing ONLY on what should appear in the image itself.
@@ -3055,8 +3780,8 @@ CONTEXT:
 {context}
 
 BRAND COLORS (use when appropriate):
-- Swiss Red: #dc261e
-- Dark Grey: #2d3748
+- Primary: {primary_color}
+- Secondary: {secondary_color}
 
 INSTRUCTIONS:
 1. Describe the exact visual scene - people, objects, environment, composition
@@ -3069,36 +3794,43 @@ OUTPUT: Return ONLY the visual description for image generation, no mention of s
 
             # Use the same pattern as other agents
             messages = [
-                {"role": "system", "content": "You are an expert image prompt creator."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are an expert image prompt creator.",
+                },
+                {"role": "user", "content": prompt},
             ]
             config = RunnableConfig(
                 run_name="image_prompt_generation",
-                tags=["image", "prompt", "generation"]
+                tags=["image", "prompt", "generation"],
             )
-            
+
             response = self.llm_client.chat_client.invoke(messages, config=config)
             content = str(response.content) if response.content else ""
-            
+
             if content and content.strip():
                 return content.strip()
-            else:
-                print(f"  ⚠️ LLM returned empty response for slide prompt")
-                return self._create_fallback_prompt(topic, slide_title)
-                
+            print("  ⚠️ LLM returned empty response for slide prompt")
+            return self._create_fallback_prompt(topic, slide_title)
+
         except Exception as e:
             print(f"  ⚠️ Error generating detailed prompt: {e}")
             return self._create_fallback_prompt(topic, slide_title)
-    
+
     def _create_fallback_prompt(self, topic: str, slide_title: str) -> str:
         """Create a fallback prompt when LLM generation fails."""
-        if 'image of' in topic.lower():
-            base_prompt = topic.replace('image of', '').strip()
+        if "image of" in topic.lower():
+            base_prompt = topic.replace("image of", "").strip()
         else:
             base_prompt = f"Professional business scene related to {slide_title}"
-        
-        return (f"{base_prompt}. High-quality, detailed illustration with clean composition, "
-                f"professional style, modern design, Swiss red (#dc261e) and dark grey (#2d3748) accents.")
+
+        # Get brand colors for this template
+        primary_color, secondary_color = self._get_brand_colors()
+
+        return (
+            f"{base_prompt}. High-quality, detailed illustration with clean composition, "
+            f"professional style, modern design with {primary_color} and {secondary_color} accents."
+        )
 
 
 class ImageGenerationAgent:
@@ -3109,28 +3841,32 @@ class ImageGenerationAgent:
 
     def __init__(self):
         self.name = "image_generation_agent"
-        
+
         # Initialize the image webhook client
         try:
             from .image_webhook_client import ImageWebhookClient
+
             self.image_client = ImageWebhookClient()
             print("✅ Image webhook client initialized successfully")
         except Exception as e:
             print(f"❌ Failed to initialize image webhook client: {e}")
             self.image_client = None
-            
+
         # Initialize storage and database clients
         try:
-            from .supabase_storage import get_storage_client
             from .database import get_supabase_client
+            from .supabase_storage import get_storage_client
+
             self.storage_client = get_storage_client()
             self.db_client = get_supabase_client()
-            print("✅ Supabase storage and database clients initialized for image tracking")
+            print(
+                "✅ Supabase storage and database clients initialized for image tracking"
+            )
         except Exception as e:
             print(f"⚠️ Failed to initialize Supabase clients for image tracking: {e}")
             self.storage_client = None
             self.db_client = None
-            
+
         self.temp_dir = Path("image_debug")
         self.temp_dir.mkdir(exist_ok=True)
 
@@ -3140,136 +3876,197 @@ class ImageGenerationAgent:
     ) -> SlideGenerationState:
         """
         Generate images for slides that need them (Layout 2).
-        
+
         Args:
             state: Current workflow state containing slide contents
             config: Optional LangGraph configuration
-            
+
         Returns:
             Updated state with generated images
         """
         if not self.image_client:
             print("❌ Image client not available, skipping image generation")
             return state
-            
+
         # Check if we have slide contents
         if not state.get("slide_contents"):
             print("❌ No slide contents available for image generation")
             return state
-            
+
         print(f"🎨 {self.name}: Starting image generation process...")
-        
+
         # Identify slides that need images (Layout 2)
         image_slides = self._identify_image_slides(state)
-        
+
         if not image_slides:
             print(f"ℹ️ {self.name}: No slides require image generation")
             return state
-            
+
         print(f"🎯 {self.name}: Found {len(image_slides)} slides needing images")
-        
+
         # Check for parallel processing
-        use_parallel = os.getenv("USE_PARALLEL_IMAGE_GENERATION", "true").lower() == "true"
-        
+        use_parallel = (
+            os.getenv("USE_PARALLEL_IMAGE_GENERATION", "true").lower() == "true"
+        )
+
         if use_parallel:
             print("🚀 Using parallel image generation")
             return self._generate_images_parallel(state, image_slides)
-        else:
-            print("🔄 Using sequential image generation")
-            return self._generate_images_sequential(state, image_slides)
-            
+        print("🔄 Using sequential image generation")
+        return self._generate_images_sequential(state, image_slides)
+
     def _identify_image_slides(self, state: SlideGenerationState) -> list[dict]:
         """
         Identify slides that need image generation by checking both layout and content.
-        
+
         Args:
             state: Current workflow state
-            
+
         Returns:
             List of dictionaries containing slide info for image generation
         """
         image_slides = []
         slide_contents = state.get("slide_contents", [])
         layouts_info = state.get("layouts_info", {})
-        
+        presentation_plan = state.get("presentation_plan", [])
+
+        # Handle both List[SlideSpec] and PresentationPlan object
+        from .llm_models import PresentationPlan
+
+        if isinstance(presentation_plan, PresentationPlan):
+            slides_list = presentation_plan.slides
+        else:
+            slides_list = presentation_plan
+
         for i, slide_content in enumerate(slide_contents):
-            layout_index = getattr(slide_content, 'layout_index', None)
-            layout_info = layouts_info.get(layout_index, {}) if layout_index is not None else {}
-            
-            # Method 1: Check if this is Layout 2 (Title and Picture) 
-            # OR any layout with picture placeholders
-            if layout_index == 2 or any(p.get("type") == 18 for p in layout_info.get("placeholders", [])):
-                # Find the picture placeholder (but skip LOCKED_ ones)
-                picture_placeholder = None
-                for placeholder in layout_info.get("placeholders", []):
-                    placeholder_name = placeholder.get("name", "")
-                    placeholder_type = placeholder.get("type", 0)
-                    
-                    # Skip LOCKED_ placeholders
-                    if "LOCKED_" in placeholder_name:
-                        continue
-                    
-                    # Check for picture placeholder by type or name
-                    if placeholder_type == 18 or "Picture" in placeholder_name:
-                        picture_placeholder = placeholder
+            layout_index = getattr(slide_content, "layout_index", None)
+            layout_info = (
+                layouts_info.get(layout_index, {}) if layout_index is not None else {}
+            )
+
+            # CRITICAL FIX: Use planning agent's decision to determine if image generation is needed
+            # Get the corresponding slide specification from the presentation plan
+            slide_spec = slides_list[i] if i < len(slides_list) else None
+            planned_content_type = (
+                getattr(slide_spec, "content_type", "text") if slide_spec else "text"
+            )
+
+            print(
+                f"  🔍 Slide {i+1}: Planning agent decided content_type='{planned_content_type}'"
+            )
+
+            # Only trigger image generation if planning agent decided this should be a visual slide
+            if planned_content_type != "visual":
+                print(
+                    f"  ⏭️ Slide {i+1}: Skipping image generation - planning agent chose '{planned_content_type}' (not 'visual')"
+                )
+                continue
+
+            # Additional check: Skip slides that already have HTML content (safety net)
+            slide_has_html = False
+            if hasattr(slide_content, "content") and slide_content.content:
+                for key, value in slide_content.content.items():
+                    if (
+                        key
+                        and "html" in key.lower()
+                        and value
+                        and len(str(value).strip()) > 100
+                    ):
+                        slide_has_html = True
+                        print(
+                            f"  ⏭️ Slide {i+1}: Skipping image generation - already has HTML content in '{key}'"
+                        )
                         break
-                        
-                if picture_placeholder:
-                    # Get image prompt for this slide (preferring detailed prompts)
-                    image_prompt = self._get_image_prompt_for_slide(i, state)
-                    
-                    image_slides.append({
+
+            if slide_has_html:
+                continue  # Skip this slide entirely
+
+            # Now find the appropriate picture placeholder for this visual slide
+            # Since planning agent decided this needs an image, find the best placeholder
+            layout_name = layout_info.get("name", "").lower()
+
+            print(
+                f"  🔍 Slide {i+1}: Layout '{layout_name}' (index {layout_index}) - Looking for image placeholder..."
+            )
+
+            # Find the best picture placeholder for image generation
+            picture_placeholder = None
+            for placeholder in layout_info.get("placeholders", []):
+                placeholder_name = placeholder.get("name", "")
+                placeholder_type = placeholder.get("type", 0)
+
+                # Only look at picture placeholders (type 18)
+                if placeholder_type != 18:
+                    continue
+
+                # Skip LOCKED_ placeholders (these are background images)
+                if "LOCKED_" in placeholder_name:
+                    print(f"    ⏭️ Skipping LOCKED placeholder: {placeholder_name}")
+                    continue
+
+                # Skip HTML placeholders (these are for HTML-generated content)
+                placeholder_name_lower = placeholder_name.lower()
+                if (
+                    "html" in placeholder_name_lower
+                    or "generated from html" in placeholder_name_lower
+                    or "picture from html" in placeholder_name_lower
+                    or "visualization" in placeholder_name_lower
+                ):
+                    print(
+                        f"    ⏭️ Skipping HTML/visualization placeholder: {placeholder_name}"
+                    )
+                    continue
+
+                # This is a suitable picture placeholder for image generation
+                picture_placeholder = placeholder
+                print(
+                    f"    🎯 Found image placeholder for visual slide: {placeholder_name}"
+                )
+                break
+
+            if picture_placeholder:
+                # Get image prompt for this slide (preferring detailed prompts)
+                image_prompt = self._get_image_prompt_for_slide(i, state)
+
+                image_slides.append(
+                    {
                         "slide_index": i,
                         "slide_content": slide_content,
                         "placeholder": picture_placeholder,
                         "image_prompt": image_prompt,
-                        "placeholder_description": picture_placeholder.get("name", "Picture 16:9"),
+                        "placeholder_description": picture_placeholder.get(
+                            "name", "Picture 16:9"
+                        ),
                         "placeholder_width": picture_placeholder.get("width_px", 1200),
                         "placeholder_height": picture_placeholder.get("height_px", 456),
-                        "detection_method": "layout_2_placeholder"
-                    })
-                    print(f"  🎯 Slide {i}: Detected image need via Layout 2 placeholder")
-                    
-            # Method 2: Analyze slide content for image descriptions (for any layout)
-            elif self._slide_content_suggests_image(slide_content):
-                # Find any available picture placeholder in the layout
-                picture_placeholder = self._find_any_picture_placeholder(layout_info)
-                
-                if picture_placeholder:
-                    # Get image prompt for this slide
-                    image_prompt = self._get_image_prompt_for_slide(i, state)
-                    
-                    image_slides.append({
-                        "slide_index": i,
-                        "slide_content": slide_content,
-                        "placeholder": picture_placeholder,
-                        "image_prompt": image_prompt,
-                        "placeholder_description": picture_placeholder.get("name", "Picture"),
-                        "placeholder_width": picture_placeholder.get("width_px", 800),
-                        "placeholder_height": picture_placeholder.get("height_px", 600),
-                        "detection_method": "content_analysis"
-                    })
-                    print(f"  🎯 Slide {i}: Detected image need via content analysis")
-                else:
-                    print(f"  ⚠️ Slide {i}: Content suggests image but no picture placeholder found in layout {layout_index}")
-                    
+                        "detection_method": "planning_agent_visual",
+                    }
+                )
+                print(
+                    f"  🎯 Slide {i+1}: Added to image generation queue (planning agent chose 'visual')"
+                )
+            else:
+                print(
+                    f"  ⚠️ Slide {i+1}: Planning agent chose 'visual' but no suitable image placeholder found"
+                )
+
         return image_slides
-    
+
     def _slide_content_suggests_image(self, slide_content) -> bool:
         """
         Analyze slide content to determine if it suggests an image should be generated.
-        
+
         Args:
             slide_content: SlideContent object with content dictionary
-            
+
         Returns:
             True if content suggests image generation is needed
         """
         try:
-            content = getattr(slide_content, 'content', {})
+            content = getattr(slide_content, "content", {})
             if not content or not isinstance(content, dict):
                 return False
-            
+
             # Convert all content values to lowercase text for analysis
             all_text = ""
             for key, value in content.items():
@@ -3279,174 +4076,248 @@ class ImageGenerationAgent:
                     for item in value:
                         if isinstance(item, str):
                             all_text += item.lower() + " "
-            
+
             # Keywords that suggest visual content is being described
             image_keywords = [
-                "picture", "image", "photo", "illustration", "diagram", "chart", "graph",
-                "visual", "scene", "view", "landscape", "portrait", "showing", "depicts",
-                "displays", "represents", "features", "captures", "shot of", "view of",
-                "example of", "demonstrates", "visualize", "see", "look at", "observe",
-                "appearance", "looks like", "resembles", "design", "mockup", "screenshot",
-                "rendering", "artwork", "drawing", "sketch", "infographic", "poster"
+                "picture",
+                "image",
+                "photo",
+                "illustration",
+                "diagram",
+                "chart",
+                "graph",
+                "visual",
+                "scene",
+                "view",
+                "landscape",
+                "portrait",
+                "showing",
+                "depicts",
+                "displays",
+                "represents",
+                "features",
+                "captures",
+                "shot of",
+                "view of",
+                "example of",
+                "demonstrates",
+                "visualize",
+                "see",
+                "look at",
+                "observe",
+                "appearance",
+                "looks like",
+                "resembles",
+                "design",
+                "mockup",
+                "screenshot",
+                "rendering",
+                "artwork",
+                "drawing",
+                "sketch",
+                "infographic",
+                "poster",
             ]
-            
+
             # Phrases that strongly suggest image descriptions
             strong_image_phrases = [
-                "a picture of", "an image of", "a photo of", "shows a", "displays a",
-                "features a", "depicts a", "illustrates a", "represents a", "captures a",
-                "a visual of", "a view of", "a scene of", "a diagram of", "a chart showing",
-                "a graph of", "an example of", "a screenshot of", "a rendering of"
+                "a picture of",
+                "an image of",
+                "a photo of",
+                "shows a",
+                "displays a",
+                "features a",
+                "depicts a",
+                "illustrates a",
+                "represents a",
+                "captures a",
+                "a visual of",
+                "a view of",
+                "a scene of",
+                "a diagram of",
+                "a chart showing",
+                "a graph of",
+                "an example of",
+                "a screenshot of",
+                "a rendering of",
             ]
-            
+
             # Check for strong phrases first
             for phrase in strong_image_phrases:
                 if phrase in all_text:
                     print(f"    ✅ Found strong image phrase: '{phrase}'")
                     return True
-            
+
             # Check for individual keywords (need multiple matches for confidence)
             keyword_matches = []
             for keyword in image_keywords:
                 if keyword in all_text:
                     keyword_matches.append(keyword)
-            
+
             if len(keyword_matches) >= 2:
                 print(f"    ✅ Found multiple image keywords: {keyword_matches[:3]}")
                 return True
-            elif len(keyword_matches) == 1 and len(all_text.split()) < 50:
+            if len(keyword_matches) == 1 and len(all_text.split()) < 50:
                 # If content is short and has one image keyword, likely needs image
-                print(f"    ✅ Found image keyword in short content: {keyword_matches[0]}")
+                print(
+                    f"    ✅ Found image keyword in short content: {keyword_matches[0]}"
+                )
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             print(f"    ⚠️ Error analyzing slide content for images: {e}")
             return False
-    
+
     def _find_any_picture_placeholder(self, layout_info: dict):
         """
         Find any picture placeholder in the layout info.
-        
+
         Args:
             layout_info: Layout information from template analysis
-            
+
         Returns:
             Picture placeholder dictionary or None if not found
         """
         try:
             placeholders = layout_info.get("placeholders", [])
-            
+
             # First, look for actual PICTURE type placeholders (type 18)
             # BUT skip LOCKED_ placeholders as they're for backgrounds
             for placeholder in placeholders:
                 placeholder_name = placeholder.get("name", "")
                 placeholder_type = placeholder.get("type", 0)
-                
+
                 # Skip LOCKED_ placeholders - they're handled by the background system
                 if "LOCKED_" in placeholder_name:
-                    print(f"    🔒 Skipping locked background placeholder: {placeholder_name}")
+                    print(
+                        f"    🔒 Skipping locked background placeholder: {placeholder_name}"
+                    )
                     continue
-                
+
                 # Check if it's a PICTURE type (type 18)
                 if placeholder_type == 18:  # PP_PLACEHOLDER.PICTURE
-                    print(f"    🖼️ Found picture placeholder by type 18: {placeholder_name}")
+                    print(
+                        f"    🖼️ Found picture placeholder by type 18: {placeholder_name}"
+                    )
                     return placeholder
-            
+
             # Look for placeholders with picture-related names
             picture_names = [
-                "Picture 16:9", "Picture", "Image", "Photo", "Visual", 
-                "Diagram", "Chart", "Illustration", "Graphic"
+                "Picture 16:9",
+                "Picture",
+                "Image",
+                "Photo",
+                "Visual",
+                "Diagram",
+                "Chart",
+                "Illustration",
+                "Graphic",
             ]
-            
+
             for placeholder in placeholders:
                 placeholder_name = placeholder.get("name", "")
-                
+
                 # Skip LOCKED_ placeholders
                 if "LOCKED_" in placeholder_name:
                     continue
-                
+
                 # Check by name
                 for pic_name in picture_names:
                     if pic_name.lower() in placeholder_name.lower():
-                        print(f"    🖼️ Found picture placeholder by name: {placeholder_name}")
+                        print(
+                            f"    🖼️ Found picture placeholder by name: {placeholder_name}"
+                        )
                         return placeholder
-            
+
             # Fallback: Use content placeholder if available (but not LOCKED_)
             for placeholder in placeholders:
                 placeholder_name = placeholder.get("name", "")
-                if "LOCKED_" not in placeholder_name and "content" in placeholder_name.lower():
-                    print(f"    🖼️ Using content placeholder as fallback: {placeholder_name}")
+                if (
+                    "LOCKED_" not in placeholder_name
+                    and "content" in placeholder_name.lower()
+                ):
+                    print(
+                        f"    🖼️ Using content placeholder as fallback: {placeholder_name}"
+                    )
                     return placeholder
-            
-            print(f"    ⚠️ No suitable picture placeholder found in layout")
+
+            print("    ⚠️ No suitable picture placeholder found in layout")
             return None
-            
+
         except Exception as e:
             print(f"    ⚠️ Error finding picture placeholder: {e}")
             return None
-        
-    def _get_image_prompt_for_slide(self, slide_index: int, state: SlideGenerationState) -> str:
+
+    def _get_image_prompt_for_slide(
+        self, slide_index: int, state: SlideGenerationState
+    ) -> str:
         """
         Get the image prompt for a slide, preferring pre-crafted prompts from ImagePromptAgent.
-        
+
         Args:
             slide_index: Index of the slide (0-based)
             state: Full workflow state
-            
+
         Returns:
             Image generation prompt
         """
         # First try to use pre-crafted prompt from ImagePromptAgent
-        image_prompts = state.get('image_prompts', {})
+        image_prompts = state.get("image_prompts", {})
         if slide_index in image_prompts:
-            print(f"    🎯 Using detailed prompt from ImagePromptAgent")
+            print("    🎯 Using detailed prompt from ImagePromptAgent")
             return image_prompts[slide_index]
-        
+
         # Fallback to content-based prompt generation
-        print(f"    ⚠️ No detailed prompt available, analyzing slide content for fallback")
-        original_topic = state.get('topic', '')
-        slide_contents = state.get('slide_contents', [])
-        
+        print(
+            "    ⚠️ No detailed prompt available, analyzing slide content for fallback"
+        )
+        original_topic = state.get("topic", "")
+        slide_contents = state.get("slide_contents", [])
+
         # Try to extract visual description from slide content
         content_prompt = None
         if slide_index < len(slide_contents):
             slide_content = slide_contents[slide_index]
-            content_prompt = self._extract_visual_description_from_content(slide_content)
-        
+            content_prompt = self._extract_visual_description_from_content(
+                slide_content
+            )
+
         if content_prompt:
             # Use content-based description
             base_prompt = content_prompt
             print(f"    📝 Using content-based prompt: {base_prompt[:50]}...")
-        elif original_topic and 'image of' in original_topic.lower():
+        elif original_topic and "image of" in original_topic.lower():
             # User specifically requested an image scene
             base_prompt = original_topic
         else:
             # Generic business slide
-            base_prompt = f"Professional business illustration for presentation slide"
+            base_prompt = "Professional business illustration for presentation slide"
             if original_topic:
                 base_prompt += f" about {original_topic[:100]}"
-        
-        # Add style guidelines
-        style_prompt = ". Style: modern, professional, clean design with corporate colors (Swiss red #dc261e, dark grey #2d3748). High quality, detailed illustration suitable for business presentation."
-        
+
+        # Add style guidelines with template-aware colors
+        # Since this agent doesn't have HTMLPromptManager, use generic terms
+        style_prompt = ". Style: modern, professional, clean design with appropriate brand colors. High quality, detailed illustration suitable for business presentation."
+
         return base_prompt + style_prompt
-    
+
     def _extract_visual_description_from_content(self, slide_content) -> str:
         """
         Extract visual description from slide content for image generation.
-        
+
         Args:
             slide_content: SlideContent object with content dictionary
-            
+
         Returns:
             Visual description string or None if not found
         """
         try:
-            content = getattr(slide_content, 'content', {})
+            content = getattr(slide_content, "content", {})
             if not content or not isinstance(content, dict):
                 return None
-            
+
             # Combine all text content
             all_text = ""
             for key, value in content.items():
@@ -3456,72 +4327,88 @@ class ImageGenerationAgent:
                     for item in value:
                         if isinstance(item, str):
                             all_text += item + " "
-            
+
             if not all_text.strip():
                 return None
-            
+
             # Look for sentences that describe visual content
             import re
-            
+
             # Find sentences with image-related keywords
-            sentences = re.split(r'[.!?]+', all_text)
+            sentences = re.split(r"[.!?]+", all_text)
             visual_sentences = []
-            
+
             for sentence in sentences:
                 sentence = sentence.strip()
                 if not sentence:
                     continue
-                    
+
                 lower_sentence = sentence.lower()
-                
+
                 # Strong indicators for visual descriptions
                 visual_indicators = [
-                    "picture", "image", "photo", "shows", "displays", "depicts",
-                    "illustrates", "represents", "features", "captures", "view",
-                    "scene", "visual", "diagram", "chart", "graph", "design"
+                    "picture",
+                    "image",
+                    "photo",
+                    "shows",
+                    "displays",
+                    "depicts",
+                    "illustrates",
+                    "represents",
+                    "features",
+                    "captures",
+                    "view",
+                    "scene",
+                    "visual",
+                    "diagram",
+                    "chart",
+                    "graph",
+                    "design",
                 ]
-                
+
                 if any(indicator in lower_sentence for indicator in visual_indicators):
                     visual_sentences.append(sentence)
-            
+
             if visual_sentences:
                 # Use the most descriptive sentence
                 longest_sentence = max(visual_sentences, key=len)
-                
+
                 # Clean up the sentence for image generation
                 description = longest_sentence.strip()
-                
+
                 # Remove common presentation text
                 cleanup_patterns = [
-                    r'^This slide (shows|displays|features|contains)',
-                    r'^The slide (shows|displays|features|contains)',
-                    r'^Here we (see|have|show)',
-                    r'^This is a',
-                    r'^This shows?',
+                    r"^This slide (shows|displays|features|contains)",
+                    r"^The slide (shows|displays|features|contains)",
+                    r"^Here we (see|have|show)",
+                    r"^This is a",
+                    r"^This shows?",
                 ]
-                
+
                 for pattern in cleanup_patterns:
-                    description = re.sub(pattern, '', description, flags=re.IGNORECASE).strip()
-                
+                    description = re.sub(
+                        pattern, "", description, flags=re.IGNORECASE
+                    ).strip()
+
                 if description and len(description) > 10:
                     return description
-            
+
             return None
-            
+
         except Exception as e:
             print(f"    ⚠️ Error extracting visual description: {e}")
             return None
-        
+
     def _generate_images_parallel(
         self, state: SlideGenerationState, image_slides: list[dict]
     ) -> SlideGenerationState:
         """
         Generate images for multiple slides in parallel.
-        
+
         Args:
             state: Current workflow state
             image_slides: List of slide information for image generation
-            
+
         Returns:
             Updated state with generated images
         """
@@ -3529,60 +4416,72 @@ class ImageGenerationAgent:
             # Prepare prompts and specs for parallel generation
             prompts_and_specs = []
             for slide_info in image_slides:
-                prompts_and_specs.append((
-                    slide_info["image_prompt"],
-                    {
-                        "slide_index": slide_info["slide_index"],
-                        "placeholder_description": slide_info["placeholder_description"],
-                        "placeholder_width": slide_info["placeholder_width"],
-                        "placeholder_height": slide_info["placeholder_height"],
-                    }
-                ))
-                
+                prompts_and_specs.append(
+                    (
+                        slide_info["image_prompt"],
+                        {
+                            "slide_index": slide_info["slide_index"],
+                            "placeholder_description": slide_info[
+                                "placeholder_description"
+                            ],
+                            "placeholder_width": slide_info["placeholder_width"],
+                            "placeholder_height": slide_info["placeholder_height"],
+                        },
+                    )
+                )
+
             # Run parallel image generation
             import concurrent.futures
-            
+
             def run_async_in_thread():
                 return asyncio.run(
                     self.image_client.generate_images_parallel(prompts_and_specs)
                 )
-                
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_async_in_thread)
                 results = future.result()
-            
+
             # Process results and save images
             generated_images = {}
-            
+
             # Create a mapping from slide_index to slide_info for quick lookup
             slide_info_map = {info["slide_index"]: info for info in image_slides}
-            
+
             for slide_index, image_data in results:
                 if image_data:
                     # Save image to debug directory
                     image_filename = f"slide_{slide_index + 1:02d}_generated_image.png"
                     image_path = self.temp_dir / image_filename
-                    
-                    if self.image_client.save_image_to_file(image_data, str(image_path)):
+
+                    if self.image_client.save_image_to_file(
+                        image_data, str(image_path)
+                    ):
                         # Get the slide info for this slide index
                         slide_info = slide_info_map.get(slide_index)
-                        placeholder_name = slide_info["placeholder"]["name"] if slide_info else "Picture 16:9"
-                        
+                        placeholder_name = (
+                            slide_info["placeholder"]["name"]
+                            if slide_info
+                            else "Picture 16:9"
+                        )
+
                         generated_images[slide_index] = {
                             "image_data": image_data,
                             "image_path": str(image_path),
-                            "placeholder_name": placeholder_name
+                            "placeholder_name": placeholder_name,
                         }
-                        print(f"✅ Generated and saved image for slide {slide_index + 1}")
+                        print(
+                            f"✅ Generated and saved image for slide {slide_index + 1}"
+                        )
                     else:
                         print(f"❌ Failed to save image for slide {slide_index + 1}")
                 else:
                     print(f"❌ Failed to generate image for slide {slide_index + 1}")
-                    
+
             # Update state with generated images
             state["generated_images"] = generated_images
             state["needs_image_refinement"] = len(generated_images) > 0
-            
+
             # Update slide contents with image paths
             slide_contents = state.get("slide_contents", [])
             for slide_index, image_info in generated_images.items():
@@ -3590,44 +4489,48 @@ class ImageGenerationAgent:
                     slide_content = slide_contents[slide_index]
                     placeholder_name = image_info["placeholder_name"]
                     image_path = image_info["image_path"]
-                    
+
                     # Update the slide content with the image path
-                    if hasattr(slide_content, 'content'):
+                    if hasattr(slide_content, "content"):
                         slide_content.content[placeholder_name] = image_path
-                        print(f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}")
-            
-            print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
+                        print(
+                            f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}"
+                        )
+
+            print(
+                f"🎉 {self.name}: Generated {len(generated_images)} images successfully"
+            )
             return state
-            
+
         except Exception as e:
             print(f"❌ Parallel image generation failed: {e}")
             state["generated_images"] = {}
             state["needs_image_refinement"] = False
             return state
-            
+
     def _generate_images_sequential(
         self, state: SlideGenerationState, image_slides: list[dict]
     ) -> SlideGenerationState:
         """
         Generate images for slides sequentially (fallback method).
-        
+
         Args:
-            state: Current workflow state  
+            state: Current workflow state
             image_slides: List of slide information for image generation
-            
+
         Returns:
             Updated state with generated images
         """
         generated_images = {}
-        
+
         for slide_info in image_slides:
             slide_index = slide_info["slide_index"]
             print(f"🎨 Generating image for slide {slide_index + 1}...")
-            
+
             try:
                 # Generate single image using thread executor
                 import concurrent.futures
-                
+
                 def run_single_image(info):
                     return asyncio.run(
                         self.image_client.generate_image(
@@ -3637,36 +4540,40 @@ class ImageGenerationAgent:
                             placeholder_height=info["placeholder_height"],
                         )
                     )
-                
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(run_single_image, slide_info)
                     image_data = future.result()
-                
+
                 if image_data:
                     # Save image to debug directory
                     image_filename = f"slide_{slide_index + 1:02d}_generated_image.png"
                     image_path = self.temp_dir / image_filename
-                    
-                    if self.image_client.save_image_to_file(image_data, str(image_path)):
+
+                    if self.image_client.save_image_to_file(
+                        image_data, str(image_path)
+                    ):
                         generated_images[slide_index] = {
                             "image_data": image_data,
                             "image_path": str(image_path),
-                            "placeholder_name": slide_info["placeholder"]["name"]
+                            "placeholder_name": slide_info["placeholder"]["name"],
                         }
-                        print(f"✅ Generated and saved image for slide {slide_index + 1}")
+                        print(
+                            f"✅ Generated and saved image for slide {slide_index + 1}"
+                        )
                     else:
                         print(f"❌ Failed to save image for slide {slide_index + 1}")
                 else:
                     print(f"❌ Failed to generate image for slide {slide_index + 1}")
-                    
+
             except Exception as e:
                 print(f"❌ Failed to generate image for slide {slide_index + 1}: {e}")
                 continue
-                
+
         # Update state with generated images
         state["generated_images"] = generated_images
         state["needs_image_refinement"] = len(generated_images) > 0
-        
+
         # Update slide contents with image paths
         slide_contents = state.get("slide_contents", [])
         for slide_index, image_info in generated_images.items():
@@ -3674,12 +4581,14 @@ class ImageGenerationAgent:
                 slide_content = slide_contents[slide_index]
                 placeholder_name = image_info["placeholder_name"]
                 image_path = image_info["image_path"]
-                
+
                 # Update the slide content with the image path
-                if hasattr(slide_content, 'content'):
+                if hasattr(slide_content, "content"):
                     slide_content.content[placeholder_name] = image_path
-                    print(f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}")
-        
+                    print(
+                        f"  ✅ Updated slide {slide_index + 1} content with image: {placeholder_name} -> {image_path}"
+                    )
+
         print(f"🎉 {self.name}: Generated {len(generated_images)} images successfully")
         return state
 
@@ -3693,23 +4602,25 @@ class ImageRefinementAgent:
     def __init__(self):
         self.name = "image_refinement_agent"
         self.max_iterations = 3  # Limited to 3 rounds as specified
-        
+
         # Initialize the image webhook client
         try:
             from .image_webhook_client import ImageWebhookClient
+
             self.image_client = ImageWebhookClient()
             print("✅ Image webhook client initialized for refinement")
         except Exception as e:
             print(f"❌ Failed to initialize image webhook client: {e}")
             self.image_client = None
-            
+
         # Initialize LLM client for vision analysis
         self.llm_client = LangchainLLMClient()
-        
+
         # Initialize storage and database clients
         try:
-            from .supabase_storage import get_storage_client
             from .database import get_supabase_client
+            from .supabase_storage import get_storage_client
+
             self.storage_client = get_storage_client()
             self.db_client = get_supabase_client()
             print("✅ Supabase clients initialized for image refinement tracking")
@@ -3717,7 +4628,7 @@ class ImageRefinementAgent:
             print(f"⚠️ Failed to initialize Supabase clients: {e}")
             self.storage_client = None
             self.db_client = None
-            
+
         self.temp_dir = Path("image_debug")
         self.temp_dir.mkdir(exist_ok=True)
 
@@ -3727,53 +4638,56 @@ class ImageRefinementAgent:
     ) -> SlideGenerationState:
         """
         Refine generated images based on visual feedback.
-        
+
         Args:
             state: Current workflow state containing generated images
             config: Optional LangGraph configuration
-            
+
         Returns:
             Updated state with refined images
         """
         if not self.image_client or not state.get("needs_image_refinement", False):
             print(f"ℹ️ {self.name}: No image refinement needed")
             return state
-            
+
         generated_images = state.get("generated_images", {})
         if not generated_images:
             print(f"ℹ️ {self.name}: No generated images to refine")
             return state
-            
-        print(f"🔧 {self.name}: Starting image refinement process for {len(generated_images)} images")
-        
+
+        print(
+            f"🔧 {self.name}: Starting image refinement process for {len(generated_images)} images"
+        )
+
         # Check for parallel processing
-        use_parallel = os.getenv("USE_PARALLEL_IMAGE_REFINEMENT", "true").lower() == "true"
-        
+        use_parallel = (
+            os.getenv("USE_PARALLEL_IMAGE_REFINEMENT", "true").lower() == "true"
+        )
+
         if use_parallel:
             print("🚀 Using parallel image refinement")
             return self._refine_images_parallel(state, generated_images)
-        else:
-            print("🔄 Using sequential image refinement")
-            return self._refine_images_sequential(state, generated_images)
-            
+        print("🔄 Using sequential image refinement")
+        return self._refine_images_sequential(state, generated_images)
+
     def _refine_images_parallel(
         self, state: SlideGenerationState, generated_images: dict
     ) -> SlideGenerationState:
         """
         Refine multiple images in parallel with limited iterations.
-        
+
         Args:
             state: Current workflow state
             generated_images: Dictionary of generated images
-            
+
         Returns:
             Updated state with refined images
         """
         # For now, implement a simple approach that just validates the images exist
         # Full refinement logic would involve vision model analysis and iterative improvement
-        
+
         refined_images = {}
-        
+
         for slide_index, image_info in generated_images.items():
             # Check if image file exists
             image_path = image_info.get("image_path")
@@ -3782,24 +4696,26 @@ class ImageRefinementAgent:
                 print(f"✅ Validated image for slide {slide_index + 1}")
             else:
                 print(f"❌ Image file not found for slide {slide_index + 1}")
-                
+
         # Update state with refined images
         state["refined_images"] = refined_images
         state["needs_image_refinement"] = False
-        
-        print(f"🎉 {self.name}: Image refinement complete for {len(refined_images)} images")
+
+        print(
+            f"🎉 {self.name}: Image refinement complete for {len(refined_images)} images"
+        )
         return state
-        
+
     def _refine_images_sequential(
         self, state: SlideGenerationState, generated_images: dict
     ) -> SlideGenerationState:
         """
         Refine images sequentially (fallback method).
-        
+
         Args:
             state: Current workflow state
             generated_images: Dictionary of generated images
-            
+
         Returns:
             Updated state with refined images
         """

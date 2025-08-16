@@ -94,6 +94,34 @@ created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 - Workflow state changes broadcast to frontend for instant UI updates
 - Agent status tracking (pending → in_progress → completed → failed)
 
+## ⚠️ Important Notes for New Developers
+
+### Critical Setup Steps
+1. **MUST install Playwright browser**: `playwright install chromium` (required for HTML rendering)
+2. **MUST have Supabase configured**: Database won't work without proper Supabase setup
+3. **Templates are in folders**: Not in root - check `templates/` directory structure
+4. **Use Python 3.8+**: Async features require modern Python version
+5. **Frontend uses Next.js 15**: Requires Node.js 18+ for App Router support
+
+### Quick Validation
+After setup, validate your installation:
+```bash
+# Test basic generation (no database needed)
+python -m src.agent_main "Test Topic" --preview
+
+# Test API server (if using frontend)
+python src/api_server.py  # Then check http://localhost:8000/docs
+
+# Test frontend (if installed)
+cd frontend && npm run dev  # Check http://localhost:3000
+```
+
+### File Organization Notes
+- **Generated presentations**: Auto-saved to `generated_presentations/` (git-ignored)
+- **HTML debug files**: Saved to `html_debug/` for troubleshooting (git-ignored)  
+- **Templates**: Must be in `templates/<name>/<name>.pptx` structure
+- **Background images**: Use `LOCKED_Background_X.png` naming in template folders
+
 ## 🌐 Frontend Development ✅ **MAJOR MILESTONES COMPLETE**
 
 ### **Next.js 15 Frontend Application** ✨ **PRODUCTION READY**
@@ -717,7 +745,7 @@ pip install selenium
 pip install weasyprint
 ```
 
-See `example_html_timeline.py` for complete working examples.
+See the test files (e.g., `test_html_prompt_manager.py`, `test_image_generation.py`) for working examples.
 
 ## 📁 Project Structure
 
@@ -734,8 +762,12 @@ Powerpoint Slide Creator/
 │   └── tests/                   # Test outputs
 ├── html_debug/                  # HTML debug files (git-ignored)
 ├── icon_cache/                  # Cached icon assets
-├── ekona_slides_template_new.pptx # PowerPoint template (tracked)
-├── auto_slides.py              # Main CLI entry point
+├── templates/                   # Template files and configurations
+│   ├── ekona_slides_template_new/ # Main template folder
+│   │   ├── ekona_slides_template_new.pptx # PowerPoint template
+│   │   ├── colors.json         # Template color configuration
+│   │   └── html_prompts/       # HTML prompt templates
+│   └── Brochure_template_leaflet_4sides/ # Brochure template
 ├── .gitignore                  # Excludes generated files
 └── README.md                   # This file
 ```
@@ -745,6 +777,19 @@ Powerpoint Slide Creator/
 - **`src/`** - Core application logic and AI agents
 - **`html_debug/`** - HTML visualization debug files (git-ignored)
 - **`icon_cache/`** - Lucide icon assets for presentations
+
+## 📋 Prerequisites
+
+### Required Software
+- Python 3.8 or higher
+- Node.js 18+ and npm (for frontend)
+- PostgreSQL database (via Supabase)
+- Chrome/Chromium browser (for HTML rendering)
+
+### API Keys Required
+- OpenAI API key (for GPT-4)
+- Supabase project (URL, anon key, service role key)
+- Langfuse keys (optional, for monitoring)
 
 ## 🚀 Quick Start
 
@@ -861,8 +906,8 @@ The system recognizes and handles different placeholder types based on naming:
 ##### **🔒 LOCKED_ Placeholders**
 Placeholders starting with `LOCKED_` are reserved for background system handling:
 - **Naming Format**: `LOCKED_Background_1`, `LOCKED_Background_2`, etc.
-- **File Requirements**: Corresponding SVG file must exist in template folder (e.g., `LOCKED_Background_1.svg`)
-- **Automatic Handling**: System automatically inserts SVG backgrounds, no content generation
+- **File Requirements**: Corresponding PNG file must exist in template folder (e.g., `LOCKED_Background_1.png`)
+- **Automatic Handling**: System automatically inserts PNG backgrounds, no content generation
 - **Type**: Should be Picture placeholder (type 18) in PowerPoint
 - **Important**: NEVER generate content for LOCKED_ placeholders - they're handled by the background system
 
@@ -871,8 +916,8 @@ Example template structure:
 templates/
 ├── YourTemplate/
 │   ├── YourTemplate.pptx
-│   ├── LOCKED_Background_1.svg  # Automatically inserted into LOCKED_Background_1 placeholder
-│   └── LOCKED_Background_2.svg  # Automatically inserted into LOCKED_Background_2 placeholder
+│   ├── LOCKED_Background_1.png  # Automatically inserted into LOCKED_Background_1 placeholder
+│   └── LOCKED_Background_2.png  # Automatically inserted into LOCKED_Background_2 placeholder
 ```
 
 ### **Layout Naming Best Practices**
@@ -956,12 +1001,117 @@ pip install -r requirements.txt
 
 ### Environment Setup
 
-Create a `.env` file:
+1. **Backend Setup**
+   ```bash
+   # Clone the repository
+   git clone <repository-url>
+   cd "Powerpoint Slide Creator"
+   
+   # Create Python virtual environment
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -r requirements.txt
+   
+   # Install Playwright browser
+   playwright install chromium
+   
+   # Copy and configure environment variables
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+
+2. **Frontend Setup** (if using web interface)
+   ```bash
+   cd frontend
+   npm install
+   cp .env.example .env.local
+   # Edit .env.local with your Supabase credentials
+   npm run dev  # Starts on http://localhost:3000
+   ```
+
+3. **Database Setup** (Supabase)
+   - Create a new Supabase project at [supabase.com](https://supabase.com)
+   - Run the SQL migrations from `frontend/database-setup.sql`
+   - Enable Row Level Security (RLS) on all tables
+   - Create storage buckets: `presentations`, `html-debug`, `slide-images`
+
+### Essential Environment Variables
+
 ```env
+# Required for core functionality
 OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o
+OPENAI_MODEL_FAST=gpt-4o-mini
+
+# Required for database/frontend
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_key
+
+# Optional monitoring
 LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
 LANGFUSE_SECRET_KEY=your_langfuse_secret_key
 LANGFUSE_HOST=https://cloud.langfuse.com
+
+# Performance features
+USE_PARALLEL_HTML_CONTENT=true
+USE_PARALLEL_HTML_REFINEMENT=true
+```
+
+## 🛠️ Development Workflow
+
+### Running the Application
+
+#### Backend Only (CLI Mode)
+```bash
+# Generate a presentation via CLI
+python -m src.agent_main "Your Topic" --output my_presentation
+
+# Start the API server (for frontend integration)
+cd src && python api_server.py  # Runs on http://localhost:8000
+```
+
+#### Full Stack (Web Interface)
+```bash
+# Terminal 1: Start backend API
+cd src && python api_server.py
+
+# Terminal 2: Start frontend
+cd frontend && npm run dev
+
+# Access at http://localhost:3000
+```
+
+### Common Development Commands
+
+```bash
+# Backend
+python -m src.agent_main --help  # Show all CLI options
+python -m src.agent_main "Topic" --preview  # Preview without generating
+python -m src.agent_main "Topic" --analyze --template template.pptx  # Analyze template
+
+# Frontend
+cd frontend
+npm run lint         # Check code quality
+npm run format       # Auto-format code
+npm run type-check   # TypeScript validation
+npm run build        # Production build
+```
+
+### Testing
+
+```bash
+# Backend tests
+python test_image_generation.py  # Test image generation
+python test_html_prompt_manager.py  # Test HTML prompts
+python test_brochure_html_generation.py  # Test brochure generation
+
+# Frontend tests
+cd frontend
+npm test             # Run test suite
+npx playwright test  # E2E tests
 ```
 
 ## 🔍 Troubleshooting Guide
@@ -984,17 +1134,17 @@ python debug_brochure_template.py
 
 ### **Locked Backgrounds Not Inserted**
 
-**Problem**: LOCKED_Background placeholders show text instead of SVG backgrounds.
+**Problem**: LOCKED_Background placeholders show text instead of PNG backgrounds.
 
 **Solutions**:
-1. **File existence**: Verify SVG files exist in template folder (e.g., `LOCKED_Background_1.svg`)
-2. **Naming match**: Ensure SVG filename matches placeholder name exactly
+1. **File existence**: Verify PNG files exist in template folder (e.g., `LOCKED_Background_1.png`)
+2. **Naming match**: Ensure PNG filename matches placeholder name exactly
 3. **Placeholder prefix**: Must start with "LOCKED_" to trigger background system
 4. **Template structure**:
 ```
 templates/YourTemplate/
 ├── YourTemplate.pptx
-└── LOCKED_Background_1.svg  # Must exist!
+└── LOCKED_Background_1.png  # Must exist!
 ```
 
 ### **Content in Wrong Placeholders**
@@ -1062,7 +1212,7 @@ python -m src.agent_main --analyze --template your_template.pptx
 - **🎯 Enhanced Image Generation**: Detects visual content in any layout, not just "Title and Picture"
 - **📋 Dynamic Model Updates**: Pydantic models exclude LOCKED_ placeholders preventing LLM content generation
 - **🔧 SlideGenerator Fix**: Both layout mapping methods now skip LOCKED_ placeholders
-- **✨ Background System Integration**: SVG backgrounds properly inserted into LOCKED_ placeholders
+- **✨ Background System Integration**: PNG backgrounds properly inserted into LOCKED_ placeholders
 
 ### 🔧 Latest Bug Fixes - True Parallel Processing 
 - **🚀 Parallel LLM Calls**: HTML refinement now uses TRUE parallel LLM calls (3x faster!)
@@ -1080,5 +1230,58 @@ python -m src.agent_main --analyze --template your_template.pptx
 - **🎨 Quality Assessment**: Content completeness and relevance metrics
 
 ---
+
+## 📝 Additional Developer Resources
+
+### Important Documentation Files
+- `CLAUDE.md` - AI assistant instructions and project conventions
+- `WORKFLOW.md` - Detailed workflow architecture documentation
+- `PARALLEL_PROCESSING.md` - Parallel processing implementation details
+- `FRONTEND_DEVELOPMENT_PLAN.md` - Frontend roadmap and features
+- `INTERACTIVE_SLIDE_SYSTEM_PLAN.md` - Interactive features specification
+- `Slide_Master_Template_Guide.md` - PowerPoint template creation guide
+
+### Key Architecture Decisions
+
+1. **Agent-Based Architecture**: 6 specialized AI agents handle different aspects of presentation creation
+2. **Unified Tracing**: Single Langfuse trace for entire workflow monitoring
+3. **Dynamic Models**: Pydantic models generated dynamically based on PowerPoint templates
+4. **HTML Rendering**: Complex visualizations rendered as HTML then converted to high-res images
+5. **Parallel Processing**: True async LLM calls for performance optimization
+6. **Real-time Updates**: WebSocket and Supabase subscriptions for live progress
+
+### Project Conventions
+
+- **Template Structure**: Templates stored in `templates/<template_name>/` folders
+- **LOCKED_ Placeholders**: Reserved for background images, not for content generation  
+- **Color Configuration**: Each template has a `colors.json` file with brand colors
+- **HTML Prompts**: Template-specific HTML generation prompts in `html_prompts/` folders
+- **Generated Files**: All outputs go to `generated_presentations/` (git-ignored)
+- **Debug Files**: HTML debug output in `html_debug/` (git-ignored)
+
+### Common Issues & Solutions
+
+| Issue | Solution |
+|-------|----------|
+| "playwright not found" | Run `playwright install chromium` |
+| "Supabase connection error" | Check SUPABASE_URL and keys in .env |
+| "Template not found" | Ensure template path is `templates/<name>/<name>.pptx` |
+| "HTML not rendering" | Verify Chrome/Chromium is installed |
+| "Parallel processing fails" | Set `USE_PARALLEL_HTML_CONTENT=false` |
+
+### Performance Tips
+
+- Enable parallel processing for faster HTML generation
+- Use `gpt-4o-mini` for non-critical operations (icon validation, etc.)
+- Cache frequently used templates with `--cache` flag
+- Monitor costs via Langfuse dashboard
+
+### Contributing Guidelines
+
+1. Follow existing code patterns and conventions
+2. Update relevant documentation when adding features
+3. Test thoroughly, especially HTML rendering
+4. Use type hints and docstrings for Python code
+5. Follow TypeScript/React best practices for frontend
 
 **🚀 Ready to create intelligent presentations with unified tracing!** 

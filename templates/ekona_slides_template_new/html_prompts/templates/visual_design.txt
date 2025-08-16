@@ -1,0 +1,44 @@
+EKONA TEMPLATE - HTML VISUAL DESIGN SPECIFICATIONS:
+
+EKONA BRAND COLORS (STRICT COMPLIANCE):
+- Primary Accent: Swiss Red (#dc261e) - Use for ALL key metrics, highlights, CTAs
+- Secondary: Dark Grey (#2d3748) - Use for ALL headings and titles
+- Text: Black (#000000) - Use for ALL body text and descriptions
+- HTML Background: TRANSPARENT - Essential for slide integration
+- Component Backgrounds: White (#ffffff) - All cards and containers
+
+EKONA HTML TYPOGRAPHY:
+- Primary Font: 'Segoe UI', system-ui, -apple-system, sans-serif
+- Heading Sizes: 
+  - H1: 28px (text-3xl), bold, Dark Grey
+  - H2: 24px (text-2xl), bold, Dark Grey
+  - H3: 20px (text-xl), semibold, Dark Grey
+- Body Text: 16px (text-base), regular, Black
+- Captions: 14px (text-sm), regular, Dark Grey
+
+EKONA HTML COMPONENT STYLE:
+- Cards: Clean white backgrounds with subtle shadows (shadow-lg)
+- Stats: Large Swiss Red numbers with dark grey labels
+- Badges: Swiss Red backgrounds with white text
+- Dividers: Light grey (#e5e7eb) at 1px height
+- Icons: Dark grey or Swiss Red, 24px default size
+
+EKONA VISUALIZATION PREFERENCES:
+- Timeline: Always use D3.js with Swiss Red milestones
+- Process Flow: Mermaid.js with rounded rectangles
+- Metrics: Large stat cards with Swiss Red values
+- Comparisons: Side-by-side cards with clear differentiation
+- Lists: Clean bullet points with Swiss Red markers
+
+EKONA LAYOUT PRINCIPLES:
+- Professional, corporate aesthetic
+- Generous white space (p-8 minimum)
+- Clear visual hierarchy with size and color
+- Consistent 24px spacing between major sections
+- All text must have high contrast for readability
+
+EKONA-SPECIFIC HTML REQUIREMENTS:
+- ALWAYS use Swiss Red for emphasis and key data points
+- NEVER use gradients or multiple accent colors
+- Maintain clean, minimalist design language
+- Ensure all visualizations align with corporate standards

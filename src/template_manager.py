@@ -119,14 +119,14 @@ class TemplateManager:
             is_valid = False
             error_message = str(e)
         
-        # Count locked background SVG files
+        # Count locked background PNG files
         locked_backgrounds = 0
         folder_path_str = None
         
         if template_folder:
             folder_path_str = str(template_folder)
-            locked_svg_files = list(template_folder.glob("LOCKED_*.svg"))
-            locked_backgrounds = len(locked_svg_files)
+            locked_png_files = list(template_folder.glob("LOCKED_*.png"))
+            locked_backgrounds = len(locked_png_files)
         
         return TemplateInfo(
             filename=filename,
@@ -171,7 +171,7 @@ class TemplateManager:
     
     def get_default_template(self) -> Optional[str]:
         """
-        Get the default template (first valid template found)
+        Get the default template with preference for ekona template
         
         Returns:
             Path to default template, or None if no templates available
@@ -180,8 +180,17 @@ class TemplateManager:
         valid_templates = [t for t in templates if t.is_valid]
         
         if valid_templates:
-            default = valid_templates[0]
-            logger.info(f"Using default template: {default.filename}")
+            # CRITICAL FIX: Prefer ekona template over alphabetically first
+            # This prevents Brochure template from being chosen when ekona is available
+            ekona_template = next((t for t in valid_templates if 'ekona' in t.name.lower()), None)
+            
+            if ekona_template:
+                default = ekona_template
+                logger.info(f"Using preferred ekona template: {default.filename}")
+            else:
+                default = valid_templates[0]
+                logger.info(f"Using default template: {default.filename}")
+            
             return default.path
         
         logger.error("No valid templates found")

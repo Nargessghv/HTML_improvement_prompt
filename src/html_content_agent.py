@@ -17,6 +17,7 @@ from langchain_core.runnables import RunnableConfig
 
 from .agents import SlideGenerationState
 from .html_renderer import HTMLRenderer
+from .html_prompt_manager import HTMLPromptManager
 from .llm_client import LangchainLLMClient, SlideContent
 from .monitoring import monitor_agent_execution
 
@@ -30,6 +31,10 @@ class HTMLContentGenerationAgent:
     def __init__(self):
         self.name = "html_content_generator"
         self.llm_client = LangchainLLMClient()
+        
+        # Initialize HTML prompt manager
+        self.html_prompt_manager = HTMLPromptManager()
+        print(f"✅ {self.name}: HTML prompt manager initialized")
 
         # Initialize HTML renderer with error handling
         try:
@@ -85,6 +90,33 @@ class HTMLContentGenerationAgent:
             if not self.html_available:
                 print(f"⚠️ {self.name}: HTML rendering not available, skipping...")
                 return state
+            
+            # Set template for HTML prompt selection if available
+            # Try to extract template name from template_folder_path or template_path
+            template_name = None
+            
+            # First try template_folder_path (more specific)
+            template_folder_path = state.get("template_folder_path")
+            if template_folder_path:
+                # Extract folder name from path
+                from pathlib import Path
+                template_name = Path(template_folder_path).name
+            
+            # Fallback to extracting from template_path
+            if not template_name:
+                template_path = state.get("template_path")
+                if template_path and "templates/" in template_path:
+                    # Extract template folder name from path
+                    from pathlib import Path
+                    path_parts = Path(template_path).parts
+                    if "templates" in path_parts:
+                        idx = path_parts.index("templates")
+                        if idx + 1 < len(path_parts):
+                            template_name = path_parts[idx + 1]
+            
+            if template_name:
+                self.html_prompt_manager.set_template(template_name)
+                print(f"📁 {self.name}: Using template '{template_name}' for HTML prompts")
 
             # Use parallel HTML generation (workflow handles async context properly)
             processed_slides = self._process_slides_for_html_content(
@@ -751,21 +783,26 @@ class HTMLContentGenerationAgent:
             HTML content string or None if generation failed
         """
         try:
-            prompt = self._create_html_generation_prompt(
-                placeholder_name,
-                original_content,
-                topic,
-                slide_number,
-                total_slides,
-                viewport_width,
-                viewport_height,
-                slide_spec,
+            # Use HTML prompt manager to get prompts
+            system_prompt = self.html_prompt_manager.get_html_system_prompt(
+                viewport_width, viewport_height
+            )
+            
+            user_prompt = self.html_prompt_manager.get_html_user_prompt(
+                placeholder_name=placeholder_name,
+                original_content=original_content,
+                topic=topic,
+                slide_number=slide_number,
+                total_slides=total_slides,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                slide_spec=slide_spec,
             )
 
             # Generate HTML content
             generated_html = self.llm_client.generate_content(
-                system_prompt=self._get_html_generation_system_prompt(viewport_width, viewport_height),
-                user_prompt=prompt,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 config=config,
             )
 
@@ -936,6 +973,8 @@ class HTMLContentGenerationAgent:
 
         return html_content.strip()
 
+    # DEPRECATED: This method is replaced by HTMLPromptManager.get_html_user_prompt()
+    # Kept for reference only - DO NOT USE
     def _create_html_generation_prompt(
         self,
         placeholder_name: str,
@@ -1589,6 +1628,8 @@ See the mandatory D3.js timeline example above - use this exact pattern for all 
             ]
         )
 
+    # DEPRECATED: This method is replaced by HTMLPromptManager.get_html_system_prompt()
+    # Kept for reference only - DO NOT USE
     def _get_html_generation_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
         """Get system prompt for HTML generation with adaptive layout guidance"""
         
@@ -1880,14 +1921,18 @@ without any content being cropped or lost."""
                 print("    ⚠️ Invalid Mermaid syntax detected")
                 return False
 
-        # Debug validation process
-        is_valid = (has_doctype and has_body and has_elements) or (has_doctype and has_basic_html)
+        # More lenient validation - accept if it has HTML structure OR basic HTML tags
+        is_valid = (has_doctype and has_body and has_elements) or (has_doctype and has_basic_html) or has_basic_html
         
         if not is_valid:
             print(f"🔍 HTML validation failed - doctype: {has_doctype}, body: {has_body}, elements: {has_elements}, basic_html: {has_basic_html}")
             print(f"🔍 Content preview: {content[:200]}...")
+            # If it's plain text that doesn't look like HTML, mark as needing refinement but don't fail
+            if not has_basic_html and len(content.strip()) > 0:
+                print(f"🔍 Treating non-HTML content as needing HTML conversion")
+                return True  # Let it proceed to refinement where it can be converted to HTML
         
-        # Accept if it has proper structure OR basic HTML tags
+        # Accept if it has proper structure OR basic HTML tags OR is non-empty content
         return is_valid
 
     def _validate_mermaid_syntax(self, html_content: str) -> bool:
@@ -2434,21 +2479,26 @@ CRITICAL REQUIREMENTS:
         Returns (placeholder_name, html_content)
         """
         try:
-            prompt = self._create_html_generation_prompt(
-                placeholder_name,
-                original_content,
-                topic,
-                slide_number,
-                total_slides,
-                viewport_width,
-                viewport_height,
-                slide_spec,
+            # Use HTML prompt manager to get prompts
+            system_prompt = self.html_prompt_manager.get_html_system_prompt(
+                viewport_width, viewport_height
+            )
+            
+            user_prompt = self.html_prompt_manager.get_html_user_prompt(
+                placeholder_name=placeholder_name,
+                original_content=original_content,
+                topic=topic,
+                slide_number=slide_number,
+                total_slides=total_slides,
+                viewport_width=viewport_width,
+                viewport_height=viewport_height,
+                slide_spec=slide_spec,
             )
 
             # Use async LLM client method for true parallelism
             generated_html = await self.llm_client.generate_content_async(
-                system_prompt=self._get_html_generation_system_prompt(viewport_width, viewport_height),
-                user_prompt=prompt,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 config=config,
             )
 
