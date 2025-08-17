@@ -48,12 +48,14 @@ export const useSupabaseAuth = () => {
     await supabase.auth.signOut()
   }
 
-  const signInWithPassword = async (email: string, password: string) => {
+  const signInWithOAuth = async (provider: 'azure', redirectTo?: string) => {
     setIsLoading(true)
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/callback${redirectTo ? `?redirectTo=${encodeURIComponent(redirectTo)}` : ''}`
+        }
       })
 
       if (error) {
@@ -67,54 +69,6 @@ export const useSupabaseAuth = () => {
       return { success: false, error }
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  const signUpWithPassword = async (email: string, password: string) => {
-    setIsLoading(true)
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/callback`
-        }
-      })
-
-      if (error) {
-        toast.error(error.message || 'Sign up failed')
-        return { success: false, error }
-      }
-
-      if (data.user && !data.session) {
-        toast.success('Please check your email for a confirmation link')
-      }
-
-      return { success: true, data }
-    } catch (error: any) {
-      toast.error('An unexpected error occurred')
-      return { success: false, error }
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const resetPassword = async (email: string) => {
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`
-      })
-
-      if (error) {
-        toast.error(error.message || 'Password reset failed')
-        return { success: false, error }
-      }
-
-      toast.success('Please check your email for reset instructions')
-      return { success: true }
-    } catch (error: any) {
-      toast.error('An unexpected error occurred')
-      return { success: false, error }
     }
   }
 
@@ -148,9 +102,7 @@ export const useSupabaseAuth = () => {
     isLoading,
     isAuthenticated: !!user,
     signOut,
-    signInWithPassword,
-    signUpWithPassword,
-    resetPassword,
+    signInWithOAuth,
     updateProfile,
     supabase
   }

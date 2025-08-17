@@ -46,3 +46,43 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     )
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { projectId } = await params
+    
+    // Proxy delete request to backend project endpoint
+    const backendUrl = `${BACKEND_URL}/projects/${projectId}`
+    console.log(`Proxying DELETE project request to: ${backendUrl}`)
+    
+    const response = await fetch(backendUrl, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        // Forward any authorization headers if present
+        ...(request.headers.get('authorization') && {
+          'Authorization': request.headers.get('authorization')!
+        })
+      }
+    })
+
+    if (!response.ok) {
+      console.error(`Backend responded with ${response.status}: ${response.statusText}`)
+      const errorData = await response.json().catch(() => ({ error: 'Failed to delete project' }))
+      return NextResponse.json(
+        errorData,
+        { status: response.status }
+      )
+    }
+
+    const data = await response.json()
+    return NextResponse.json(data)
+
+  } catch (error) {
+    console.error('Error proxying delete project request:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

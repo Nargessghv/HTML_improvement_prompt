@@ -38,24 +38,24 @@ export async function GET(request: NextRequest) {
       const { error } = await supabase.auth.exchangeCodeForSession(code)
       
       if (error) {
-        console.error('Auth callback error:', error.message)
+        console.error('Azure AD auth callback error:', error.message)
         // Redirect to login with error
         return NextResponse.redirect(
           new URL(`/login?error=${encodeURIComponent(error.message)}`, request.url)
         )
       }
       
-      // Successful authentication - redirect to intended destination
+      // Successful Azure AD authentication - redirect to intended destination
       const redirectUrl = redirectTo && redirectTo !== '/' 
         ? redirectTo 
         : '/dashboard'
         
       return NextResponse.redirect(new URL(redirectUrl, request.url))
     } catch (error) {
-      console.error('Unexpected auth callback error:', error)
+      console.error('Unexpected Azure AD auth callback error:', error)
       // Handle unexpected errors
       return NextResponse.redirect(
-        new URL('/login?error=Authentication failed', request.url)
+        new URL('/login?error=Azure AD authentication failed', request.url)
       )
     }
   }

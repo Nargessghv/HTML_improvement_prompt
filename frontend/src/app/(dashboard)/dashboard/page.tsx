@@ -43,10 +43,18 @@ const statusConfig = {
 }
 
 export default function DashboardPage() {
-  const { supabase, user } = useSupabaseAuth()
+  const { supabase, user, isAuthenticated, isLoading: authLoading } = useSupabaseAuth()
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      window.location.href = '/login?redirectTo=/dashboard'
+      return
+    }
+  }, [authLoading, isAuthenticated])
 
   useEffect(() => {
     if (!user) return

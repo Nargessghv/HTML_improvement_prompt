@@ -2,8 +2,8 @@ import { Metadata } from 'next'
 import { LoginForm } from '@/components/auth'
 
 export const metadata: Metadata = {
-  title: 'Sign In | Ekona Slide Creator',
-  description: 'Sign in to your Ekona Slide Creator account to start creating AI-powered presentations',
+  title: 'Sign In | ekona Content Creation Hub',
+  description: 'Access your ekona Content Creation Hub to start creating professional presentations with advanced AI agents powered by Swiss expertise',
 }
 
 export default function LoginPage() {

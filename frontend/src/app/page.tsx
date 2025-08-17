@@ -11,26 +11,16 @@ import { useState, useEffect } from "react";
 import { Loader2, ArrowRight, Zap, Brain, BarChart3, Sparkles } from "lucide-react";
 
 export default function Home() {
-  const { isAuthenticated, isLoading, user, signInWithPassword, signUpWithPassword } = useSupabaseAuth();
+  const { isAuthenticated, isLoading, user } = useSupabaseAuth();
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [presentationTopic, setPresentationTopic] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [authLoading, setAuthLoading] = useState(false);
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) return;
-    
-    setAuthLoading(true);
-    if (isSignUp) {
-      await signUpWithPassword(email, password);
-    } else {
-      await signInWithPassword(email, password);
+  // Redirect to login if not authenticated (must be before any conditional returns)
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      window.location.href = '/login'
     }
-    setAuthLoading(false);
-  };
+  }, [isLoading, isAuthenticated])
 
   // If loading, show loading state
   if (isLoading) {
@@ -212,91 +202,18 @@ export default function Home() {
     );
   }
 
-  // If not authenticated, show welcome/login experience
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="container max-w-6xl mx-auto px-4 py-8">
-        <header className="text-center mb-16">
-          <div className="flex items-center justify-center mb-8">
-            <Image
-              src="/ekona_logo_transparent.png"
-              alt="Ekona Logo"
-              width={120}
-              height={40}
-              className="h-10 w-auto"
-              priority
-            />
-          </div>
-          <h1 className="text-5xl md:text-6xl font-light tracking-tight text-foreground mb-6">
-            AI-Powered Slide Creator
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-8">
-            Create professional presentations with advanced AI agents powered by Swiss AI expertise
-          </p>
-          
-          {/* Inline Authentication Form */}
-          <Card className="max-w-md mx-auto border-border/50 bg-card/50 backdrop-blur-sm shadow-subtle">
-            <CardHeader>
-              <CardTitle className="text-xl font-light">
-                {isSignUp ? 'Create Your Account' : 'Sign In to Start Creating'}
-              </CardTitle>
-              <CardDescription className="text-muted-foreground">
-                {isSignUp ? 'Join thousands creating presentations with AI' : 'Access your AI-powered presentation studio'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAuth} className="space-y-4">
-                <Input
-                  type="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="border-border/50 focus:border-primary/50"
-                  required
-                />
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="border-border/50 focus:border-primary/50"
-                  required
-                />
-                <Button 
-                  type="submit" 
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-light"
-                  disabled={authLoading || !email || !password}
-                >
-                  {authLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {isSignUp ? 'Creating Account...' : 'Signing In...'}
-                    </>
-                  ) : (
-                    <>
-                      {isSignUp ? 'Create Account' : 'Sign In'}
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </form>
-              
-              <div className="mt-4 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsSignUp(!isSignUp)}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {isSignUp 
-                    ? 'Already have an account? Sign in' 
-                    : "Don't have an account? Create one"
-                  }
-                </button>
-              </div>
-            </CardContent>
-          </Card>
-        </header>
+  // If not authenticated, show loading while redirecting
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Redirecting to sign in...</p>
+        </div>
       </div>
-    </div>
-  );
+    )
+  }
+
+  // This return should never be reached since authenticated users are handled above
+  return null;
 }

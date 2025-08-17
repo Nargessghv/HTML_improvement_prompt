@@ -1,165 +1,91 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import Link from 'next/link'
+import { Loader2 } from 'lucide-react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
-import { loginSchema, type LoginFormData } from '@/schemas/auth'
 
 export function LoginForm() {
-  const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { signInWithPassword, isLoading } = useSupabaseAuth()
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    setError
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema)
-  })
+  const { signInWithOAuth, isLoading } = useSupabaseAuth()
 
   // Handle URL error parameter
-  useEffect(() => {
-    const error = searchParams.get('error')
-    if (error) {
-      setError('root', { message: decodeURIComponent(error) })
-    }
-  }, [searchParams, setError])
+  const error = searchParams.get('error')
 
-  const onSubmit = async (data: LoginFormData) => {
-    const result = await signInWithPassword(data.email, data.password)
-    
-    if (result.success) {
-      // Handle post-login redirect
-      const redirectTo = searchParams.get('redirectTo')
-      if (redirectTo) {
-        router.push(redirectTo)
-      }
-      // Note: If no redirectTo, the useSupabaseAuth hook will handle the default redirect
-    } else if (result.error) {
-      setError('root', {
-        message: (result.error as Error)?.message || 'An error occurred during sign in'
-      })
+  const handleAzureSignIn = async () => {
+    const redirectTo = searchParams.get('redirectTo')
+    const result = await signInWithOAuth('azure', redirectTo || '/dashboard')
+
+    if (!result.success && result.error) {
+      console.error('Azure AD sign in failed:', result.error)
     }
   }
 
-  const isFormLoading = isLoading || isSubmitting
-
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader className="space-y-1 text-center">
-        <CardTitle className="text-2xl font-bold text-ekona-teal">
-          Welcome back
-        </CardTitle>
-        <CardDescription>
-          Sign in to your Ekona Slide Creator account
-        </CardDescription>
-      </CardHeader>
-      
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          {errors.root && (
-            <Alert variant="destructive">
-              <AlertDescription>{errors.root.message}</AlertDescription>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+      <div className="w-full max-w-lg">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+
+          {/* Logo and Branding */}
+          <div className="text-center mb-10">
+            <Image
+              src="/ekona_logo_transparent.png"
+              alt="ekona"
+              width={256}
+              height={256}
+              className="mx-auto mb-6"
+              priority
+            />
+            <div className="space-y-2 mb-8">
+              <p className="text-2xl font-bold text-gray-700">CONTENT CREATION HUB</p>
+            </div>
+
+            <h2 className="text-xl font-medium text-gray-900">Welcome back</h2>
+          </div>
+
+          {/* Error Alert */}
+          {error && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>
+                {decodeURIComponent(error)}
+              </AlertDescription>
             </Alert>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="Enter your email"
-              disabled={isFormLoading}
-              {...register('email')}
-              className={errors.email ? 'border-destructive' : ''}
-            />
-            {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter your password"
-                disabled={isFormLoading}
-                {...register('password')}
-                className={`pr-10 ${errors.password ? 'border-destructive' : ''}`}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isFormLoading}
-              >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-            {errors.password && (
-              <p className="text-sm text-destructive">{errors.password.message}</p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Link
-              href="/reset-password"
-              className="text-sm text-ekona-teal hover:text-ekona-blue transition-colors"
-            >
-              Forgot your password?
-            </Link>
-          </div>
-        </CardContent>
-
-        <CardFooter className="flex flex-col space-y-4">
+          {/* Sign In Button */}
           <Button
-            type="submit"
-            className="w-full bg-ekona-teal hover:bg-ekona-blue"
-            disabled={isFormLoading}
+            onClick={handleAzureSignIn}
+            disabled={isLoading}
+            className="w-full h-14 bg-red-600 hover:bg-red-700 text-white font-medium text-base"
           >
-            {isFormLoading ? (
+            {isLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Signing in...
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Connecting to Azure AD...
               </>
             ) : (
-              'Sign in'
+              'Sign in with Azure AD'
             )}
           </Button>
 
-          <div className="text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <Link
-              href="/register"
-              className="text-ekona-teal hover:text-ekona-blue font-medium transition-colors"
-            >
-              Sign up
-            </Link>
-          </div>
-        </CardFooter>
-      </form>
-    </Card>
+          {/* Security note */}
+          <p className="text-center text-xs text-gray-400 mt-6">
+            Secured by Microsoft Azure Active Directory
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8">
+          <p className="text-sm text-gray-400">
+            © 2025 ekona AG | All rights reserved | Made in Switzerland <span className="inline-block align-middle mx-1" title="Swiss Flag" aria-label="Swiss Flag">🇨🇭</span> 
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }

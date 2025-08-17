@@ -1080,16 +1080,51 @@ async def delete_project(
     project_id: str,
     user = Depends(get_current_user)
 ):
-    """Delete a project and all related data"""
+    """Delete a project and all related data including storage files"""
     try:
-        # Delete project using database client (CASCADE will handle related records)
+        # First verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get all project files before deletion
+        try:
+            project_files = db.get_project_files(project_id)
+            
+            # Delete all files from storage
+            files_deleted = 0
+            storage_errors = []
+            
+            for file_record in project_files:
+                try:
+                    bucket_name = _get_storage_bucket_for_type(file_record["file_type"])
+                    delete_result = db.client.storage.from_(bucket_name).remove([file_record["file_path"]])
+                    files_deleted += 1
+                except Exception as e:
+                    storage_errors.append(f"Failed to delete {file_record['file_name']}: {str(e)}")
+            
+            api_logger.info(f"Deleted {files_deleted} storage files for project {project_id}")
+            if storage_errors:
+                api_logger.warning(f"Storage deletion errors: {storage_errors}")
+                
+        except Exception as e:
+            # Continue with database deletion even if storage cleanup fails
+            api_logger.warning(f"Storage cleanup failed for project {project_id}: {str(e)}")
+        
+        # Delete project from database (CASCADE will handle related records)
         success = db.delete_project(project_id, user.id)
         
         if not success:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        return {"message": "Project deleted successfully"}
+        return {
+            "message": "Project deleted successfully", 
+            "files_deleted": files_deleted if 'files_deleted' in locals() else 0,
+            "storage_warnings": storage_errors if 'storage_errors' in locals() and storage_errors else None
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting project: {str(e)}")
 
