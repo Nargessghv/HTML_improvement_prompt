@@ -7,21 +7,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
 import { Card, CardContent } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Download, 
   ExternalLink, 
-  RefreshCw, 
   FileText, 
   AlertTriangle,
-  Eye,
   X,
   Sparkles,
-  Clock,
-  Monitor,
-  History,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Image as ImageIcon,
+  ChevronUp,
   ChevronDown
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -62,23 +60,23 @@ interface RefinementIteration {
 
 interface SlidePreviewModalProps {
   slide: SlideData | null
+  slides?: SlideData[]  // All slides for navigation
   projectId: string
   isOpen: boolean
   onClose: () => void
+  onSlideChange?: (slide: SlideData) => void  // Callback for slide navigation
 }
 
-export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePreviewModalProps) {
+export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClose, onSlideChange }: SlidePreviewModalProps) {
   const { session, supabase } = useSupabaseAuth()
   const [slideFiles, setSlideFiles] = useState<SlideFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [refinementCount, setRefinementCount] = useState<number>(0)
   const [hasHtmlContent, setHasHtmlContent] = useState(false)
   const [showRefinementModal, setShowRefinementModal] = useState(false)
   const [refinementIterations, setRefinementIterations] = useState<RefinementIteration[]>([])
-  const [selectedIteration, setSelectedIteration] = useState<string>('latest')
   const [currentPptxUrl, setCurrentPptxUrl] = useState<string>('')
   const [availableContent, setAvailableContent] = useState({
     hasHtml: false,
@@ -86,6 +84,28 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
     hasPptx: false,
     hasVersions: false
   })
+  const [showFullscreen, setShowFullscreen] = useState(false)
+  const [showIterationsCarousel, setShowIterationsCarousel] = useState(false)
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
+  const [selectedIterationIndex, setSelectedIterationIndex] = useState(0)
+  
+  // Navigation state
+  const currentSlideIndex = slides.findIndex(s => s.id === slide?.id)
+  const hasNext = currentSlideIndex >= 0 && currentSlideIndex < slides.length - 1
+  const hasPrev = currentSlideIndex > 0
+  
+  // Navigation handlers
+  const handlePrevSlide = () => {
+    if (hasPrev && onSlideChange) {
+      onSlideChange(slides[currentSlideIndex - 1])
+    }
+  }
+  
+  const handleNextSlide = () => {
+    if (hasNext && onSlideChange) {
+      onSlideChange(slides[currentSlideIndex + 1])
+    }
+  }
 
   // Fetch slide files when modal opens
   useEffect(() => {
@@ -95,11 +115,16 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
     }
   }, [isOpen, slide, session]) // eslint-disable-line react-hooks/exhaustive-deps
   
+  // Auto-open iterations carousel when there are iterations
+  useEffect(() => {
+    if (refinementIterations.length > 0) {
+      setShowIterationsCarousel(true)
+    }
+  }, [refinementIterations])
+  
   // Set up real-time subscriptions for HTML refinements
   useEffect(() => {
     if (!isOpen || !slide || !supabase) return
-    
-    console.log('Setting up real-time subscription for slide:', slide.id)
     
     // Subscribe to changes in slides table for this specific slide
     const slideSubscription = supabase
@@ -113,8 +138,6 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
           filter: `id=eq.${slide.id}`
         },
         (payload) => {
-          console.log('Slide updated:', payload)
-          // Refresh refinement info when slide changes
           fetchRefinementInfo()
         }
       )
@@ -132,15 +155,12 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
           filter: `slide_id=eq.${slide.id}`
         },
         (payload) => {
-          console.log('HTML refinement updated:', payload)
-          // Refresh refinement info when new iterations are added
           fetchRefinementInfo()
         }
       )
       .subscribe()
     
     return () => {
-      console.log('Cleaning up subscriptions for slide:', slide.id)
       slideSubscription.unsubscribe()
       refinementSubscription.unsubscribe()
     }
@@ -169,7 +189,6 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
         contentAvailable.hasPptx = !!slideData.individual_pptx_url
         setHasHtmlContent(contentAvailable.hasHtml)
         
-        // Set current PPTX URL from slide (base version) as fallback
         if (slideData.individual_pptx_url) {
           setCurrentPptxUrl(slideData.individual_pptx_url)
         }
@@ -189,20 +208,18 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
         contentAvailable.hasVersions = true
         contentAvailable.hasImage = refinements.some(r => r.image_file_url)
         
-        // Update hasPptx if any refinement has PPTX
         if (!contentAvailable.hasPptx) {
           contentAvailable.hasPptx = refinements.some(r => r.pptx_file_url)
         }
         
-        // Update hasHtml if any refinement has HTML content
         if (!contentAvailable.hasHtml) {
           contentAvailable.hasHtml = refinements.some(r => r.html_content)
         }
         
-        // Set the latest iteration's PPTX URL as default
-        const latestIteration = refinements[refinements.length - 1]
-        if (selectedIteration === 'latest' && latestIteration.pptx_file_url) {
-          setCurrentPptxUrl(latestIteration.pptx_file_url)
+        // Set the latest PPTX URL
+        const latestWithPptx = [...refinements].reverse().find(r => r.pptx_file_url)
+        if (latestWithPptx?.pptx_file_url) {
+          setCurrentPptxUrl(latestWithPptx.pptx_file_url)
         }
       }
       
@@ -217,9 +234,7 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
 
     setIsLoading(true)
     try {
-      // Check if user is authenticated
       if (!session?.access_token) {
-        console.warn('No valid session found for slide files')
         toast.error('Please sign in to view slide details')
         return
       }
@@ -231,26 +246,19 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
       })
       
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Failed to fetch slide files:', response.status, errorText)
         throw new Error(`Failed to fetch slide files: ${response.status} ${response.statusText}`)
       }
 
       const data = await response.json()
-      console.log('Slide data received:', data)
       
-      // Check if data has the expected structure
       if (data && data.files) {
         setSlideFiles(data.files)
       } else if (Array.isArray(data)) {
-        // Handle if backend returns array directly
         setSlideFiles(data)
       } else {
-        console.warn('Unexpected response structure:', data)
         setSlideFiles([])
       }
       
-      // Set preview URL if available
       if (slide.individual_pptx_url) {
         setPreviewUrl(slide.individual_pptx_url)
       }
@@ -263,54 +271,15 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
     }
   }
 
-  const refreshSlideUrl = async () => {
-    if (!slide) return
-
-    setIsRefreshing(true)
-    try {
-      // Check if user is authenticated
-      if (!session?.access_token) {
-        toast.error('Please sign in to refresh download links')
-        return
-      }
-
-      const response = await fetch(`/api/projects/${projectId}/slides/${slide.id}/refresh-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to refresh URL')
-      }
-
-      const data = await response.json()
-      if (data.success) {
-        setPreviewUrl(data.new_url)
-        toast.success('Download link refreshed')
-      }
-
-    } catch (error) {
-      console.error('Error refreshing URL:', error)
-      toast.error('Failed to refresh download link')
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
   const downloadSlide = async () => {
     if (!slide) return
 
     try {
-      // Check if user is authenticated
       if (!session?.access_token) {
         toast.error('Please sign in to download files')
         return
       }
 
-      // Make authenticated request to get download URL
       const response = await fetch(`/api/projects/${projectId}/slides/${slide.id}/download`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
@@ -318,19 +287,16 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
       })
 
       if (response.ok) {
-        // Check if response contains a redirect URL
         const contentType = response.headers.get('content-type')
         if (contentType?.includes('application/json')) {
           const data = await response.json()
           if (data.redirect_url) {
-            // Open the signed URL directly
             window.open(data.redirect_url, '_blank')
             toast.success('Download started')
             return
           }
         }
         
-        // If it's a direct file response, create a blob URL
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -351,578 +317,395 @@ export function SlidePreviewModal({ slide, projectId, isOpen, onClose }: SlidePr
     }
   }
 
-  const openInNewTab = async () => {
-    if (!slide || !previewUrl) return
-
-    try {
-      // Check if user is authenticated
-      if (!session?.access_token) {
-        toast.error('Please sign in to view files')
-        return
-      }
-
-      // Make authenticated request to get download URL
-      const response = await fetch(`/api/projects/${projectId}/slides/${slide.id}/download`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      })
-
-      if (response.ok) {
-        // Check if response contains a redirect URL
-        const contentType = response.headers.get('content-type')
-        if (contentType?.includes('application/json')) {
-          const data = await response.json()
-          if (data.redirect_url) {
-            window.open(data.redirect_url, '_blank')
-            return
-          }
-        }
-      }
-      
-      // Fallback to the original URL if available
-      window.open(previewUrl, '_blank')
-    } catch (error) {
-      console.error('Error opening slide:', error)
-      // Fallback to the original URL if available
-      window.open(previewUrl, '_blank')
-    }
-  }
-
-  const handleVersionChange = (versionId: string) => {
-    setSelectedIteration(versionId)
-    
-    if (versionId === 'latest') {
-      // Show the latest refinement iteration PPTX or slide content
-      if (refinementIterations.length > 0) {
-        const latestIteration = refinementIterations[refinementIterations.length - 1]
-        if (latestIteration.pptx_file_url) {
-          setCurrentPptxUrl(latestIteration.pptx_file_url)
-        }
-      }
-    } else if (versionId === 'original') {
-      // Show original slide PPTX from slides table
-      if (slide?.individual_pptx_url) {
-        setCurrentPptxUrl(slide.individual_pptx_url)
-      }
-    } else {
-      // Show specific iteration PPTX
-      const iteration = refinementIterations.find(r => r.id === versionId)
-      if (iteration && iteration.pptx_file_url) {
-        setCurrentPptxUrl(iteration.pptx_file_url)
-      }
-    }
-  }
-
-  const formatFileSize = (bytes: number) => {
-    const units = ['B', 'KB', 'MB', 'GB']
-    let size = bytes
-    let unitIndex = 0
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024
-      unitIndex++
-    }
-    
-    return `${size.toFixed(1)} ${units[unitIndex]}`
-  }
-
   if (!slide) return null
+
+  // Fullscreen modal for the Open button
+  const FullscreenPreview = () => (
+    <Dialog open={showFullscreen} onOpenChange={setShowFullscreen}>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] p-0 bg-gray-900" showCloseButton={false}>
+        <DialogHeader className="sr-only">
+          <DialogTitle>Fullscreen Preview - Slide {slide.slide_number}</DialogTitle>
+        </DialogHeader>
+        
+        {/* Minimal header */}
+        <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setShowFullscreen(false)}
+            className="bg-black/50 text-white hover:bg-black/70 backdrop-blur"
+          >
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+        
+        {/* Slide info overlay */}
+        <div className="absolute top-4 left-4 z-50">
+          <div className="bg-black/50 text-white px-3 py-2 rounded-lg backdrop-blur">
+            <p className="text-sm font-medium">Slide {slide.slide_number}: {slide.title}</p>
+          </div>
+        </div>
+        
+        {/* Fullscreen iframe */}
+        <div className="w-full h-full bg-gray-900">
+          {currentPptxUrl && (
+            <iframe
+              src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(currentPptxUrl)}&wdAr=1.7777777777777777&wdEaaCheck=0&wdPrint=0`}
+              className="w-full h-full border-0"
+              style={{ 
+                height: '100%',
+                width: '100%'
+              }}
+              title={`Fullscreen - Slide ${slide.slide_number}`}
+              frameBorder="0"
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0" showCloseButton={false}>
-        <DialogHeader className="sr-only">
-          <DialogTitle>
-            Slide {slide.slide_number}: {slide.title || 'Untitled'} - Preview and Download
-          </DialogTitle>
-        </DialogHeader>
-        
-        {/* Clean white header with subtle red accents */}
-        <div className="bg-white border-b border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-2">
-                <FileText className="w-5 h-5 text-red-600" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+        <DialogContent 
+          className="!w-[80vw] !h-[80vh] !max-w-[80vw] !max-h-[80vh] !p-0 !gap-0 overflow-hidden bg-white sm:!max-w-[80vw] flex flex-col" 
+          showCloseButton={false}
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              Slide {slide.slide_number}: {slide.title || 'Untitled'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {/* Header */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3">
+            {/* Title row - full width */}
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-3 flex-1">
+                <div className="bg-red-600 rounded p-1.5 flex-shrink-0">
+                  <FileText className="w-4 h-4 text-white" />
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900 flex-1">
                   Slide {slide.slide_number}: {slide.title || 'Untitled'}
                 </h2>
-                <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <span>Individual slide preview and download</span>
-                  <Badge 
-                    variant={slide.status === 'completed' ? 'default' : 'secondary'} 
-                    className={`text-xs ${
-                      slide.status === 'completed' 
-                        ? 'bg-green-100 text-green-800 border-green-200' 
-                        : 'bg-gray-100 text-gray-600 border-gray-200'
-                    }`}
-                  >
-                    {slide.status}
-                  </Badge>
-                  {slide.individual_pptx_size && (
-                    <span className="text-gray-500">{formatFileSize(slide.individual_pptx_size)}</span>
-                  )}
-                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2 ml-4">
-              {/* Open button - enabled when PPTX is available */}
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={openInNewTab}
-                disabled={!availableContent.hasPptx}
-                className={`h-9 ${
-                  availableContent.hasPptx 
-                    ? 'border-gray-300 text-gray-700 hover:bg-gray-50' 
-                    : 'border-gray-200 text-gray-400 cursor-not-allowed'
-                }`}
-                title={availableContent.hasPptx ? 'Open slide in new tab' : 'PPTX not yet available'}
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Open
-              </Button>
               
-              {/* Download button - enabled when PPTX is available */}
-              <Button 
-                size="sm" 
-                onClick={downloadSlide}
-                disabled={!availableContent.hasPptx}
-                className={`h-9 font-medium ${
-                  availableContent.hasPptx 
-                    ? 'bg-red-600 text-white hover:bg-red-700' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-                title={availableContent.hasPptx ? 'Download slide PPTX' : 'PPTX not yet available'}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
+              {/* Close button - always visible */}
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  onClose()
-                }} 
-                className="h-9 w-9 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                onClick={onClose} 
+                className="h-8 w-8 p-0 hover:bg-gray-100 flex-shrink-0 ml-4"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </Button>
             </div>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col p-4 gap-4">
-          {/* Processing Status */}
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${
-                  slide.status === 'completed' ? 'bg-green-500' : 
-                  slide.status === 'failed' ? 'bg-red-500' : 
-                  'bg-blue-500 animate-pulse'
-                }`}></div>
-                <h3 className="text-sm font-semibold text-blue-800">
-                  Processing Status: {slide.status.replace(/_/g, ' ').toUpperCase()}
-                </h3>
-              </div>
-              {slide.processing_time_seconds && (
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-700">
-                    {slide.processing_time_seconds}s
-                  </span>
-                </div>
-              )}
-            </div>
             
-            {/* Available Content Indicators */}
-            <div className="grid grid-cols-4 gap-3">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${availableContent.hasHtml ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className={`text-xs font-medium ${availableContent.hasHtml ? 'text-green-700' : 'text-gray-500'}`}>
-                  HTML Generated
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${availableContent.hasImage ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className={`text-xs font-medium ${availableContent.hasImage ? 'text-green-700' : 'text-gray-500'}`}>
-                  Image Rendered
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${availableContent.hasPptx ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className={`text-xs font-medium ${availableContent.hasPptx ? 'text-green-700' : 'text-gray-500'}`}>
-                  PPTX Created
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${availableContent.hasVersions ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className={`text-xs font-medium ${availableContent.hasVersions ? 'text-green-700' : 'text-gray-500'}`}>
-                  Versions Available
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {/* HTML Refinements and Processing Info */}
-          {(hasHtmlContent || slide.processing_time_seconds) && (
-            <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-4">
-                  {slide.processing_time_seconds && (
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Generated in {slide.processing_time_seconds}s
+            {/* Second row - status, navigation, and actions */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                {/* Status badge */}
+                <Badge 
+                  variant={slide.status === 'completed' ? 'default' : 'secondary'} 
+                  className={`text-xs ${
+                    slide.status === 'completed' 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {slide.status}
+                </Badge>
+                
+                {/* Navigation */}
+                {slides.length > 0 && (
+                  <>
+                    <div className="h-5 w-px bg-gray-200" />
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handlePrevSlide}
+                        disabled={!hasPrev}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <span className="text-sm text-gray-600 px-2 min-w-[60px] text-center">
+                        {currentSlideIndex + 1} / {slides.length}
                       </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleNextSlide}
+                        disabled={!hasNext}
+                        className="h-7 w-7 p-0"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
                     </div>
-                  )}
-                </div>
-                {hasHtmlContent && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowRefinementModal(true)}
-                    className="h-8 px-4 bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2 text-purple-500" />
-                    <span className="text-sm font-medium">
-                      View {refinementCount} iteration{refinementCount !== 1 ? 's' : ''}
-                    </span>
-                  </Button>
+                  </>
                 )}
               </div>
               
-              {/* Version Dropdown - Show if ANY versions are available (HTML or PPTX) */}
-              {availableContent.hasVersions && refinementIterations.length > 0 && (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <History className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Version:</span>
-                  </div>
-                  <Select value={selectedIteration} onValueChange={handleVersionChange}>
-                    <SelectTrigger className="w-48 h-8 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {refinementIterations.length > 0 && (
-                        <SelectItem value="latest">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            Latest (v{refinementIterations.length})
-                            {refinementIterations[refinementIterations.length - 1]?.pptx_file_url && 
-                              <span className="text-xs bg-green-100 text-green-700 px-1 rounded">PPTX</span>
-                            }
-                          </div>
-                        </SelectItem>
-                      )}
-                      {refinementIterations.slice().reverse().map((iteration) => (
-                        <SelectItem key={iteration.id} value={iteration.id}>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${
-                              iteration.pptx_file_url ? 'bg-green-500' : 
-                              iteration.html_content ? 'bg-blue-500' : 'bg-gray-400'
-                            }`}></div>
-                            Version {iteration.iteration_number}
-                            {iteration.is_final && <span className="text-xs text-blue-600">(Final)</span>}
-                            {iteration.pptx_file_url && 
-                              <span className="text-xs bg-green-100 text-green-700 px-1 rounded">PPTX</span>
-                            }
-                            {iteration.html_content && !iteration.pptx_file_url &&
-                              <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">HTML</span>
-                            }
-                            <span className="text-xs text-gray-500">
-                              {new Date(iteration.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                      {(slide?.html_content || slide?.refined_html) && (
-                        <SelectItem value="original">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-                            Original
-                            <span className="text-xs bg-gray-100 text-gray-600 px-1 rounded">HTML</span>
-                          </div>
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Error Message */}
-          {slide.error_message && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <div className="bg-red-100 rounded-full p-1.5">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                </div>
-                <div>
-                  <p className="font-semibold text-red-800">Processing Error</p>
-                  <p className="text-sm text-red-700 mt-1 leading-relaxed">{slide.error_message}</p>
-                </div>
+              {/* Action buttons */}
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setShowFullscreen(true)}
+                  disabled={!availableContent.hasPptx}
+                  className="h-8"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 mr-1.5" />
+                  Open
+                </Button>
+                
+                <Button 
+                  size="sm" 
+                  onClick={downloadSlide}
+                  disabled={!availableContent.hasPptx}
+                  className="h-8 bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
+                  Download
+                </Button>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Preview Section - 16:9 Aspect Ratio */}
-          <div className="flex-1">
-            <Card className="h-full border-2 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardContent className="p-0">
-                <div className="w-full" style={{ aspectRatio: '16/9' }}>
-                  <div className="w-full h-full rounded-lg overflow-hidden bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
-                    {(() => {
-                      // Show PPTX version if available
-                      if (currentPptxUrl && availableContent.hasPptx) {
-                        const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(currentPptxUrl)}`
-                        return (
-                          <div className="w-full h-full relative">
-                            <iframe
-                              src={officeViewerUrl}
-                              className="w-full h-full border-0"
-                              title={`Slide ${slide.slide_number} PPTX Preview - ${
-                                selectedIteration === 'latest' 
-                                  ? 'Latest' 
-                                  : selectedIteration === 'original' 
-                                  ? 'Original' 
-                                  : `Version ${refinementIterations.find(r => r.id === selectedIteration)?.iteration_number}`
-                              }`}
-                              allowFullScreen
-                            />
-                            <div className="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
-                              {selectedIteration === 'latest' 
-                                ? `Latest (v${refinementIterations.filter(r => r.pptx_file_url).length})` 
-                                : selectedIteration === 'original' 
-                                ? 'Original' 
-                                : `Version ${refinementIterations.find(r => r.id === selectedIteration)?.iteration_number}`
-                              }
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      // Show HTML content based on selected version or latest available
-                      if (availableContent.hasHtml && (refinementIterations.length > 0 || slide.html_content || slide.refined_html)) {
-                        let htmlContent = ''
-                        let versionLabel = ''
-                        
-                        if (selectedIteration === 'latest') {
-                          // Show the latest refinement iteration
-                          const latestIteration = refinementIterations[refinementIterations.length - 1]
-                          htmlContent = latestIteration?.html_content || slide.refined_html || slide.html_content
-                          versionLabel = `Latest HTML (v${refinementIterations.length})`
-                        } else if (selectedIteration === 'original') {
-                          // Show original slide HTML content
-                          htmlContent = slide.html_content || slide.refined_html || ''
-                          versionLabel = 'Original HTML'
-                        } else {
-                          // Show specific iteration
-                          const iteration = refinementIterations.find(r => r.id === selectedIteration)
-                          if (iteration) {
-                            htmlContent = iteration.html_content
-                            versionLabel = `HTML v${iteration.iteration_number}`
-                          }
-                        }
-                        
-                        if (htmlContent) {
-                          return (
-                            <div className="w-full h-full relative">
-                              <iframe
-                                srcDoc={htmlContent}
-                                className="w-full h-full border-0"
-                                title={`Slide ${slide.slide_number} HTML Preview - ${versionLabel}`}
-                                sandbox="allow-same-origin allow-scripts"
-                              />
-                              <div className={`absolute top-2 right-2 text-white px-2 py-1 rounded text-xs ${
-                                availableContent.hasPptx ? 'bg-green-600/80' : 'bg-yellow-600/80'
-                              }`}>
-                                {versionLabel} {!availableContent.hasPptx && '(PPTX Processing...)'}
-                              </div>
-                            </div>
-                          )
-                        }
-                      }
-                      
-                      // Show image if available but no HTML/PPTX
-                      if (availableContent.hasImage && !availableContent.hasHtml && refinementIterations.length > 0) {
-                        const latestIteration = refinementIterations[refinementIterations.length - 1]
-                        if (latestIteration?.image_file_url) {
-                          return (
-                            <div className="w-full h-full relative flex items-center justify-center">
-                              <img 
-                                src={latestIteration.image_file_url} 
-                                alt={`Slide ${slide.slide_number} Preview`}
-                                className="max-w-full max-h-full object-contain"
-                              />
-                              <div className="absolute top-2 right-2 bg-blue-600/80 text-white px-2 py-1 rounded text-xs">
-                                Image Preview (Processing...)
-                              </div>
-                            </div>
-                          )
-                        }
-                      }
-                      
-                      // If no content is available yet, show processing state
-                      if (!availableContent.hasHtml && !availableContent.hasImage && !availableContent.hasPptx) {
-                        return (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <div className="w-16 h-16 mx-auto mb-4 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin"></div>
-                              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                                Processing Slide {slide.slide_number}
-                              </h3>
-                              <p className="text-gray-600 mb-4">
-                                Status: {slide.status.replace(/_/g, ' ')}
-                              </p>
-                              <div className="text-sm text-gray-500">
-                                {slide.status === 'pending' && 'Waiting to start processing...'}
-                                {slide.status === 'planning' && 'Planning slide content...'}
-                                {slide.status === 'content_generation' && 'Generating content...'}
-                                {slide.status === 'html_generation' && 'Creating HTML visualization...'}
-                                {slide.status === 'html_refinement' && 'Refining HTML content...'}
-                                {slide.status === 'image_generation' && 'Generating images...'}
-                                {slide.current_agent && (
-                                  <div className="mt-2 text-xs text-blue-600">
-                                    Current: {slide.current_agent}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      const thumbnailFile = slideFiles.find(f => f.file_type === 'preview_image')
-                      
-                      if (isLoading) {
-                        return (
-                          <div className="flex flex-col items-center gap-4">
-                            <Skeleton className="w-24 h-24 rounded" />
-                            <Skeleton className="w-48 h-4" />
-                            <Skeleton className="w-32 h-4" />
-                          </div>
-                        )
-                      }
-                      
-                      if (thumbnailFile?.file_url) {
-                        return (
-                          <div className="w-full flex justify-center">
-                            <img 
-                              src={thumbnailFile.file_url} 
-                              alt={`Slide ${slide.slide_number} preview`}
-                              className="max-w-full h-auto rounded-lg shadow-lg border"
-                              style={{ maxHeight: '500px', maxWidth: '100%' }}
-                              onError={() => {
-                                console.error('Failed to load thumbnail image')
-                                setPreviewError('Failed to load preview image')
-                              }}
-                            />
-                          </div>
-                        )
-                      }
-                      
-                      if (slide.status === 'completed' && previewUrl) {
-                        return (
-                          <iframe
-                            src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(previewUrl)}`}
-                            className="w-full h-full"
-                            title={`Slide ${slide.slide_number} Preview`}
-                            onError={() => {
-                              console.error('Failed to load PPTX viewer')
-                              setPreviewError('Failed to load PPTX viewer')
-                            }}
-                          />
-                        )
-                      }
-                      
-                      if (slide.status === 'failed') {
-                        return (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-destructive" />
-                              <p className="text-destructive mb-2 font-medium">Slide generation failed</p>
-                              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                                Check the error message for details
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      if (slide.status === 'completed' && !previewUrl) {
-                        return (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-yellow-500" />
-                              <p className="text-neutral-600 dark:text-neutral-400 mb-4 font-medium">
-                                Slide completed but file not available
-                              </p>
-                              <Button variant="outline" size="sm" onClick={fetchSlideFiles}>
-                                <RefreshCw className="w-4 h-4 mr-2" />
-                                Retry Loading
-                              </Button>
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      return (
-                        <div className="flex items-center justify-center h-full">
-                          <div className="text-center">
-                            <div className="w-16 h-16 mx-auto mb-4 border-2 border-neutral-300 dark:border-neutral-700 rounded-lg flex items-center justify-center">
-                              <FileText className="w-8 h-8 text-neutral-400" />
-                            </div>
-                            <p className="text-neutral-600 dark:text-neutral-400 font-medium">
-                              Slide is being processed...
-                            </p>
-                            <div className="mt-3 w-32 mx-auto">
-                              <div className="h-1 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-red-600 rounded-full animate-pulse" style={{ width: '60%' }}></div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
+          {/* Content Area */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Iterations Carousel (Collapsible) */}
+            {refinementIterations.length > 0 && (
+              <div className="border-b border-gray-200 bg-white flex-shrink-0">
+                <button
+                  onClick={() => setShowIterationsCarousel(!showIterationsCarousel)}
+                  className="w-full px-4 py-1.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-3 h-3 text-gray-600" />
+                    <span className="text-xs text-gray-700">
+                      {refinementIterations.length} Iteration{refinementIterations.length !== 1 ? 's' : ''} Available
+                    </span>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            {/* Attribution */}
-            {slide.status === 'completed' && previewUrl && (
-              <div className="mt-3 text-center">
-                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-full px-3 py-1.5 inline-flex">
-                  <Monitor className="w-3.5 h-3.5" />
-                  <span>Live PowerPoint Preview • Powered by Microsoft Office Online</span>
+                  {showIterationsCarousel ? 
+                    <ChevronUp className="w-3 h-3 text-gray-600" /> : 
+                    <ChevronDown className="w-3 h-3 text-gray-600" />
+                  }
+                </button>
+                
+                {showIterationsCarousel && (
+                  <div className="px-4 pb-3 bg-gray-50">
+                    <div className="flex gap-3 overflow-x-auto py-2">
+                      {refinementIterations.map((iteration, index) => (
+                        <button
+                          key={iteration.id}
+                          onClick={() => {
+                            setSelectedIterationIndex(index)
+                            if (iteration.pptx_file_url) {
+                              setCurrentPptxUrl(iteration.pptx_file_url)
+                            } else if (iteration.image_file_url) {
+                              // If no PPTX, show image preview
+                              setPreviewImageUrl(iteration.image_file_url)
+                            }
+                          }}
+                          className={`relative flex-shrink-0 rounded-md overflow-hidden border-2 transition-all cursor-pointer ${
+                            selectedIterationIndex === index 
+                              ? 'border-red-600 shadow-md ring-2 ring-red-600/20' 
+                              : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          title={`Click to view iteration ${iteration.iteration_number}`}
+                        >
+                          {iteration.image_file_url ? (
+                            <img 
+                              src={iteration.image_file_url} 
+                              alt={`Iteration ${iteration.iteration_number}`}
+                              className="w-48 h-32 object-cover"
+                            />
+                          ) : (
+                            <div className="w-48 h-32 bg-gray-200 flex items-center justify-center">
+                              <span className="text-sm text-gray-500">No preview</span>
+                            </div>
+                          )}
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-0.5 px-1 text-center">
+                            v{iteration.iteration_number}
+                            {iteration.is_final && ' (Final)'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error Message */}
+            {slide.error_message && (
+              <div className="mx-3 mt-2 p-2 bg-red-50 border border-red-200 rounded flex-shrink-0">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium text-red-800">Error: {slide.error_message}</p>
+                  </div>
                 </div>
               </div>
             )}
+
+            {/* Main Preview - PowerPoint iframe */}
+            <div className="flex-1 min-h-0 overflow-hidden bg-black">
+              {currentPptxUrl && availableContent.hasPptx ? (
+                <div className="w-full h-full relative">
+                  <iframe
+                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(currentPptxUrl)}&wdAr=1.7777777777777777&wdEaaCheck=0&wdPrint=0`}
+                    className="absolute w-full h-full border-0"
+                    style={{ 
+                      transform: 'scale(1)',
+                      transformOrigin: 'center center',
+                      width: '100%',
+                      height: '100%'
+                    }}
+                    title={`Slide ${slide.slide_number} Preview`}
+                    frameBorder="0"
+                    scrolling="no"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full bg-gray-50">
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 border-4 border-gray-200 border-t-red-600 rounded-full animate-spin"></div>
+                    <h3 className="text-base font-medium text-gray-900 mb-1">
+                      Processing Slide {slide.slide_number}
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      {slide.status.replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
 
-        </div>
-      </DialogContent>
-    </Dialog>
+      {/* Fullscreen Preview Modal */}
+      <FullscreenPreview />
+      
+      {/* Image Preview Modal */}
+      {previewImageUrl && (
+        <Dialog open={!!previewImageUrl} onOpenChange={() => setPreviewImageUrl(null)}>
+          <DialogContent className="!max-w-[80vw] !w-[80vw] !max-h-[90vh] p-0 overflow-hidden">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Iteration Preview</DialogTitle>
+            </DialogHeader>
+            <div className="relative bg-black flex items-center justify-center" style={{ maxHeight: '90vh' }}>
+              {/* Close button */}
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setPreviewImageUrl(null)}
+                className="absolute top-4 right-4 z-10 bg-black/50 text-white hover:bg-black/70"
+              >
+                <X className="w-5 h-5" />
+              </Button>
+              
+              {/* Iteration info */}
+              <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-2 rounded-lg backdrop-blur">
+                <p className="text-sm font-medium">
+                  Iteration {selectedIterationIndex + 1} of {refinementIterations.length}
+                  {refinementIterations[selectedIterationIndex]?.is_final && ' (Final)'}
+                </p>
+              </div>
+              
+              {/* Previous button */}
+              {selectedIterationIndex > 0 && (
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={() => {
+                    const newIndex = selectedIterationIndex - 1
+                    setSelectedIterationIndex(newIndex)
+                    const iteration = refinementIterations[newIndex]
+                    if (iteration?.image_file_url) {
+                      setPreviewImageUrl(iteration.image_file_url)
+                    }
+                    if (iteration?.pptx_file_url) {
+                      setCurrentPptxUrl(iteration.pptx_file_url)
+                    }
+                  }}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 h-12 w-12 p-0"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </Button>
+              )}
+              
+              {/* Next button */}
+              {selectedIterationIndex < refinementIterations.length - 1 && (
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={() => {
+                    const newIndex = selectedIterationIndex + 1
+                    setSelectedIterationIndex(newIndex)
+                    const iteration = refinementIterations[newIndex]
+                    if (iteration?.image_file_url) {
+                      setPreviewImageUrl(iteration.image_file_url)
+                    }
+                    if (iteration?.pptx_file_url) {
+                      setCurrentPptxUrl(iteration.pptx_file_url)
+                    }
+                  }}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 h-12 w-12 p-0"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </Button>
+              )}
+              
+              {/* Image */}
+              <img 
+                src={previewImageUrl} 
+                alt={`Iteration ${selectedIterationIndex + 1}`}
+                className="max-w-full max-h-[90vh] object-contain"
+              />
+              
+              {/* Bottom navigation dots */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex gap-2 bg-black/50 px-3 py-2 rounded-full backdrop-blur">
+                {refinementIterations.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setSelectedIterationIndex(index)
+                      const iteration = refinementIterations[index]
+                      if (iteration?.image_file_url) {
+                        setPreviewImageUrl(iteration.image_file_url)
+                      }
+                      if (iteration?.pptx_file_url) {
+                        setCurrentPptxUrl(iteration.pptx_file_url)
+                      }
+                    }}
+                    className={`w-2 h-2 rounded-full transition-all ${
+                      index === selectedIterationIndex 
+                        ? 'bg-white w-6' 
+                        : 'bg-white/50 hover:bg-white/75'
+                    }`}
+                    title={`Go to iteration ${index + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
-    {/* Refinement Modal */}
-    {hasHtmlContent && slide && (
-      <RefinementModal
-        open={showRefinementModal}
-        onOpenChange={setShowRefinementModal}
-        projectId={projectId}
-        slideId={slide.id}
-      />
-    )}
+      {/* Refinement Modal */}
+      {hasHtmlContent && slide && (
+        <RefinementModal
+          open={showRefinementModal}
+          onOpenChange={setShowRefinementModal}
+          projectId={projectId}
+          slideId={slide.id}
+        />
+      )}
     </>
   )
 }

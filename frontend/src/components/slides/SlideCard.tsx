@@ -44,6 +44,7 @@ interface Slide {
 
 interface SlideCardProps {
   slide: Slide | null  // null indicates loading/skeleton state
+  slides?: Slide[]     // All slides for navigation in preview modal
   projectId?: string   // Required for preview functionality
   isParallelProcessing?: boolean
 }
@@ -117,11 +118,12 @@ const statusConfig = {
   }
 }
 
-export function SlideCard({ slide, projectId, isParallelProcessing = false }: SlideCardProps) {
+export function SlideCard({ slide, slides = [], projectId, isParallelProcessing = false }: SlideCardProps) {
   const { supabase } = useSupabaseAuth()
   const [showPreview, setShowPreview] = useState(false)
   const [showRefinement, setShowRefinement] = useState(false)
   const [refinementCount, setRefinementCount] = useState(0)
+  const [currentSlide, setCurrentSlide] = useState(slide)
   // Fetch refinement count when slide changes
   useEffect(() => {
     if (!slide || !projectId || !supabase) return
@@ -464,10 +466,15 @@ export function SlideCard({ slide, projectId, isParallelProcessing = false }: Sl
       {projectId && (
         <>
           <SlidePreviewModal
-            slide={slide}
+            slide={currentSlide || slide}
+            slides={slides}
             projectId={projectId}
             isOpen={showPreview}
-            onClose={() => setShowPreview(false)}
+            onClose={() => {
+              setShowPreview(false)
+              setCurrentSlide(slide)  // Reset to original slide on close
+            }}
+            onSlideChange={(newSlide) => setCurrentSlide(newSlide)}
           />
           {(hasRefinements || isHtmlRefinementActive || isHtmlGenerationActive) && (
             <RefinementModal

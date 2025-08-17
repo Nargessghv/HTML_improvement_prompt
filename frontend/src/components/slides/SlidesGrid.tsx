@@ -227,6 +227,7 @@ export function SlidesGrid({
         <SlideCard 
           key={slides[i].id} 
           slide={slides[i]} 
+          slides={slides}  // Pass all slides for navigation
           projectId={projectId}
           isParallelProcessing={isParallelProcessing}
         />
