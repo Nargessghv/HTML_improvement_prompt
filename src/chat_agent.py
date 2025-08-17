@@ -18,16 +18,20 @@ from langchain.memory import ConversationBufferMemory
 from pydantic import BaseModel, Field
 
 from .database import get_supabase_client, DatabaseError
+from .llm_models import PlaceholderRequirement
 
 
 class SlideOutline(BaseModel):
     """Structure for individual slide outline"""
     slide_number: int
     title: str
-    content_type: str  # 'text', 'visual', 'chart', 'timeline', 'comparison'
     key_points: List[str]
     suggested_layout: Optional[str] = None
     notes: Optional[str] = None
+    # NEW: Use the same structure as SlideSpec for consistency
+    is_html: bool = False
+    is_image: bool = False
+    placeholder_requirements: Optional[List[PlaceholderRequirement]] = None
 
 
 class PresentationOutline(BaseModel):
@@ -95,19 +99,21 @@ Key principles:
 - CRITICAL: If the original project description specifies certain content, slides, or requirements, ALWAYS include them in the final outline
 
 Visual Content Strategy:
-- Use TIMELINE content type for: chronological sequences, process flows, roadmaps, workflows
-- Use CHART content type for: data visualizations, metrics, complex diagrams, hierarchies
-- Use COMPARISON content type for: before/after scenarios, feature comparisons, pros/cons
-- Use VISUAL content type for: creative storytelling patterns, transformations, hero journeys
-- Use TEXT content type for: simple introductions, conclusions, basic bullet points
+- Use HTML VISUALIZATION for: timelines, charts, comparisons, diagrams, infographics, visual representations
+- Use HTML for: process flows, workflows, data visualizations, system architectures, conceptual diagrams
+- Use AI-GENERATED IMAGES for: creative visuals, transformations, artistic representations
+- Use TEXT ONLY for: simple introductions, conclusions, basic bullet points without visual elements
 
 Content Type Selection Examples:
-- "Project timeline" → timeline
-- "Performance metrics" → chart  
-- "Before vs After results" → comparison
-- "Process workflow" → timeline
-- "Transformation story" → visual
-- "Company introduction" → text
+- "Project timeline" → HTML (timeline visualization)
+- "Performance metrics" → HTML (chart visualization)
+- "Before vs After results" → HTML (comparison visualization)
+- "Process workflow" → HTML (process diagram)
+- "AI agents overview" → HTML (conceptual diagram)
+- "System architecture" → HTML (component diagram)
+- "How it works" → HTML (infographic)
+- "Transformation story" → AI-generated image
+- "Company introduction" → Text only
 
 When the user seems ready, generate a complete presentation outline with strategic content type selection that will enable powerful HTML visualizations where appropriate."""
     
@@ -305,57 +311,61 @@ ORIGINAL PROJECT DESCRIPTION:
 IMPORTANT: This is a quickstart generation, so you must carefully analyze the project description above and create an outline that EXACTLY matches what was requested. If the description specifies a certain number of slides, specific content, or particular requirements, you MUST follow them precisely.
 
 SPECIAL INSTRUCTIONS FOR USER REQUESTS:
-- If user asks for "HTML" slide → Use content_type="chart" (will generate HTML visualization)
-- If user asks for "image" slide → Use content_type="visual" (will generate AI image)
+- If user asks for "HTML" slide → Set is_html=true and create placeholder_requirements for HTML content
+- If user asks for "image" slide or "picture" → Set is_image=true and create placeholder_requirements for AI image generation
+- If user asks for "infographic" → Set is_html=true (infographics are best created as HTML visualizations)
+- If user asks for "chart", "diagram", "visualization" → Set is_html=true
 - If user specifies exact number of slides → Create EXACTLY that many slides
-- If user specifies content types → Use those EXACT types
+- If user specifies content types → Use those EXACT specifications
 
 Create a detailed presentation outline using strategic presentation planning principles.
 
-🎨 HTML VISUALIZATION DECISION GUIDE
+🎨 CONTENT TYPE DECISION GUIDE
 
-USE content_type="timeline" FOR:
+SET is_html=true FOR:
 ✅ Timelines, roadmaps, chronological sequences  
 ✅ Process flows, workflows, step-by-step procedures
-
-USE content_type="chart" FOR:
 ✅ Data visualizations, metrics, statistics  
 ✅ Complex diagrams, hierarchies, relationships
-✅ When user explicitly asks for "HTML" slide
-
-USE content_type="comparison" FOR:
 ✅ Comparisons, before/after scenarios
 ✅ Feature comparisons, pros/cons analysis
+✅ Conceptual diagrams, infographics, visual representations
+✅ System architectures, component diagrams
+✅ Any content that would benefit from visual structure/layout
+✅ When user explicitly asks for "HTML" slide or "visual" representation
 
-USE content_type="visual" FOR:
+SET is_image=true FOR:
 ✅ Any content requiring AI-generated images
 ✅ When user explicitly asks for "image" slide
 ✅ Creative storytelling patterns requiring custom visuals
 
-USE content_type="text" FOR:
-❌ Simple text content and basic bullet points
-❌ Standard introductions and conclusions
-❌ Simple titles and descriptions
+For slides requiring neither HTML nor images, use is_html=false and is_image=false.
 
 🔑 KEY PRINCIPLES:
 • STRICTLY follow the requirements in the project description
 • If description says "one slide", create exactly one slide
-• If description specifies content types, use those exact types
-• Choose content types based on CONTENT PURPOSE, not sequence
+• If description specifies content types, use those exact specifications
+• Choose content flags based on CONTENT PURPOSE, not sequence
 • Use visual content types strategically for maximum impact
 • Ensure each slide advances the narrative
+• Always specify placeholder_requirements when is_html=true or is_image=true
 
 📋 CONTENT TYPE SELECTION EXAMPLES:
-- Company introduction → "text"
-- Project timeline → "timeline" 
-- Performance metrics → "chart"
-- Before vs After results → "comparison"
-- Process workflow → "timeline"
-- Feature comparison → "comparison"
-- Vision/mission statement → "text"
-- Team introduction → "text"
-- Data analysis → "chart"
-- Transformation story → "visual"
+- Company introduction → is_html=false, is_image=false
+- Project timeline → is_html=true (timeline visualization)
+- Performance metrics → is_html=true (chart visualization)
+- Before vs After results → is_html=true (comparison visualization)
+- Process workflow → is_html=true (timeline visualization)
+- Feature comparison → is_html=true (comparison visualization)
+- Vision/mission statement → is_html=false, is_image=false
+- Team introduction → is_html=false, is_image=false
+- Data analysis → is_html=true (chart visualization)
+- Transformation story → is_image=true (AI-generated visual)
+- AI agents overview → is_html=true (conceptual diagram)
+- System architecture → is_html=true (component diagram)
+- Technology stack → is_html=true (visual infographic)
+- How it works → is_html=true (process diagram)
+- Key concepts visualization → is_html=true (infographic)
 
 Return the outline in this exact JSON format:
         {{
@@ -368,10 +378,18 @@ Return the outline in this exact JSON format:
                 {{
                     "slide_number": 1,
                     "title": "Slide Title",
-                    "content_type": "text|visual|chart|timeline|comparison",
                     "key_points": ["Point 1", "Point 2"],
                     "suggested_layout": "layout name",
-                    "notes": "Additional notes"
+                    "notes": "Additional notes",
+                    "is_html": false,
+                    "is_image": false,
+                    "placeholder_requirements": [
+                        {{
+                            "placeholder_name": "Picture 16:9",
+                            "content_type": "image",
+                            "description": "AI-generated image showing..."
+                        }}
+                    ]
                 }}
             ],
             "estimated_duration": 30,
@@ -382,7 +400,7 @@ Return the outline in this exact JSON format:
             }}
         }}
 
-CRITICAL: Carefully analyze each slide's purpose and choose the most appropriate content_type. This determines whether HTML visualization will be used in the final presentation.
+CRITICAL: Always specify placeholder_requirements when is_html=true or is_image=true. For image slides, use placeholder_name "Picture 16:9". For HTML slides, use placeholder_name "Content Placeholder 1" or similar based on the slide layout.
 
 REMINDER: Pay close attention to the original project description at the top and follow its requirements exactly."""
             
@@ -506,83 +524,64 @@ ORIGINAL PROJECT DESCRIPTION:
 IMPORTANT: The outline must respect and incorporate the specific requirements from the original project description above, while also considering our conversation. If the original description specifies certain slides or content, make sure to include them.
 
 SPECIAL INSTRUCTIONS FOR USER REQUESTS:
-- If user asks for "HTML" slide → Use content_type="chart" (will generate HTML visualization)
-- If user asks for "image" slide → Use content_type="visual" (will generate AI image)
+- If user asks for "HTML" slide → Set is_html=true and create placeholder_requirements for HTML content
+- If user asks for "image" slide or "picture" → Set is_image=true and create placeholder_requirements for AI image generation
+- If user asks for "infographic" → Set is_html=true (infographics are best created as HTML visualizations)
+- If user asks for "chart", "diagram", "visualization" → Set is_html=true
 - If user specifies exact number of slides → Create EXACTLY that many slides
-- If user specifies content types → Use those EXACT types
+- If user specifies content types → Use those EXACT specifications
 
 Based on our conversation and the original project requirements, create a detailed presentation outline using strategic presentation planning principles.
 
-🎨 HTML VISUALIZATION DECISION GUIDE
+🎨 CONTENT TYPE DECISION GUIDE
 
-USE content_type="timeline" FOR:
+SET is_html=true FOR:
 ✅ Timelines, roadmaps, chronological sequences  
 ✅ Process flows, workflows, step-by-step procedures
-
-USE content_type="chart" FOR:
 ✅ Data visualizations, metrics, statistics  
 ✅ Complex diagrams, hierarchies, relationships
-✅ When user explicitly asks for "HTML" slide
-
-USE content_type="comparison" FOR:
 ✅ Comparisons, before/after scenarios
 ✅ Feature comparisons, pros/cons analysis
+✅ Conceptual diagrams, infographics, visual representations
+✅ System architectures, component diagrams
+✅ Any content that would benefit from visual structure/layout
+✅ When user explicitly asks for "HTML" slide or "visual" representation
 
-USE content_type="visual" FOR:
+SET is_image=true FOR:
 ✅ Any content requiring AI-generated images
 ✅ When user explicitly asks for "image" slide
 ✅ Creative storytelling patterns requiring custom visuals
 
-USE content_type="text" FOR:
-❌ Simple text content and basic bullet points
-❌ Standard introductions and conclusions
-❌ Simple titles and descriptions
+For slides requiring neither HTML nor images, use is_html=false and is_image=false.
 
 🔑 KEY PRINCIPLES:
 • Create 8-15 slides with logical flow: introduction → content → conclusion
-• Choose content types based on CONTENT PURPOSE, not sequence
+• Choose content flags based on CONTENT PURPOSE, not sequence
 • Use visual content types strategically for maximum impact
 • Ensure each slide advances the narrative
 • Balance visual and text slides appropriately
+• Always specify placeholder_requirements when is_html=true or is_image=true
 
 📋 CONTENT TYPE SELECTION EXAMPLES:
-- Company introduction → "text"
-- Project timeline → "timeline" 
-- Performance metrics → "chart"
-- Before vs After results → "comparison"
-- Process workflow → "timeline"
-- Feature comparison → "comparison"
-- Vision/mission statement → "text"
-- Team introduction → "text"
-- Data analysis → "chart"
-- Transformation story → "visual"
+- Company introduction → is_html=false, is_image=false
+- Project timeline → is_html=true (timeline visualization)
+- Performance metrics → is_html=true (chart visualization)
+- Before vs After results → is_html=true (comparison visualization)
+- Process workflow → is_html=true (timeline visualization)
+- Feature comparison → is_html=true (comparison visualization)
+- Vision/mission statement → is_html=false, is_image=false
+- Team introduction → is_html=false, is_image=false
+- Data analysis → is_html=true (chart visualization)
+- Transformation story → is_image=true (AI-generated visual)
+- AI agents overview → is_html=true (conceptual diagram)
+- System architecture → is_html=true (component diagram)
+- Technology stack → is_html=true (visual infographic)
+- How it works → is_html=true (process diagram)
+- Key concepts visualization → is_html=true (infographic)
 
-Return the outline in this exact JSON format:
-        {
-            "title": "Presentation Title",
-            "topic": "Main topic",
-            "target_audience": "Target audience description",
-            "objectives": ["Objective 1", "Objective 2"],
-            "key_themes": ["Theme 1", "Theme 2"],
-            "slides": [
-                {
-                    "slide_number": 1,
-                    "title": "Slide Title",
-                    "content_type": "text|visual|chart|timeline|comparison",
-                    "key_points": ["Point 1", "Point 2"],
-                    "suggested_layout": "layout name",
-                    "notes": "Additional notes"
-                }
-            ],
-            "estimated_duration": 30,
-            "style_preferences": {
-                "tone": "professional|casual|academic",
-                "visual_style": "modern|classic|minimal",
-                "color_scheme": "suggestions"
-            }
-        }
+Return the outline in this exact JSON format with proper is_html, is_image, and placeholder_requirements fields:
 
-CRITICAL: Carefully analyze each slide's purpose and choose the most appropriate content_type. This determines whether HTML visualization will be used in the final presentation."""
+CRITICAL: Always specify placeholder_requirements when is_html=true or is_image=true. For image slides, use placeholder_name "Picture 16:9". For HTML slides, use placeholder_name "Content Placeholder 1" or similar based on the slide layout."""
         
         messages_with_prompt = messages + [HumanMessage(content=outline_prompt)]
         
@@ -640,22 +639,18 @@ CRITICAL: Carefully analyze each slide's purpose and choose the most appropriate
     def _count_visual_elements(self, slides: List[SlideOutline]) -> Dict[str, int]:
         """Count different types of visual elements"""
         counts = {
-            "charts": 0,
-            "timelines": 0,
-            "comparisons": 0,
-            "diagrams": 0,
-            "images": 0
+            "html_slides": 0,
+            "image_slides": 0,
+            "text_slides": 0
         }
         
         for slide in slides:
-            if slide.content_type == "chart":
-                counts["charts"] += 1
-            elif slide.content_type == "timeline":
-                counts["timelines"] += 1
-            elif slide.content_type == "comparison":
-                counts["comparisons"] += 1
-            elif slide.content_type == "visual":
-                counts["diagrams"] += 1
+            if slide.is_html:
+                counts["html_slides"] += 1
+            if slide.is_image:
+                counts["image_slides"] += 1
+            if not slide.is_html and not slide.is_image:
+                counts["text_slides"] += 1
         
         return counts
     

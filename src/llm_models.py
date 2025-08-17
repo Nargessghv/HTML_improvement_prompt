@@ -10,18 +10,28 @@ from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
+class PlaceholderRequirement(BaseModel):
+    """
+    Specification for what content should go in a specific placeholder
+    """
+    placeholder_name: str = Field(..., description="The exact name of the placeholder")
+    content_type: str = Field(..., description="Type of content: 'text', 'html', 'image'")
+    description: str = Field(..., description="Description of what content should be generated")
+
+
 class SlideSpec(BaseModel):
     """
     Enhanced specification for a single slide with detailed purpose instructions
 
-    This model now includes comprehensive instructions for content generation
-    and HTML visualization to ensure alignment throughout the pipeline.
+    This model now includes comprehensive instructions for content generation,
+    HTML visualization, and image generation with placeholder-specific targeting.
     """
 
     layout_index: int
     slide_title: str
     slide_purpose: str
     is_html: bool = False  # Track whether this slide should use HTML visualization
+    is_image: bool = False  # Track whether this slide should generate images
 
     # Enhanced detailed specifications
     detailed_purpose: Optional[str] = (
@@ -31,11 +41,19 @@ class SlideSpec(BaseModel):
     html_requirements: Optional[str] = (
         None  # Specific HTML visualization requirements (when is_html=True)
     )
+    image_requirements: Optional[str] = (
+        None  # Specific image generation requirements (when is_image=True)
+    )
     visual_elements: Optional[str] = (
         None  # Required visual elements (icons, charts, tables, etc.)
     )
     key_information: Optional[List[str]] = (
         None  # Key information points that must be included
+    )
+    
+    # NEW: Placeholder-specific requirements
+    placeholder_requirements: Optional[List[PlaceholderRequirement]] = (
+        None  # Specific requirements for each placeholder
     )
 
     def get_complete_purpose(self) -> str:
@@ -55,14 +73,45 @@ class SlideSpec(BaseModel):
 
         if self.html_requirements and self.is_html:
             purpose_parts.append(f"HTML visualization: {self.html_requirements}")
+            
+        if self.image_requirements and self.is_image:
+            purpose_parts.append(f"Image generation: {self.image_requirements}")
 
         if self.visual_elements:
             purpose_parts.append(f"Visual elements: {self.visual_elements}")
 
         if self.key_information:
             purpose_parts.append(f"Key information: {', '.join(self.key_information)}")
+            
+        if self.placeholder_requirements:
+            placeholder_desc = []
+            for req in self.placeholder_requirements:
+                placeholder_desc.append(f"{req.placeholder_name}({req.content_type}): {req.description}")
+            purpose_parts.append(f"Placeholder requirements: {'; '.join(placeholder_desc)}")
 
         return " | ".join(purpose_parts)
+        
+    def get_image_placeholders(self) -> List[str]:
+        """
+        Get list of placeholder names that require image generation
+        
+        Returns:
+            List of placeholder names that need images
+        """
+        if not self.placeholder_requirements:
+            return []
+        return [req.placeholder_name for req in self.placeholder_requirements if req.content_type == "image"]
+        
+    def get_html_placeholders(self) -> List[str]:
+        """
+        Get list of placeholder names that require HTML content
+        
+        Returns:
+            List of placeholder names that need HTML
+        """
+        if not self.placeholder_requirements:
+            return []
+        return [req.placeholder_name for req in self.placeholder_requirements if req.content_type == "html"]
 
 
 class PresentationPlan(BaseModel):

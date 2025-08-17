@@ -546,7 +546,8 @@ class ParallelSlideWorkflow:
                     layout_index=layout_index,
                     slide_title=slide_state.slide_spec.get("title", "Untitled"),
                     slide_purpose=f"Create content for: {slide_state.slide_spec.get('title', 'Untitled')}",
-                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_html=slide_state.slide_spec.get("is_html", False) or slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_image=slide_state.slide_spec.get("is_image", False) or slide_state.slide_spec.get("content_type") == "visual",
                     detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
                     content_structure=slide_state.slide_spec.get("content_type", "text"),
                     html_requirements=slide_state.slide_spec.get("notes"),
@@ -622,7 +623,8 @@ class ParallelSlideWorkflow:
                     layout_index=layout_index,
                     slide_title=slide_state.slide_spec.get("title", "Untitled"),
                     slide_purpose=f"HTML generation for: {slide_state.slide_spec.get('title', 'Untitled')}",
-                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_html=slide_state.slide_spec.get("is_html", False) or slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_image=slide_state.slide_spec.get("is_image", False) or slide_state.slide_spec.get("content_type") == "visual",
                     detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
                     content_structure=slide_state.slide_spec.get("content_type", "text"),
                     html_requirements=slide_state.slide_spec.get("notes"),
@@ -769,7 +771,8 @@ class ParallelSlideWorkflow:
                     layout_index=layout_index,
                     slide_title=slide_state.slide_spec.get("title", "Untitled"),
                     slide_purpose=f"Image processing for: {slide_state.slide_spec.get('title', 'Untitled')}",
-                    is_html=slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_html=slide_state.slide_spec.get("is_html", False) or slide_state.slide_spec.get("content_type") in ["timeline", "chart", "comparison", "process"],
+                    is_image=slide_state.slide_spec.get("is_image", False) or slide_state.slide_spec.get("content_type") == "visual",
                     detailed_purpose=", ".join(slide_state.slide_spec.get("key_points", [])),
                     content_structure=slide_state.slide_spec.get("content_type", "text"),
                     html_requirements=slide_state.slide_spec.get("notes"),
@@ -1040,35 +1043,41 @@ class ParallelSlideWorkflow:
                 print(f"🔧 Using fallback layout {first_layout}")
                 return first_layout
             
+            # Check for is_html and is_image flags first (modern approach)
+            is_html = slide_spec.get("is_html", False)
+            is_image = slide_spec.get("is_image", False)
+            
+            # Fallback to content_type for backward compatibility
             content_type = slide_spec.get("content_type", "text")
-            print(f"🎯 Selecting layout for content_type: '{content_type}'")
             
-            # Content type to layout mapping strategy
-            # visual -> picture layout (for AI-generated images)
-            # chart/timeline/comparison -> HTML layout (for HTML visualizations)
-            # text -> text layout
-            content_type_to_layout = {}
-            try:
-                content_type_to_layout = {
-                    "text": self._find_best_layout_for_content(layouts_info, "text"),
-                    "visual": self._find_best_layout_for_content(layouts_info, "picture"),  # For AI images
-                    "chart": self._find_best_layout_for_content(layouts_info, "html"),      # For HTML viz
-                    "timeline": self._find_best_layout_for_content(layouts_info, "html"),   # For HTML viz
-                    "comparison": self._find_best_layout_for_content(layouts_info, "html")  # For HTML viz
-                }
-                print(f"🔍 Content type mappings: {content_type_to_layout}")
-            except Exception as mapping_error:
-                print(f"⚠️ Error creating content type mappings: {mapping_error}")
-                # Use first available layout as fallback
-                first_layout = next(iter(layouts_info.keys())) if layouts_info else 0
-                print(f"🔧 Using first available layout {first_layout}")
-                return first_layout
+            print(f"🎯 Selecting layout - is_html: {is_html}, is_image: {is_image}, content_type: '{content_type}'")
             
-            # Select appropriate layout based on content type
-            layout_index = content_type_to_layout.get(content_type)
+            # Determine preferred layout type based on flags
+            if is_html:
+                # HTML content needs picture placeholder
+                print(f"📊 Slide requires HTML visualization")
+                layout_index = self._find_best_layout_for_content(layouts_info, "html")
+            elif is_image:
+                # AI-generated image needs picture placeholder
+                print(f"🖼️ Slide requires AI-generated image")
+                layout_index = self._find_best_layout_for_content(layouts_info, "picture")
+            else:
+                # Check content_type for backward compatibility
+                if content_type in ["chart", "timeline", "comparison", "process"]:
+                    print(f"📊 Content type '{content_type}' suggests HTML visualization")
+                    layout_index = self._find_best_layout_for_content(layouts_info, "html")
+                elif content_type == "visual":
+                    print(f"🖼️ Content type 'visual' suggests image")
+                    layout_index = self._find_best_layout_for_content(layouts_info, "picture")
+                else:
+                    # Default to text layout
+                    print(f"📝 Using text layout for content")
+                    layout_index = self._find_best_layout_for_content(layouts_info, "text")
+            
             if layout_index is None:
-                # Fallback to text layout
+                # Ultimate fallback to text layout
                 try:
+                    print(f"⚠️ No specific layout found, falling back to text layout")
                     layout_index = self._find_best_layout_for_content(layouts_info, "text")
                 except Exception as fallback_error:
                     print(f"⚠️ Error with text fallback: {fallback_error}")

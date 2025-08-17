@@ -1602,10 +1602,18 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
                                 {
                                     "slide_number": slide.slide_number,
                                     "title": slide.title,
-                                    "content_type": slide.content_type,
                                     "key_points": slide.key_points,
                                     "layout_type": slide.suggested_layout or "content",
-                                    "notes": slide.notes
+                                    "notes": slide.notes,
+                                    "is_html": slide.is_html,
+                                    "is_image": slide.is_image,
+                                    "placeholder_requirements": [
+                                        {
+                                            "placeholder_name": req.placeholder_name,
+                                            "content_type": req.content_type,
+                                            "description": req.description
+                                        } for req in (slide.placeholder_requirements or [])
+                                    ]
                                 }
                                 for slide in outline_result.slides
                             ]

@@ -283,6 +283,9 @@ class PresentationPlanningAgent:
         # Create the planning prompt
         prompt = self._create_presentation_planning_prompt(layouts_info, topic, title)
         system_prompt = self._get_planning_system_prompt()
+        
+        # Debug: Log the topic being processed
+        print(f"🔍 Planning for topic: '{topic}'")
 
         try:
             # Use structured output with Langchain
@@ -297,6 +300,9 @@ class PresentationPlanningAgent:
                 print(f"Presentation plan created: {response.total_slides} slides")
                 print(f"Flow: {response.presentation_flow}")
                 print(f"Reasoning: {response.reasoning}")
+                # Debug logging for HTML/image decisions
+                for idx, slide in enumerate(response.slides, 1):
+                    print(f"  Slide {idx}: is_html={slide.is_html}, is_image={slide.is_image}, title='{slide.slide_title}'")
                 return response.slides
             print("Warning: No structured response received")
             return self._create_default_plan(layouts_info)
@@ -323,42 +329,94 @@ class PresentationPlanningAgent:
         slides = approved_outline.get("slides", [])
         slide_specs = []
 
-        # Content type to layout mapping strategy
-        content_type_to_layout = {
-            "text": self._find_best_layout_for_content(layouts_info, "text"),
-            "visual": self._find_best_layout_for_content(layouts_info, "picture"),
-            "chart": self._find_best_layout_for_content(layouts_info, "html"),
-            "timeline": self._find_best_layout_for_content(layouts_info, "html"),
-            "comparison": self._find_best_layout_for_content(layouts_info, "html"),
-        }
 
         for slide_data in slides:
             slide_number = slide_data.get("slide_number", len(slide_specs) + 1)
             title = slide_data.get("title", f"Slide {slide_number}")
-            content_type = slide_data.get("content_type", "text")
             key_points = slide_data.get("key_points", [])
 
-            # Select appropriate layout based on content type
-            layout_index = content_type_to_layout.get(
-                content_type, self._find_best_layout_for_content(layouts_info, "text")
-            )
+            # Get content flags from new structure (with fallback for old content_type)
+            is_html = slide_data.get("is_html", False)
+            is_image = slide_data.get("is_image", False)
+            placeholder_requirements = slide_data.get("placeholder_requirements", [])
+            
+            # Fallback for old content_type format (for backward compatibility during transition)
+            content_type = slide_data.get("content_type")
+            if content_type and not (is_html or is_image):
+                # Convert old format to new format
+                is_html = content_type in ["chart", "timeline", "comparison"]
+                is_image = content_type == "visual"
 
-            # Determine if HTML visualization is needed
-            needs_html = content_type in ["chart", "timeline", "comparison"]
+            # First try to use suggested_layout from approved outline
+            suggested_layout = slide_data.get("suggested_layout")
+            layout_index = None
+            
+            if suggested_layout:
+                # Find layout index by name
+                for idx, layout_info in layouts_info.items():
+                    if layout_info.get("name", "").lower() == suggested_layout.lower():
+                        layout_index = idx
+                        print(f"    Using suggested layout '{suggested_layout}' -> index {idx}")
+                        break
+            
+            # If no suggested layout or not found, use LLM to select based on content
+            if layout_index is None:
+                print(f"    Selecting layout with LLM for slide: {title}")
+                layout_index = self._select_layout_with_llm(
+                    layouts_info, 
+                    title, 
+                    key_points, 
+                    is_html, 
+                    is_image,
+                    placeholder_requirements
+                )
+            
+            # Convert placeholder requirements to PlaceholderRequirement objects
+            from .llm_models import PlaceholderRequirement
+            placeholder_reqs = []
+            if placeholder_requirements:
+                for req in placeholder_requirements:
+                    if isinstance(req, dict):
+                        placeholder_reqs.append(PlaceholderRequirement(**req))
+                    else:
+                        placeholder_reqs.append(req)
+            
+            # If no placeholder requirements provided, create them based on flags
+            if not placeholder_reqs:
+                if is_image:
+                    placeholder_reqs = [PlaceholderRequirement(
+                        placeholder_name="Picture 16:9",
+                        content_type="image",
+                        description=f"AI-generated image for {title}"
+                    )]
+                elif is_html:
+                    placeholder_reqs = [PlaceholderRequirement(
+                        placeholder_name="Picture from HTML", 
+                        content_type="html",
+                        description=f"HTML visualization for {title}"
+                    )]
+
+            # Determine slide type for purpose description
+            slide_type = "image" if is_image else "HTML" if is_html else "text"
 
             # Create slide specification
             slide_spec = SlideSpec(
                 layout_index=layout_index,
                 slide_title=title,
-                slide_purpose=f"Create {content_type} slide: {title}",
-                is_html=needs_html,
+                slide_purpose=f"Create {slide_type} slide: {title}",
+                is_html=is_html,
+                is_image=is_image,
                 detailed_purpose=f"Content from approved outline - slide {slide_number}",
                 content_structure=f"Key points: {', '.join(key_points)}",
                 html_requirements=(
-                    f"Create {content_type} visualization" if needs_html else None
+                    f"Create visualization for {title}" if is_html else None
                 ),
-                visual_elements=content_type if needs_html else None,
+                image_requirements=(
+                    f"Generate visual content for {title}" if is_image else None
+                ),
+                visual_elements=slide_type if is_html else None,
                 key_information=key_points,
+                placeholder_requirements=placeholder_reqs,
             )
 
             slide_specs.append(slide_spec)
@@ -371,48 +429,115 @@ class PresentationPlanningAgent:
             print(f"    Slide {idx}: {spec}")
         return slide_specs
 
-    def _find_best_layout_for_content(
-        self, layouts_info: Dict[int, Dict[str, Any]], preferred_type: str
+    def _select_layout_with_llm(
+        self, 
+        layouts_info: Dict[int, Dict[str, Any]], 
+        slide_title: str,
+        key_points: List[str],
+        is_html: bool,
+        is_image: bool,
+        placeholder_requirements: List[Any]
     ) -> int:
         """
-        Find the best layout index for a given content type
-
+        Use LLM to intelligently select the best layout based on slide content
+        
         Args:
-            layouts_info: Available layout information
-            preferred_type: Preferred layout type (text, picture, html)
-
+            layouts_info: Dictionary of all available layouts with their details
+            slide_title: Title of the slide
+            key_points: Key points for the slide
+            is_html: Whether slide needs HTML visualization
+            is_image: Whether slide needs AI-generated image
+            placeholder_requirements: Specific placeholder requirements
+            
         Returns:
-            Layout index (defaults to first text layout if no match found)
+            Layout index selected by LLM
         """
-        # Priority mapping for different content types
-        search_patterns = {
-            "text": ["text content", "content", "text"],
-            "picture": ["title and picture", "picture"],
-            "html": ["html", "picture generated from html", "picture"],
-        }
+        # Build detailed layout descriptions for LLM
+        layout_options = []
+        for idx, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", f"Layout {idx}")
+            placeholders = layout_info.get("placeholders", [])
+            
+            # Build detailed placeholder info
+            placeholder_details = []
+            for p in placeholders:
+                if isinstance(p, dict):
+                    name = p.get("name", "Unknown")
+                    p_type = p.get("type", "Unknown")
+                    placeholder_details.append(f"{name} ({p_type})")
+                else:
+                    placeholder_details.append(str(p))
+                    
+            layout_options.append({
+                "index": idx,
+                "name": layout_name,
+                "placeholders": placeholder_details
+            })
+        
+        # Create prompt for layout selection
+        prompt = f"""Select the BEST layout for this slide based on content requirements:
 
-        patterns = search_patterns.get(preferred_type, ["content", "text"])
+SLIDE CONTENT:
+- Title: {slide_title}
+- Key Points: {', '.join(key_points) if key_points else 'None'}
+- Needs HTML visualization: {is_html}
+- Needs AI-generated image: {is_image}
+- Content Type: {'HTML/Visual' if is_html else 'Image' if is_image else 'Text'}
 
-        # Search for exact matches first
-        for pattern in patterns:
-            for layout_index, layout_info in layouts_info.items():
-                layout_name = layout_info.get("name", "").lower()
-                if pattern in layout_name:
-                    return layout_index
+AVAILABLE LAYOUTS:
+"""
+        
+        for layout in layout_options:
+            prompt += f"\nLayout {layout['index']}: {layout['name']}\n"
+            prompt += f"  Placeholders: {', '.join(layout['placeholders'])}\n"
+        
+        prompt += """\n
+SELECTION CRITERIA:
+1. For HTML content: Choose layouts with picture/image placeholders that can display rendered HTML
+2. For AI images: Choose layouts with picture placeholders for generated images  
+3. For text content: Choose layouts with content/text placeholders
+4. Match the number and type of placeholders to the content needs
+5. Consider the slide's purpose and how to best present the information
 
-        # Fallback to any content layout
-        for layout_index, layout_info in layouts_info.items():
-            layout_name = layout_info.get("name", "").lower()
-            if any(keyword in layout_name for keyword in ["content", "text", "title"]):
-                return layout_index
-
-        # Final fallback to first non-logo layout
-        for layout_index, layout_info in layouts_info.items():
-            layout_name = layout_info.get("name", "").lower()
-            if "logo" not in layout_name and "branding" not in layout_name:
-                return layout_index
-
-        # Ultimate fallback to first available layout
+RETURN ONLY THE LAYOUT INDEX NUMBER (e.g., 3)
+"""
+        
+        try:
+            # Use LLM to select layout
+            response = self.llm_client.generate_content(
+                system_prompt="You are a presentation layout expert. Select the most appropriate layout index based on content requirements.",
+                user_prompt=prompt
+            )
+            
+            # Extract layout index from response
+            import re
+            match = re.search(r'\b(\d+)\b', response)
+            if match:
+                selected_index = int(match.group(1))
+                if selected_index in layouts_info:
+                    print(f"      LLM selected layout {selected_index}: {layouts_info[selected_index].get('name', 'Unknown')}")
+                    return selected_index
+                    
+        except Exception as e:
+            print(f"      Warning: LLM layout selection failed: {e}")
+        
+        # Fallback: Select first suitable layout based on content type
+        print("      Falling back to default layout selection")
+        if is_html or is_image:
+            # Find first layout with picture placeholder
+            for idx, layout_info in layouts_info.items():
+                placeholders = layout_info.get("placeholders", [])
+                for p in placeholders:
+                    if isinstance(p, dict):
+                        name = p.get("name", "").lower()
+                        if any(word in name for word in ["picture", "image", "visual", "html"]):
+                            return idx
+        
+        # Default to first non-logo layout
+        for idx, layout_info in layouts_info.items():
+            if "logo" not in layout_info.get("name", "").lower():
+                return idx
+                
         return list(layouts_info.keys())[0] if layouts_info else 0
 
     def _create_presentation_planning_prompt(
@@ -484,6 +609,13 @@ class PresentationPlanningAgent:
 • Specific topics or sections mentioned
 • Any constraints or limitations specified
 
+⚠️ KEYWORD DETECTION - SET FLAGS ACCORDINGLY:
+• If description contains "infographic" or "infographics" → MUST set is_html=true for those slides
+• If description contains "visual" or "visualization" → MUST set is_html=true for those slides
+• If description contains "picture" or "image" → MUST set is_image=true for those slides
+• If description contains "timeline", "process", "workflow", "comparison" → MUST set is_html=true
+• Medical/scientific topics (like "IL-17A") with "infographic" → MUST set is_html=true
+
 🎯 AVAILABLE LAYOUTS:
 {layouts_text}
 
@@ -495,12 +627,17 @@ class PresentationPlanningAgent:
 🎨 HTML VISUALIZATION DECISION GUIDE
 
 USE HTML (set is_html: true) FOR:
+✅ **INFOGRAPHICS** - Any request for "infographic" should use HTML
+✅ Conceptual diagrams, visual representations (e.g., "AI agents", "system architecture")
+✅ Educational diagrams, concept visualizations, visual explanations
 ✅ Timelines, roadmaps, chronological sequences  
 ✅ Process flows, workflows, step-by-step procedures
 ✅ Comparisons, before/after scenarios
 ✅ Data visualizations, metrics, statistics  
 ✅ Complex diagrams, hierarchies, relationships
 ✅ Interactive elements, dashboards, multi-step processes
+✅ Any request for "visual representation", "visualization", or "infographic"
+✅ Scientific/medical concepts that need visual explanation (e.g., "IL-17A pathway")
 
 SKIP HTML (set is_html: false) FOR:
 ❌ Simple text content and basic bullet points
@@ -542,9 +679,26 @@ FOR EVERY SLIDE, PROVIDE:
 3. **content_structure**: Organization requirements ("2-column comparison", "5-step list")
 4. **visual_elements**: Required visuals ("icons, timeline markers, arrows")  
 5. **key_information**: Essential info points (3-5 items)
+6. **is_html**: true if ANY placeholder needs HTML content, false otherwise
+7. **is_image**: true if ANY placeholder needs AI-generated images, false otherwise  
+8. **placeholder_requirements**: List specifying content type for each non-standard placeholder
 
-FOR HTML SLIDES, ALSO ADD:
-6. **html_requirements**: Specific visualization specs. CHOOSE THE BEST TOOL FOR THE JOB.
+🎯 PLACEHOLDER REQUIREMENTS:
+For each placeholder that needs special content (HTML or images), specify:
+- placeholder_name: "exact_placeholder_name" (from available layouts above)
+- content_type: "text" | "html" | "image"  
+- description: "detailed description of what to generate"
+
+FOR HTML CONTENT, ALSO ADD:
+9. **html_requirements**: Specific visualization specs. CHOOSE THE BEST TOOL FOR THE JOB.
+
+FOR IMAGE CONTENT, ALSO ADD:
+10. **image_requirements**: Detailed scene/visual description for AI image generation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 HTML TOOL SELECTION GUIDE:
+
    • **Use D3.js for**: MANDATORY for ALL timelines and roadmaps. Required for custom, data-driven, or highly polished visualizations where branding and unique presentation are key.
      - *Example (Timeline - MANDATORY)*: "D3.js timeline: A polished, horizontal timeline with detailed descriptions and brand colors."
      - *Example (Custom Chart)*: "D3.js custom chart: A bar chart with specific annotations and non-standard styling."
@@ -588,6 +742,22 @@ STANDARD SLIDE:
 - visual_elements: "Company logo, 3 service icons, credibility badge"
 - key_information: ["15+ years experience", "200+ projects", "95% satisfaction"]
 
+HTML SLIDE (Infographic - IL-17A):
+- slide_purpose: "Create an infographic explaining IL-17A and its role"
+- detailed_purpose: "Visual infographic showing IL-17A structure, function in immune response, and clinical significance. Use structured layout with icons, labels, and visual hierarchies to explain this complex medical concept."
+- html_requirements: "Medical infographic with protein structure visualization, immune pathway diagram, and clinical applications. Use cards for different aspects, badges for key facts, icons for biological processes."
+- visual_elements: "Protein diagram, pathway arrows, medical icons, information cards"
+- is_html: true
+- is_image: false
+
+HTML SLIDE (Conceptual Diagram - AI Agents):
+- slide_purpose: "Visually explain what AI agents are and how they work"
+- detailed_purpose: "Create an engaging visual representation of AI agents showing their components, interactions, and decision-making process. Use icons, arrows, and structured layout to make complex concepts easily understandable."
+- html_requirements: "Interactive diagram with agent components (sensors, actuators, decision engine), environment representation, and data flow arrows. Use DaisyUI cards, badges, and icons to illustrate perception, reasoning, and action cycles."
+- visual_elements: "Component cards, flow arrows, Lucide icons for sensors/actuators, badges for agent states"
+- is_html: true
+- is_image: false
+
 HTML SLIDE (Timeline):
 - slide_purpose: "Show project timeline and phases"  
 - detailed_purpose: "Present comprehensive 6-month project roadmap with clear phases and deliverables. Help audience understand structured approach and feel confident about realistic timelines."
@@ -623,34 +793,69 @@ Focus on creating compelling narrative with strategic HTML visualizations that e
 
     def _get_planning_system_prompt(self) -> str:
         """Get the optimized system prompt for presentation planning"""
-        return """You are an expert presentation designer creating strategic, engaging presentations with precise HTML visualization decisions.
+        return """You are an expert presentation designer creating strategic, engaging presentations with precise placeholder-specific content requirements.
 
-🎯 CORE MISSION: Create detailed presentation plans that guide the entire content generation pipeline effectively.
+🎯 CORE MISSION: Create detailed presentation plans that specify exactly which placeholders need HTML, images, or text content.
 
 🔑 KEY RESPONSIBILITIES:
-1. **Strategic Layout Selection**: Choose layouts based on content type, not sequence
-2. **HTML Decision Making**: Explicitly decide which slides need HTML visualizations  
+1. **Strategic Layout Selection**: SELECT SPECIFIC LAYOUT_INDEX NUMBERS based on actual placeholder requirements. Read the available layouts carefully and choose the layout_index that best matches your content needs
+2. **Placeholder-Specific Planning**: Identify which placeholders need HTML, images, or text content
 3. **Image vs HTML Detection**: Distinguish between photographic/scene requests (for image generation) and data visualization needs (for HTML)
-4. **Detailed Specifications**: Provide comprehensive guidance for each slide
+4. **Detailed Specifications**: Provide comprehensive guidance for each slide and placeholder
 5. **Content Flow Design**: Ensure logical narrative progression
 
-🚨 CRITICAL: When users request visual scenes, photos, or illustrations (e.g., "image of a doctor working", "photo of people in meeting", "picture of office environment"), these should be handled as IMAGE GENERATION (is_html: false), NOT HTML visualization.
+🏗️ PLACEHOLDER CONTENT TYPES:
+• **text**: Regular text content (titles, bullet points, descriptions)
+• **html**: HTML visualizations (charts, timelines, comparisons, interactive elements)
+• **image**: AI-generated images (photos, scenes, illustrations, conceptual visuals)
+
+🚨 CRITICAL DISTINCTION:
+• **HTML content**: For data visualizations, charts, timelines, processes, comparisons
+• **Image content**: For photographic scenes, illustrations, conceptual visuals (e.g., "photo of office workspace", "illustration of teamwork")
+
+🎯 LAYOUT SELECTION CRITERIA:
+When selecting layout_index for each slide:
+• **READ the available layouts** and their placeholder names carefully
+• **CRITICAL MATCHING RULES**:
+  - If is_html=true → MUST select a layout with "Picture" or "Image" placeholder
+  - If is_image=true → MUST select a layout with "Picture" or "Image" placeholder  
+  - If both are false → Select a layout with text/content placeholders
+• **MATCH content needs to placeholders**: HTML and images require picture placeholders
+• **SELECT by actual requirements**: Don't use sequential indices (0,1,2,3...) - choose based on content fit
+• **CONSIDER placeholder count**: Match the number of content pieces to available placeholders
+• **PRIORITIZE appropriate layouts**: Text-heavy content → text layouts, Visual content → picture layouts
 
 📋 SPECIFICATION REQUIREMENTS:
 
 For EVERY slide, provide ALL of these fields:
+• **layout_index**: THE SPECIFIC LAYOUT INDEX NUMBER from available layouts (REQUIRED!)
 • **slide_purpose**: Clear, concise purpose (1-2 sentences)
 • **detailed_purpose**: Comprehensive explanation (3-4 sentences)
 • **content_structure**: Specific organization ("2-column layout", "5-step process")
 • **visual_elements**: Required visuals ("icons, arrows, timeline markers")
 • **key_information**: Essential content points (3-5 items)
+• **is_html**: true if ANY placeholder needs HTML content
+• **is_image**: true if ANY placeholder needs image generation
+• **placeholder_requirements**: List specifying content type for each placeholder
 
-For HTML slides (is_html: true), ALSO add:
+🎯 PLACEHOLDER REQUIREMENTS FORMAT:
+For each placeholder that needs special content, specify:
+- placeholder_name: "exact_placeholder_name"
+- content_type: "text" | "html" | "image"
+- description: "detailed description of what to generate"
+
+For HTML content, ALSO add:
 • **html_requirements**: Detailed visualization specs using creative DaisyUI storytelling patterns
+
+For image content, ALSO add:
+• **image_requirements**: Detailed scene/visual description for AI image generation
 
 🎨 HTML DECISION FRAMEWORK & STORYTELLING PATTERNS:
 
 SET is_html: true FOR visual content requiring:
+✅ **INFOGRAPHICS**: ANY slide described as "infographic" MUST have is_html: true
+✅ **Conceptual Diagrams**: Visual representations of concepts, systems, architectures (e.g., "AI agents", "system components")
+✅ **Visual Explanations**: Educational diagrams, concept visualizations, medical/scientific diagrams
 ✅ **Hero Journeys**: Problem statements, challenges, solution presentations
 ✅ **Transformation Stories**: Before/during/after scenarios, business evolution
 ✅ **Process Excellence**: Implementation roadmaps, step-by-step procedures
@@ -660,6 +865,8 @@ SET is_html: true FOR visual content requiring:
 ✅ Timelines, workflows, hierarchies, complex data relationships
 
 🎯 STORYTELLING PATTERN SELECTION GUIDE:
+• **Conceptual Diagram**: Use for explaining concepts, system overviews, architectural diagrams (e.g., "AI agents", "blockchain", "cloud architecture")
+• **Infographic**: Use for educational content, visual explanations, concept breakdowns
 • **Hero Journey**: Use for problem/solution slides, value propositions, transformation announcements
 • **Transformation Story**: Use for case studies, improvement showcases, evolution narratives  
 • **Process Excellence**: Use for methodology explanations, implementation guides, phase planning
@@ -678,6 +885,42 @@ SET is_html: false FOR simple content like:
 • HTML visualizations should enhance understanding, not complicate
 • Layout choices should match content requirements
 • Presentation should tell a compelling, coherent story
+
+📝 EXAMPLE SLIDE SPECIFICATION:
+
+For a slide about "Digital Transformation Impact" with placeholders "Title", "Main Content", and "Visual Content":
+
+```json
+{
+  "layout_index": 3,
+  "slide_title": "Digital Transformation Impact",
+  "slide_purpose": "Show the measurable impact of our digital transformation initiative.",
+  "detailed_purpose": "Present comprehensive metrics showing improved efficiency, cost savings, and customer satisfaction achieved through our digital transformation. Include visual timeline of transformation phases and key performance indicators.",
+  "content_structure": "Title at top, timeline visualization in main area, metrics dashboard below",
+  "visual_elements": "Timeline with milestones, metric cards, progress indicators",
+  "key_information": ["40% cost reduction", "60% faster processing", "95% customer satisfaction", "3-phase implementation"],
+  "is_html": true,
+  "is_image": false,
+  "html_requirements": "Create an interactive timeline showing transformation phases with embedded metrics dashboard using DaisyUI cards and progress elements",
+  "placeholder_requirements": [
+    {
+      "placeholder_name": "Title",
+      "content_type": "text",
+      "description": "Bold title emphasizing transformation impact"
+    },
+    {
+      "placeholder_name": "Main Content", 
+      "content_type": "html",
+      "description": "Interactive timeline visualization with phase markers and embedded metrics dashboard"
+    },
+    {
+      "placeholder_name": "Visual Content",
+      "content_type": "text", 
+      "description": "Supporting bullet points with key statistics"
+    }
+  ]
+}
+```
 
 Focus on creating presentations that are both visually engaging and strategically sound."""
 
@@ -3556,7 +3799,6 @@ class ImagePromptAgent:
         """
         image_prompts = {}
         slide_contents = state.get("slide_contents", [])
-        layouts_info = state.get("layouts_info", {})
         presentation_plan = state.get("presentation_plan", [])
         topic = state.get("topic", "")
 
@@ -3569,46 +3811,22 @@ class ImagePromptAgent:
             slides_list = presentation_plan
 
         for i, slide_content in enumerate(slide_contents):
-            # Get layout info
-            layout_index = getattr(slide_content, "layout_index", None)
-            if layout_index is None or layout_index not in layouts_info:
+            # Get the corresponding slide specification from the presentation plan
+            slide_spec = slides_list[i] if i < len(slides_list) else None
+            
+            if not slide_spec:
+                continue
+                
+            # Check if planning agent flagged this slide for image generation
+            is_image_slide = getattr(slide_spec, "is_image", False)
+            
+            if not is_image_slide:
                 continue
 
-            layout_info = layouts_info[layout_index]
-
-            # Method 1: Check if this layout has picture placeholders
-            has_picture = False
-            for placeholder in layout_info.get("placeholders", []):
-                if "Picture" in placeholder.get("name", ""):
-                    has_picture = True
-                    break
-
-            # Method 2: Check if content describes images (regardless of layout)
-            content_suggests_image = self._slide_content_suggests_image_prompt(
-                slide_content
-            )
-
-            # Skip if neither layout nor content suggests images
-            if not has_picture and not content_suggests_image:
-                continue
-
-            # Log detection method
-            if has_picture and content_suggests_image:
-                print(
-                    f"  🎯 Slide {i}: Detected image need via both layout and content analysis"
-                )
-            elif has_picture:
-                print(
-                    f"  🎯 Slide {i}: Detected image need via picture placeholder in layout"
-                )
-            else:
-                print(f"  🎯 Slide {i}: Detected image need via content analysis")
+            print(f"  🎯 Slide {i}: Planning agent flagged for image generation")
 
             # Get slide context
-            slide_spec = slides_list[i] if i < len(slides_list) else None
-            slide_title = (
-                getattr(slide_spec, "slide_title", "Slide") if slide_spec else "Slide"
-            )
+            slide_title = getattr(slide_spec, "slide_title", "Slide")
 
             # Create detailed prompt using LLM
             detailed_prompt = self._generate_detailed_image_prompt(
@@ -3624,108 +3842,6 @@ class ImagePromptAgent:
 
         return image_prompts
 
-    def _slide_content_suggests_image_prompt(self, slide_content) -> bool:
-        """
-        Analyze slide content to determine if it describes visual content that needs image generation.
-        This is specifically for the ImagePromptAgent to detect image needs for prompt creation.
-
-        Args:
-            slide_content: SlideContent object with content dictionary
-
-        Returns:
-            True if content suggests image generation is needed
-        """
-        try:
-            content = getattr(slide_content, "content", {})
-            if not content or not isinstance(content, dict):
-                return False
-
-            # Convert all content values to lowercase text for analysis
-            all_text = ""
-            for key, value in content.items():
-                # Skip background placeholders - they're handled separately
-                if "LOCKED_Background" in key:
-                    continue
-
-                if isinstance(value, str):
-                    all_text += value.lower() + " "
-                elif isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, str):
-                            all_text += item.lower() + " "
-
-            # Check if any content values mention image-related descriptions
-            # Look for phrases that describe visual scenes or images
-            visual_phrases = [
-                "image of",
-                "picture of",
-                "photo of",
-                "shows a",
-                "displays a",
-                "depicts a",
-                "illustrates a",
-                "features a",
-                "captures a",
-                "view of",
-                "scene of",
-                "visual of",
-                "rendering of",
-                "drawing of",
-                "sketch of",
-                "diagram of",
-                "chart showing",
-            ]
-
-            # Strong indicators for visual content
-            for phrase in visual_phrases:
-                if phrase in all_text:
-                    print(f"    ✅ ImagePromptAgent: Found visual phrase: '{phrase}'")
-                    return True
-
-            # Check individual content values for image descriptions
-            for key, value in content.items():
-                if "LOCKED_Background" in key:
-                    continue
-
-                if isinstance(value, str) and len(value) > 20:
-                    value_lower = value.lower()
-                    # Look for content that reads like image descriptions
-                    image_indicators = [
-                        "woman",
-                        "man",
-                        "person",
-                        "people",
-                        "scene",
-                        "setting",
-                        "background",
-                        "foreground",
-                        "lighting",
-                        "composition",
-                        "color palette",
-                        "atmosphere",
-                        "mood",
-                        "style",
-                        "professional",
-                        "medical",
-                        "healthcare",
-                        "business",
-                    ]
-
-                    # If content has multiple visual indicators and describes something tangible
-                    indicator_count = sum(
-                        1 for indicator in image_indicators if indicator in value_lower
-                    )
-                    if indicator_count >= 2:
-                        print(
-                            f"    ✅ ImagePromptAgent: Content '{key}' suggests image ({indicator_count} indicators)"
-                        )
-                        return True
-
-            return False
-
-        except Exception as e:
-            print(f"    ⚠️ ImagePromptAgent: Error analyzing slide content: {e}")
-            return False
 
     def _generate_detailed_image_prompt(
         self, topic: str, slide_title: str, slide_content, slide_spec
@@ -3917,7 +4033,7 @@ class ImageGenerationAgent:
 
     def _identify_image_slides(self, state: SlideGenerationState) -> list[dict]:
         """
-        Identify slides that need image generation by checking both layout and content.
+        Identify slides that need image generation based on planning agent decisions.
 
         Args:
             state: Current workflow state
@@ -3938,237 +4054,114 @@ class ImageGenerationAgent:
         else:
             slides_list = presentation_plan
 
+        print(f"🔍 Checking {len(slides_list) if slides_list else 0} slides for image requirements...")
+
         for i, slide_content in enumerate(slide_contents):
             layout_index = getattr(slide_content, "layout_index", None)
             layout_info = (
                 layouts_info.get(layout_index, {}) if layout_index is not None else {}
             )
 
-            # CRITICAL FIX: Use planning agent's decision to determine if image generation is needed
             # Get the corresponding slide specification from the presentation plan
             slide_spec = slides_list[i] if i < len(slides_list) else None
-            planned_content_type = (
-                getattr(slide_spec, "content_type", "text") if slide_spec else "text"
-            )
-
-            print(
-                f"  🔍 Slide {i+1}: Planning agent decided content_type='{planned_content_type}'"
-            )
-
-            # Only trigger image generation if planning agent decided this should be a visual slide
-            if planned_content_type != "visual":
-                print(
-                    f"  ⏭️ Slide {i+1}: Skipping image generation - planning agent chose '{planned_content_type}' (not 'visual')"
-                )
+            
+            if not slide_spec:
+                print(f"  ⚠️ Slide {i+1}: No slide specification found in presentation plan")
                 continue
 
-            # Additional check: Skip slides that already have HTML content (safety net)
-            slide_has_html = False
-            if hasattr(slide_content, "content") and slide_content.content:
-                for key, value in slide_content.content.items():
+            # Check if planning agent flagged this slide for image generation
+            is_image_slide = getattr(slide_spec, "is_image", False)
+            
+            print(f"  🔍 Slide {i+1}: Planning agent decision is_image={is_image_slide}")
+
+            if not is_image_slide:
+                print(f"  ⏭️ Slide {i+1}: Skipping - planning agent did not flag for image generation")
+                continue
+
+            # Get image placeholder requirements from planning agent
+            placeholder_requirements = getattr(slide_spec, "placeholder_requirements", None)
+            image_placeholders = []
+            
+            if placeholder_requirements:
+                image_placeholders = [
+                    req.placeholder_name for req in placeholder_requirements 
+                    if req.content_type == "image"
+                ]
+                print(f"  🎯 Slide {i+1}: Image placeholders specified: {image_placeholders}")
+            else:
+                print(f"  ⚠️ Slide {i+1}: No placeholder requirements specified, will search for suitable placeholders")
+
+            # Find actual placeholders in the layout that match the requirements
+            target_placeholders = []
+            layout_placeholders = layout_info.get("placeholders", [])
+            
+            if image_placeholders:
+                # Use planning agent's specific placeholder names
+                for placeholder in layout_placeholders:
+                    placeholder_name = placeholder.get("name", "")
+                    if placeholder_name in image_placeholders:
+                        target_placeholders.append(placeholder)
+                        print(f"    ✅ Found specified image placeholder: {placeholder_name}")
+            else:
+                # Fallback: search for suitable picture placeholders
+                for placeholder in layout_placeholders:
+                    placeholder_name = placeholder.get("name", "")
+                    placeholder_type = placeholder.get("type", 0)
+
+                    # Only look at picture placeholders (type 18)
+                    if placeholder_type != 18:
+                        continue
+
+                    # Skip LOCKED_ placeholders (these are background images)
+                    if "LOCKED_" in placeholder_name:
+                        print(f"    ⏭️ Skipping LOCKED placeholder: {placeholder_name}")
+                        continue
+
+                    # Skip HTML placeholders (these are for HTML-generated content)
+                    placeholder_name_lower = placeholder_name.lower()
                     if (
-                        key
-                        and "html" in key.lower()
-                        and value
-                        and len(str(value).strip()) > 100
+                        "html" in placeholder_name_lower
+                        or "generated from html" in placeholder_name_lower
+                        or "picture from html" in placeholder_name_lower
+                        or "visualization" in placeholder_name_lower
                     ):
-                        slide_has_html = True
-                        print(
-                            f"  ⏭️ Slide {i+1}: Skipping image generation - already has HTML content in '{key}'"
-                        )
-                        break
+                        print(f"    ⏭️ Skipping HTML/visualization placeholder: {placeholder_name}")
+                        continue
 
-            if slide_has_html:
-                continue  # Skip this slide entirely
+                    # This is a suitable picture placeholder for image generation
+                    target_placeholders.append(placeholder)
+                    print(f"    🎯 Found suitable image placeholder: {placeholder_name}")
 
-            # Now find the appropriate picture placeholder for this visual slide
-            # Since planning agent decided this needs an image, find the best placeholder
-            layout_name = layout_info.get("name", "").lower()
+            # Process each target placeholder
+            if target_placeholders:
+                for picture_placeholder in target_placeholders:
+                    # Get image prompt for this slide (preferring detailed prompts)
+                    image_prompt = self._get_image_prompt_for_slide(i, state)
 
-            print(
-                f"  🔍 Slide {i+1}: Layout '{layout_name}' (index {layout_index}) - Looking for image placeholder..."
-            )
-
-            # Find the best picture placeholder for image generation
-            picture_placeholder = None
-            for placeholder in layout_info.get("placeholders", []):
-                placeholder_name = placeholder.get("name", "")
-                placeholder_type = placeholder.get("type", 0)
-
-                # Only look at picture placeholders (type 18)
-                if placeholder_type != 18:
-                    continue
-
-                # Skip LOCKED_ placeholders (these are background images)
-                if "LOCKED_" in placeholder_name:
-                    print(f"    ⏭️ Skipping LOCKED placeholder: {placeholder_name}")
-                    continue
-
-                # Skip HTML placeholders (these are for HTML-generated content)
-                placeholder_name_lower = placeholder_name.lower()
-                if (
-                    "html" in placeholder_name_lower
-                    or "generated from html" in placeholder_name_lower
-                    or "picture from html" in placeholder_name_lower
-                    or "visualization" in placeholder_name_lower
-                ):
-                    print(
-                        f"    ⏭️ Skipping HTML/visualization placeholder: {placeholder_name}"
+                    image_slides.append(
+                        {
+                            "slide_index": i,
+                            "slide_content": slide_content,
+                            "placeholder": picture_placeholder,
+                            "image_prompt": image_prompt,
+                            "placeholder_description": picture_placeholder.get(
+                                "name", "Picture 16:9"
+                            ),
+                            "placeholder_width": picture_placeholder.get("width_px", 1200),
+                            "placeholder_height": picture_placeholder.get("height_px", 456),
+                            "detection_method": "planning_agent_decision",
+                        }
                     )
-                    continue
-
-                # This is a suitable picture placeholder for image generation
-                picture_placeholder = placeholder
-                print(
-                    f"    🎯 Found image placeholder for visual slide: {placeholder_name}"
-                )
-                break
-
-            if picture_placeholder:
-                # Get image prompt for this slide (preferring detailed prompts)
-                image_prompt = self._get_image_prompt_for_slide(i, state)
-
-                image_slides.append(
-                    {
-                        "slide_index": i,
-                        "slide_content": slide_content,
-                        "placeholder": picture_placeholder,
-                        "image_prompt": image_prompt,
-                        "placeholder_description": picture_placeholder.get(
-                            "name", "Picture 16:9"
-                        ),
-                        "placeholder_width": picture_placeholder.get("width_px", 1200),
-                        "placeholder_height": picture_placeholder.get("height_px", 456),
-                        "detection_method": "planning_agent_visual",
-                    }
-                )
-                print(
-                    f"  🎯 Slide {i+1}: Added to image generation queue (planning agent chose 'visual')"
-                )
+                    print(
+                        f"  🎯 Slide {i+1}: Added placeholder '{picture_placeholder.get('name', 'unnamed')}' to image generation queue"
+                    )
             else:
                 print(
-                    f"  ⚠️ Slide {i+1}: Planning agent chose 'visual' but no suitable image placeholder found"
+                    f"  ⚠️ Slide {i+1}: Planning agent flagged for images but no suitable placeholders found"
                 )
 
         return image_slides
 
-    def _slide_content_suggests_image(self, slide_content) -> bool:
-        """
-        Analyze slide content to determine if it suggests an image should be generated.
-
-        Args:
-            slide_content: SlideContent object with content dictionary
-
-        Returns:
-            True if content suggests image generation is needed
-        """
-        try:
-            content = getattr(slide_content, "content", {})
-            if not content or not isinstance(content, dict):
-                return False
-
-            # Convert all content values to lowercase text for analysis
-            all_text = ""
-            for key, value in content.items():
-                if isinstance(value, str):
-                    all_text += value.lower() + " "
-                elif isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, str):
-                            all_text += item.lower() + " "
-
-            # Keywords that suggest visual content is being described
-            image_keywords = [
-                "picture",
-                "image",
-                "photo",
-                "illustration",
-                "diagram",
-                "chart",
-                "graph",
-                "visual",
-                "scene",
-                "view",
-                "landscape",
-                "portrait",
-                "showing",
-                "depicts",
-                "displays",
-                "represents",
-                "features",
-                "captures",
-                "shot of",
-                "view of",
-                "example of",
-                "demonstrates",
-                "visualize",
-                "see",
-                "look at",
-                "observe",
-                "appearance",
-                "looks like",
-                "resembles",
-                "design",
-                "mockup",
-                "screenshot",
-                "rendering",
-                "artwork",
-                "drawing",
-                "sketch",
-                "infographic",
-                "poster",
-            ]
-
-            # Phrases that strongly suggest image descriptions
-            strong_image_phrases = [
-                "a picture of",
-                "an image of",
-                "a photo of",
-                "shows a",
-                "displays a",
-                "features a",
-                "depicts a",
-                "illustrates a",
-                "represents a",
-                "captures a",
-                "a visual of",
-                "a view of",
-                "a scene of",
-                "a diagram of",
-                "a chart showing",
-                "a graph of",
-                "an example of",
-                "a screenshot of",
-                "a rendering of",
-            ]
-
-            # Check for strong phrases first
-            for phrase in strong_image_phrases:
-                if phrase in all_text:
-                    print(f"    ✅ Found strong image phrase: '{phrase}'")
-                    return True
-
-            # Check for individual keywords (need multiple matches for confidence)
-            keyword_matches = []
-            for keyword in image_keywords:
-                if keyword in all_text:
-                    keyword_matches.append(keyword)
-
-            if len(keyword_matches) >= 2:
-                print(f"    ✅ Found multiple image keywords: {keyword_matches[:3]}")
-                return True
-            if len(keyword_matches) == 1 and len(all_text.split()) < 50:
-                # If content is short and has one image keyword, likely needs image
-                print(
-                    f"    ✅ Found image keyword in short content: {keyword_matches[0]}"
-                )
-                return True
-
-            return False
-
-        except Exception as e:
-            print(f"    ⚠️ Error analyzing slide content for images: {e}")
-            return False
 
     def _find_any_picture_placeholder(self, layout_info: dict):
         """
