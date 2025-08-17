@@ -15,14 +15,10 @@ cd src && python api_server.py
 # Install dependencies
 pip install -r requirements.txt
 
-# Test database connection
-python test_database_connection.py
-
-# Test file uploads
-python test_file_upload.py
-
-# Test webhook system
-python test_webhook_system.py
+# Test specific features
+python test_image_generation.py
+python test_html_prompt_manager.py
+python test_brochure_html_generation.py
 ```
 
 ### Frontend (Next.js)
@@ -40,6 +36,10 @@ npm run lint
 npm run lint:fix
 npm run format
 npm run type-check
+
+# Testing
+npm test
+npx playwright test
 ```
 
 ### HTML Rendering Setup
@@ -59,19 +59,21 @@ pip install weasyprint
 ## High-Level Architecture
 
 ### Agent-Based Workflow System
-The core of this system is a **6-agent LangGraph workflow** that creates PowerPoint presentations:
+The core of this system is a **multi-agent LangGraph workflow** that creates PowerPoint presentations:
 
 1. **Layout Analysis Agent** (`src/agents.py`) - Analyzes PowerPoint templates and creates dynamic Pydantic models for placeholder matching
 2. **Presentation Planning Agent** - Uses LLM to create intelligent slide structure with detailed specifications
 3. **Content Generation Agent** - Generates contextual content with full presentation awareness 
 4. **HTML Content Generation Agent** (`src/html_content_agent.py`) - Automatically detects and creates HTML visualizations for complex content
 5. **HTML Refinement Agent** - Uses visual feedback to iteratively improve HTML content
-6. **Slide Assembly Agent** - Creates final PowerPoint presentation with all content and formatting
+6. **Image Generation Agents** - Creates and refines images when needed
+7. **Quality Review Agent** - Assesses content completeness and relevance
+8. **Slide Assembly Agent** - Creates final PowerPoint presentation with all content and formatting
 
 ### Key Technical Concepts
 
 #### Dynamic Placeholder Dimensions
-**IMPORTANT**: The system now uses **dynamic placeholder dimensions** instead of hardcoded values:
+**IMPORTANT**: The system uses **dynamic placeholder dimensions** instead of hardcoded values:
 - HTML renderer functions require `width` and `height` parameters: `render_html_to_image(html_content, output_path, width, height)`
 - Dimensions are extracted from PowerPoint placeholders using EMU to pixel conversion: `int(placeholder.width.emu / 9525)`
 - HTML content includes viewport dimensions in body classes: `class="w-[1577px] h-[603px]"`
@@ -94,7 +96,6 @@ The core of this system is a **6-agent LangGraph workflow** that creates PowerPo
 - **Real-time Updates** - Supabase Realtime subscriptions for live workflow progress
 - **State Management** - Zustand stores for auth, projects, slides with persistence
 - **API Integration** - FastAPI server (`src/api_server.py`) provides REST endpoints and WebSocket connections
-- **Interactive Planning** - Chat-based presentation planning with outline approval triggers workflow execution
 
 ### Critical Implementation Details
 
@@ -115,6 +116,7 @@ The system supports true parallel HTML processing:
 # Environment variables for parallel processing
 USE_PARALLEL_HTML_CONTENT=true
 USE_PARALLEL_HTML_REFINEMENT=true
+USE_PARALLEL_SLIDE_PROCESSING=true
 ```
 
 #### Error Handling Pattern
@@ -156,11 +158,13 @@ AZURE_STORAGE_CONTAINER_NAME=your_container_name
 - **`generated_presentations/`** - Auto-generated PowerPoint files (git-ignored)
 - **`html_debug/`** - HTML visualization debug files and refinement iterations (git-ignored)
 - **`icon_cache/`** - Lucide icon assets for slide integration
+- **`templates/`** - PowerPoint templates with layout configurations
 
 ### Template and Assets
-- **`ekona_slides_template_new.pptx`** - Main PowerPoint template (version controlled)
+- **PowerPoint templates** - Must be in `templates/<name>/<name>.pptx` structure
 - **`layouts_export.json`** - Template layout analysis results
 - **`src/lucide-sprite.svg`** - Icon sprite definitions for HTML rendering
+- **`LOCKED_Background_X.png`** - Background images in template folders (auto-inserted into LOCKED_ placeholders)
 
 ## Development Notes
 
@@ -187,3 +191,16 @@ AZURE_STORAGE_CONTAINER_NAME=your_container_name
 2. Follow the established hook patterns in `frontend/src/hooks/`
 3. Maintain Zustand store patterns for state management
 4. Use the established database schema and real-time subscription patterns
+
+### Template Guidelines
+#### Placeholder Naming Conventions
+- **Regular Content**: "Title", "Content", "Body", "Text"
+- **Pictures**: Must be type 18 (PP_PLACEHOLDER.PICTURE) or contain "Picture", "Image", "Photo"
+- **Icons**: Must contain "icon" in name (case-insensitive)
+- **LOCKED_ Placeholders**: Reserved for background images, never generate content for these
+
+#### Layout Naming Best Practices
+Use descriptive layout names for better agent understanding:
+- "Title Slide", "Title and Content", "Title and Picture"
+- "Two Content", "Comparison", "Content with Caption"
+- Include keywords like "picture", "image", "content", "title" in layout names

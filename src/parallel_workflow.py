@@ -15,7 +15,7 @@ import concurrent.futures
 
 from langchain_core.runnables import RunnableConfig
 
-from .agents import (
+from .agent_modules import (
     ContentGenerationAgent,
     HTMLRefinementAgent,
     ImagePromptAgent,

@@ -1,37 +1,36 @@
 {
   "tracking_metadata": {
-    "session_start": "2025-08-17T11:55:33.959373",
+    "session_start": "2025-08-17T15:47:10.159338",
     "workflow_type": "parallel_slide_processing",
-    "total_slides": 5,
-    "completed_slides": 5,
+    "total_slides": 2,
+    "completed_slides": 2,
     "failed_slides": 0,
-    "last_updated": "2025-08-17T12:03:03.934199"
+    "last_updated": "2025-08-17T15:47:29.404184"
   },
   "workflow_state": {},
   "layout_analysis": {
-    "total_layouts": 2,
+    "total_layouts": 12,
     "layout_indices": [
       0,
-      1
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
     ],
     "has_dynamic_models": true,
-    "dynamic_models_count": 2,
-    "timestamp": "2025-08-17T12:01:43.538588",
+    "dynamic_models_count": 12,
+    "timestamp": "2025-08-17T15:47:15.779952",
     "sample_layout": {
       "index": 0,
-      "placeholder_count": 10,
-      "placeholder_names": [
-        "Fist page Picture - Main one",
-        "LOCKED_Background_1",
-        "References Title",
-        "Bulleted References",
-        "Ascensia Disclaimer",
-        "HTML content leaflet front right far side",
-        "HTML content leaflet front left far side",
-        "Main Subtitle",
-        "Main Text Title",
-        "Ascensia Service Phone number"
-      ]
+      "placeholder_count": 0,
+      "placeholder_names": []
     }
   },
   "presentation_planning": {},
@@ -42,64 +41,28 @@
   "slide_assembly": {},
   "individual_slides": [
     {
-      "slide_id": "aed75c7f-0ed3-4f8d-b9f2-77632ba01c38",
-      "slide_number": 1,
-      "status": "completed",
-      "timestamp": "2025-08-17T11:57:45.210943",
-      "template_path": "templates/ekona_slides_template_new/ekona_slides_template_new.pptx",
-      "has_html_image": false,
-      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250817_115744_dcb4573a.pptx",
-      "storage_path": "projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/aed75c7f-0ed3-4f8d-b9f2-77632ba01c38/slide_1_20250817_115744.pptx",
-      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/aed75c7f-0ed3-4f8d-b9f2-77632ba01c38/slide_1_20250817_115744.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzLzcyYjg5MDgxLTgyMjktNDJkOS1hM2E5LTAzMDg5MTEzMDM3ZS9pbmRpdmlkdWFsX3NsaWRlcy9hZWQ3NWM3Zi0wZWQzLTRmOGQtYjlmMi03NzYzMmJhMDFjMzgvc2xpZGVfMV8yMDI1MDgxN18xMTU3NDQucHB0eCIsImlhdCI6MTc1NTQyNDY2NSwiZXhwIjoxNzU1NTExMDY1fQ.1cXka5yD1j-C_c4PwaX1xgD7ieP2SgA3vAOovVDjf7I",
-      "file_size": 1894237
-    },
-    {
-      "slide_id": "c62ada09-7a8c-4cc5-9d0b-03c76c7897db",
-      "slide_number": 3,
-      "status": "completed",
-      "timestamp": "2025-08-17T11:57:49.622771",
-      "template_path": "templates/ekona_slides_template_new/ekona_slides_template_new.pptx",
-      "has_html_image": false,
-      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_3_20250817_115749_05466b05.pptx",
-      "storage_path": "projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/c62ada09-7a8c-4cc5-9d0b-03c76c7897db/slide_3_20250817_115749.pptx",
-      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/c62ada09-7a8c-4cc5-9d0b-03c76c7897db/slide_3_20250817_115749.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzLzcyYjg5MDgxLTgyMjktNDJkOS1hM2E5LTAzMDg5MTEzMDM3ZS9pbmRpdmlkdWFsX3NsaWRlcy9jNjJhZGEwOS03YThjLTRjYzUtOWQwYi0wM2M3NmM3ODk3ZGIvc2xpZGVfM18yMDI1MDgxN18xMTU3NDkucHB0eCIsImlhdCI6MTc1NTQyNDY2OSwiZXhwIjoxNzU1NTExMDY5fQ.xtvUploGdSUlWmKX5HkEKADgW8lHkjkv7ZDeYzMpwmY",
-      "file_size": 1962127
-    },
-    {
-      "slide_id": "ffd4af93-594a-4a0e-91eb-2a17aec9f522",
+      "slide_id": "5ba85a65-d167-4b27-8bb4-973595989695",
       "slide_number": 2,
       "status": "completed",
-      "timestamp": "2025-08-17T11:58:22.583971",
+      "timestamp": "2025-08-17T15:47:26.225247",
       "template_path": "templates/ekona_slides_template_new/ekona_slides_template_new.pptx",
       "has_html_image": false,
-      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_2_20250817_115822_cf1dcfa5.pptx",
-      "storage_path": "projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/ffd4af93-594a-4a0e-91eb-2a17aec9f522/slide_2_20250817_115822.pptx",
-      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/72b89081-8229-42d9-a3a9-03089113037e/individual_slides/ffd4af93-594a-4a0e-91eb-2a17aec9f522/slide_2_20250817_115822.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzLzcyYjg5MDgxLTgyMjktNDJkOS1hM2E5LTAzMDg5MTEzMDM3ZS9pbmRpdmlkdWFsX3NsaWRlcy9mZmQ0YWY5My01OTRhLTRhMGUtOTFlYi0yYTE3YWVjOWY1MjIvc2xpZGVfMl8yMDI1MDgxN18xMTU4MjIucHB0eCIsImlhdCI6MTc1NTQyNDcwMiwiZXhwIjoxNzU1NTExMTAyfQ.lntittks8EwO1yT2-uSq9txqk5ugutq0e-xufvhGRfk",
-      "file_size": 1857073
+      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_2_20250817_154725_c0ce7f2a.pptx",
+      "storage_path": "projects/928f27c5-2ad4-424a-ab52-091f63db3446/individual_slides/5ba85a65-d167-4b27-8bb4-973595989695/slide_2_20250817_154725.pptx",
+      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/928f27c5-2ad4-424a-ab52-091f63db3446/individual_slides/5ba85a65-d167-4b27-8bb4-973595989695/slide_2_20250817_154725.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzLzkyOGYyN2M1LTJhZDQtNDI0YS1hYjUyLTA5MWY2M2RiMzQ0Ni9pbmRpdmlkdWFsX3NsaWRlcy81YmE4NWE2NS1kMTY3LTRiMjctOGJiNC05NzM1OTU5ODk2OTUvc2xpZGVfMl8yMDI1MDgxN18xNTQ3MjUucHB0eCIsImlhdCI6MTc1NTQzODQ0NiwiZXhwIjoxNzU1NTI0ODQ2fQ.vh61C-ULr7lf1m-Zre5pLLlHqz3NCbQXRqNlJOVyjOw",
+      "file_size": 1708293
     },
     {
-      "slide_id": "0be4d9c1-0924-4c0f-8df4-250436b6f7e4",
+      "slide_id": "a2c8a1c1-216a-45a8-8828-11dc188c6451",
       "slide_number": 1,
       "status": "completed",
-      "timestamp": "2025-08-17T12:00:52.156600",
+      "timestamp": "2025-08-17T15:47:29.166443",
       "template_path": "templates/ekona_slides_template_new/ekona_slides_template_new.pptx",
       "has_html_image": false,
-      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250817_120051_3e6ba7c9.pptx",
-      "storage_path": "projects/a81e9ae5-df94-46d9-a821-78e669f0f068/individual_slides/0be4d9c1-0924-4c0f-8df4-250436b6f7e4/slide_1_20250817_120051.pptx",
-      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/a81e9ae5-df94-46d9-a821-78e669f0f068/individual_slides/0be4d9c1-0924-4c0f-8df4-250436b6f7e4/slide_1_20250817_120051.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2E4MWU5YWU1LWRmOTQtNDZkOS1hODIxLTc4ZTY2OWYwZjA2OC9pbmRpdmlkdWFsX3NsaWRlcy8wYmU0ZDljMS0wOTI0LTRjMGYtOGRmNC0yNTA0MzZiNmY3ZTQvc2xpZGVfMV8yMDI1MDgxN18xMjAwNTEucHB0eCIsImlhdCI6MTc1NTQyNDg1MiwiZXhwIjoxNzU1NTExMjUyfQ.Nygcz-V54waiu74CLhllNMbDbc1TAFxMPwZ2-fBLz4I",
-      "file_size": 3870734
-    },
-    {
-      "slide_id": "67852383-7689-4433-aba8-f91b52fe959e",
-      "slide_number": 1,
-      "status": "completed",
-      "timestamp": "2025-08-17T12:03:03.731776",
-      "template_path": "templates/Brochure_template_leaflet_4sides/Brochure_template_leaflet_4sides.pptx",
-      "has_html_image": false,
-      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250817_120303_eea3feba.pptx",
-      "storage_path": "projects/d85599b2-38a2-49ba-a975-ea32cf590064/individual_slides/67852383-7689-4433-aba8-f91b52fe959e/slide_1_20250817_120303.pptx",
-      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/d85599b2-38a2-49ba-a975-ea32cf590064/individual_slides/67852383-7689-4433-aba8-f91b52fe959e/slide_1_20250817_120303.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2Q4NTU5OWIyLTM4YTItNDliYS1hOTc1LWVhMzJjZjU5MDA2NC9pbmRpdmlkdWFsX3NsaWRlcy82Nzg1MjM4My03Njg5LTQ0MzMtYWJhOC1mOTFiNTJmZTk1OWUvc2xpZGVfMV8yMDI1MDgxN18xMjAzMDMucHB0eCIsImlhdCI6MTc1NTQyNDk4MywiZXhwIjoxNzU1NTExMzgzfQ.oAKPHgWbBjRAQMXEDgTDYQWnQcIS64Tx_qxLGt6eGYY",
-      "file_size": 1934915
+      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250817_154728_888d6e85.pptx",
+      "storage_path": "projects/928f27c5-2ad4-424a-ab52-091f63db3446/individual_slides/a2c8a1c1-216a-45a8-8828-11dc188c6451/slide_1_20250817_154728.pptx",
+      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/928f27c5-2ad4-424a-ab52-091f63db3446/individual_slides/a2c8a1c1-216a-45a8-8828-11dc188c6451/slide_1_20250817_154728.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzLzkyOGYyN2M1LTJhZDQtNDI0YS1hYjUyLTA5MWY2M2RiMzQ0Ni9pbmRpdmlkdWFsX3NsaWRlcy9hMmM4YTFjMS0yMTZhLTQ1YTgtODgyOC0xMWRjMTg4YzY0NTEvc2xpZGVfMV8yMDI1MDgxN18xNTQ3MjgucHB0eCIsImlhdCI6MTc1NTQzODQ0OSwiZXhwIjoxNzU1NTI0ODQ5fQ.p2Foyzng7dMFsodRlBQuK9mn804gLR3VOvWLzWxQbQc",
+      "file_size": 1708323
     }
   ],
   "final_presentation": {
@@ -109,7 +72,7 @@
     "total_slides": 0,
     "file_size": 0,
     "error": null,
-    "timestamp": "2025-08-17T12:03:03.934197"
+    "timestamp": "2025-08-17T15:47:29.404181"
   },
   "errors": [],
   "performance_metrics": {}

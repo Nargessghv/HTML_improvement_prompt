@@ -10,17 +10,16 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
 
 from langchain_core.runnables import RunnableConfig
 
 from .azure_uploader import AzureBlobUploader
-from .dynamic_models import create_presentation_models
 from .html_renderer import HTMLRenderer
-from .layout_analyzer import LayoutAnalyzer
 from .llm_client import LangchainLLMClient, SlideContent
 from .llm_models import RefinedHTML, SlideSpec
 from .monitoring import monitor_agent_execution, slide_monitor
+from .state import SlideGenerationState
 
 # Add PIL for image compression
 try:
@@ -30,120 +29,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
     print("⚠️ PIL not available - image compression disabled")
-
-
-class SlideGenerationState(TypedDict):
-    """
-    State object that flows through the agent workflow
-
-    Tracks all data needed for slide generation across different agent steps
-    """
-
-    # Input parameters
-    topic: str
-    template_path: str
-    template_folder_path: Optional[
-        str
-    ]  # Path to template folder for locked backgrounds
-    output_path: str
-    layout_indices: Optional[List[int]]
-    title: Optional[str]
-    approved_outline: Optional[Dict[str, Any]]  # Interactive planning outline
-
-    # Workflow state
-    current_step: str
-    error_message: Optional[str]
-    retry_count: int
-    html_refinement_iteration: int
-    html_refinement_slide_index: Optional[int]
-    html_slides_to_refine_queue: Optional[list[int]]
-    refinement_id: Optional[str]  # Add this line
-
-    # Analysis results
-    layouts_info: Optional[Dict[int, Dict[str, Any]]]
-    dynamic_models: Optional[Dict[int, Any]]
-
-    # Planning results
-    presentation_plan: Optional[List[SlideSpec]]
-    selected_layouts: Optional[List[int]]
-
-    # Content generation results
-    slide_contents: Optional[List[SlideContent]]
-
-    # Icon validation results
-    icon_errors: Optional[List[str]]
-    icon_corrections: Optional[Dict[str, str]]
-    needs_icon_retry: bool
-    needs_html_refinement: bool
-
-    # Image generation results
-    image_prompts: Optional[Dict[int, str]]  # Detailed prompts for each slide
-    generated_images: Optional[Dict[int, Dict[str, Any]]]
-    refined_images: Optional[Dict[int, Dict[str, Any]]]
-    needs_image_refinement: bool
-
-    # Final output
-    presentation_path: Optional[str]
-    success: bool
-
-    # Monitoring context
-    monitor_trace: Optional[Any]
-
-    # Project tracking for Supabase integration
-    project_id: Optional[str]
-
-
-class LayoutAnalysisAgent:
-    """
-    Agent responsible for analyzing PowerPoint template layouts
-    and creating dynamic models for content generation
-    """
-
-    def __init__(self):
-        self.name = "layout_analyzer"
-
-    @monitor_agent_execution("layout_analyzer")
-    def execute(
-        self, state: SlideGenerationState, config: Optional[RunnableConfig] = None
-    ) -> SlideGenerationState:
-        """
-        Analyze template layouts and create dynamic models
-
-        Args:
-            state: Current workflow state
-            config: Langchain configuration with callbacks
-
-        Returns:
-            Updated state with layout analysis results
-        """
-        print(f"🔍 {self.name}: Analyzing template layouts...")
-
-        try:
-            # Initialize layout analyzer
-            layout_analyzer = LayoutAnalyzer(state["template_path"])
-
-            # Analyze all layouts in the template
-            layouts_info = layout_analyzer.analyze_all_layouts()
-
-            # Create dynamic Pydantic models for structured content generation
-            dynamic_models = create_presentation_models(layouts_info)
-
-            # Update state with analysis results
-            state["layouts_info"] = layouts_info
-            state["dynamic_models"] = dynamic_models
-            state["current_step"] = "layout_analysis_complete"
-
-            print(f"✅ {self.name}: Analyzed {len(layouts_info)} layouts")
-            print(f"✅ {self.name}: Layout_info: {layouts_info}")
-            print(f"✅ {self.name}: Created {len(dynamic_models)} dynamic models")
-
-            return state
-
-        except Exception as e:
-            print(f"❌ {self.name}: Error during layout analysis: {e}")
-            state["error_message"] = f"Layout analysis failed: {str(e)}"
-            state["current_step"] = "error"
-            return state
 
 
 class PresentationPlanningAgent:

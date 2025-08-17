@@ -222,7 +222,7 @@ def analyze_template_with_agents(template_path: str) -> None:
     Args:
         template_path: Path to template file
     """
-    from .agents import LayoutAnalysisAgent, SlideGenerationState
+    from .agent_modules import LayoutAnalysisAgent, SlideGenerationState
 
     print("🔍 Running layout analysis with AI agent...")
 
