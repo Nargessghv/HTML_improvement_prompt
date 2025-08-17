@@ -30,6 +30,44 @@ export function useWorkflowManagement() {
   const [isRetrying, setIsRetrying] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
 
+  const getExpectedSlideCount = useCallback(async (projectId: string): Promise<number> => {
+    try {
+      // Get planning workflow state output_data
+      const { data, error } = await supabase
+        .from('workflow_states')
+        .select('output_data')
+        .eq('project_id', projectId)
+        .eq('agent_name', 'planning')
+        .eq('status', 'completed')
+        .order('created_at', { desc: true })
+        .limit(1)
+
+      if (error) {
+        console.error('Error fetching planning workflow state:', error)
+        return 0
+      }
+
+      if (data && data.length > 0) {
+        const outputData = data[0].output_data
+        
+        // Check for presentation_plan in output_data
+        if (outputData?.presentation_plan && Array.isArray(outputData.presentation_plan)) {
+          return outputData.presentation_plan.length
+        }
+        
+        // Check for slides in output_data (alternative structure)
+        if (outputData?.slides && Array.isArray(outputData.slides)) {
+          return outputData.slides.length
+        }
+      }
+
+      return 0
+    } catch (error) {
+      console.error('Error getting expected slide count:', error)
+      return 0
+    }
+  }, [supabase])
+
   const retryFailedStages = useCallback(async (projectId: string, failedStates: WorkflowState[]) => {
     if (!user) {
       toast.error('User not authenticated')
@@ -224,6 +262,7 @@ export function useWorkflowManagement() {
     cancelWorkflow,
     restartWorkflow,
     getWorkflowHealth,
+    getExpectedSlideCount,
     isRetrying,
     isCancelling
   }

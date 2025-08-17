@@ -27,7 +27,8 @@ import httpx
 from supabase import create_client
 from .workflow import SlideGenerationWorkflow
 from .database import get_supabase_client, SupabaseClient, DatabaseError, DatabaseConnectionError, DatabaseValidationError, DatabasePermissionError
-from .chat_agent import PresentationPlanningAgent, PresentationOutline
+from .chat_agent import PresentationPlanningAgent as ChatPlanningAgent, PresentationOutline
+from .agent_modules.presentation_planning_agent import PresentationPlanningAgent
 
 # Configure logging for API server
 logging.basicConfig(
@@ -386,6 +387,7 @@ async def create_slide_records_from_outline(project_id: str, approved_outline: D
                 "title": slide_spec.get("title", "Untitled"),
                 "content": slide_spec,
                 "layout_type": slide_spec.get("layout_type"),
+                "layout_index": slide_spec.get("layout_index", 0),  # Include layout_index for proper slide generation
                 "status": "pending"  # Initially pending, will be updated during processing
             }
             
@@ -1327,8 +1329,8 @@ def _get_storage_bucket_for_type(file_type: str) -> str:
 
 # Chat endpoints for interactive presentation planning
 
-# Initialize chat agent
-chat_agent = PresentationPlanningAgent()
+# Initialize chat agent (for interactive planning)
+chat_agent = ChatPlanningAgent()
 
 @app.post("/chat/start", response_model=ChatMessageResponse)
 async def start_chat_session(
@@ -1574,99 +1576,111 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
             # Create slide records immediately so they appear in the frontend
             await create_slide_records_from_outline(project_id, approved_outline)
         
-        # Check if parallel processing is enabled
-        use_parallel_processing = os.getenv("USE_PARALLEL_SLIDE_PROCESSING", "false").lower() == "true"
+        # Always use parallel processing for optimal user experience
         max_concurrent = os.getenv("MAX_CONCURRENT_SLIDES", "5")
-        api_logger.info(f"Parallel processing enabled: {use_parallel_processing}, Max concurrent: {max_concurrent}")
+        api_logger.info(f"Using parallel processing with max concurrent: {max_concurrent}")
         
-        if use_parallel_processing:
-            # If no approved outline for parallel processing, generate one automatically
-            if not approved_outline:
-                api_logger.info("🎯 No approved outline provided - generating outline for parallel processing")
-                
-                # Use the planning agent to generate an outline
-                planning_agent = PresentationPlanningAgent()
-                try:
-                    # Generate outline using the new quickstart method that respects project description
-                    outline_result = await planning_agent.generate_outline_for_quickstart(
-                        topic=actual_topic,
-                        project_id=project_id
-                    )
-                    
-                    if outline_result and hasattr(outline_result, 'slides'):
-                        # Convert PresentationOutline object to dict format expected by parallel workflow
-                        approved_outline = {
-                            "title": outline_result.title,
-                            "topic": outline_result.topic,
-                            "slides": [
-                                {
-                                    "slide_number": slide.slide_number,
-                                    "title": slide.title,
-                                    "key_points": slide.key_points,
-                                    "layout_type": slide.suggested_layout or "content",
-                                    "notes": slide.notes,
-                                    "is_html": slide.is_html,
-                                    "is_image": slide.is_image,
-                                    "placeholder_requirements": [
-                                        {
-                                            "placeholder_name": req.placeholder_name,
-                                            "content_type": req.content_type,
-                                            "description": req.description
-                                        } for req in (slide.placeholder_requirements or [])
-                                    ]
-                                }
-                                for slide in outline_result.slides
-                            ]
-                        }
-                        api_logger.info(f"✅ Auto-generated outline with {len(approved_outline.get('slides', []))} slides")
-                        
-                        # Create slide records for auto-generated outline too
-                        await create_slide_records_from_outline(project_id, approved_outline)
-                    else:
-                        api_logger.warning("⚠️ Failed to auto-generate outline - falling back to sequential workflow")
-                        use_parallel_processing = False
-                        
-                except Exception as e:
-                    api_logger.error(f"❌ Error auto-generating outline: {e}")
-                    api_logger.warning("⚠️ Falling back to sequential workflow")
-                    use_parallel_processing = False
+        # Always use parallel processing for the best user experience (creates individual slide PPTX files)
+        # Generate outline using proper presentation planning agent if not provided
+        if not approved_outline:
+            api_logger.info("🎯 No approved outline - generating outline using proper presentation planning agent")
             
-            if use_parallel_processing and approved_outline:
-                api_logger.info("🚀 Using parallel slide processing")
-                # Run parallel workflow
-                result = await workflow.run_parallel_for_approved_outline(
-                    topic=actual_topic,
-                    template_path=template_path,
-                    output_path=output_path,
-                    approved_outline=approved_outline,
-                    title=project.get("title"),
-                    template_folder_path=template_folder_path,
-                    html_refinement_iterations=html_refinement_iterations
-                )
-            else:
-                # Run standard workflow
-                api_logger.info("🔄 Using standard sequential workflow")
+            try:
+                # Run the first two steps of the workflow to get proper presentation plan
+                from .agent_modules.layout_analysis_agent import LayoutAnalysisAgent
+                from .agent_modules.presentation_planning_agent import PresentationPlanningAgent
+                
+                # Step 1: Layout Analysis
+                layout_agent = LayoutAnalysisAgent()
+                layout_state = layout_agent.execute({
+                    "topic": actual_topic,
+                    "template_path": template_path,
+                    "title": project.get("title"),
+                    "current_step": "layout_analysis"
+                })
+                
+                if not layout_state.get("layouts_info"):
+                    raise Exception("Layout analysis failed - no layouts found")
+                
+                # Step 2: Presentation Planning (this uses the proper agent with title slide requirements)
+                planning_agent = PresentationPlanningAgent()
+                planning_state = planning_agent.execute({
+                    **layout_state,  # Include layout analysis results
+                    "topic": actual_topic,
+                    "title": project.get("title"),
+                    "approved_outline": None,  # No pre-approved outline for quick generate
+                    "current_step": "planning"
+                })
+                
+                if not planning_state.get("presentation_plan"):
+                    raise Exception("Presentation planning failed - no plan generated")
+                
+                # Convert SlideSpec objects to outline format for parallel processing
+                presentation_plan = planning_state["presentation_plan"]
+                approved_outline = {
+                    "title": project.get("title") or "Generated Presentation",
+                    "topic": actual_topic,
+                    "slides": []
+                }
+                
+                for idx, slide_spec in enumerate(presentation_plan, 1):
+                    # Extract key points from slide_purpose (simple extraction)
+                    purpose_text = slide_spec.slide_purpose
+                    key_points = [purpose_text] if purpose_text else ["Generated content"]
+                    
+                    # Debug: Log what the presentation planning agent actually set
+                    api_logger.info(f"🔍 Slide {idx}: '{slide_spec.slide_title}' - is_html={slide_spec.is_html}, is_image={slide_spec.is_image}")
+                    
+                    slide_data = {
+                        "slide_number": idx,  # Generate slide number from index
+                        "title": slide_spec.slide_title,  # Use slide_title not title
+                        "key_points": key_points,  # Extract from slide_purpose
+                        "layout_type": "content",  # Default layout type
+                        "layout_index": slide_spec.layout_index,
+                        "notes": getattr(slide_spec, 'detailed_purpose', ''),
+                        "is_html": slide_spec.is_html,
+                        "is_image": slide_spec.is_image,
+                        "placeholder_requirements": [
+                            {
+                                "placeholder_name": req.placeholder_name,
+                                "content_type": req.content_type,
+                                "description": req.description
+                            } for req in (slide_spec.placeholder_requirements or [])
+                        ]
+                    }
+                    approved_outline["slides"].append(slide_data)
+                
+                api_logger.info(f"✅ Generated outline with {len(approved_outline['slides'])} slides using proper presentation planning agent")
+                
+                # Create slide records for immediate frontend visibility
+                await create_slide_records_from_outline(project_id, approved_outline)
+                
+            except Exception as e:
+                api_logger.error(f"❌ Error generating outline with presentation planning agent: {e}")
+                # Fallback to standard workflow
+                api_logger.info("🔄 Falling back to standard workflow")
                 result = workflow.run(
                     topic=actual_topic,
                     template_path=template_path,
                     template_folder_path=template_folder_path,
                     output_path=output_path,
                     title=project.get("title"),
-                    approved_outline=approved_outline,
+                    approved_outline=None,
                     html_refinement_iterations=html_refinement_iterations
                 )
-        else:
-            # Run standard workflow
-            api_logger.info("🔄 Using standard sequential workflow (parallel processing disabled)")
-            result = workflow.run(
-                topic=actual_topic,
-                template_path=template_path,
-                template_folder_path=template_folder_path,
-                output_path=output_path,
-                title=project.get("title"),
-                approved_outline=approved_outline,
-                html_refinement_iterations=html_refinement_iterations
-            )
+                return
+        
+        # Use parallel processing with the approved outline
+        api_logger.info("🚀 Using parallel slide processing")
+        result = await workflow.run_parallel_for_approved_outline(
+            topic=actual_topic,
+            template_path=template_path,
+            output_path=output_path,
+            approved_outline=approved_outline,
+            title=project.get("title"),
+            template_folder_path=template_folder_path,
+            html_refinement_iterations=html_refinement_iterations
+        )
         
         if result.get("success"):
             # Update project as completed

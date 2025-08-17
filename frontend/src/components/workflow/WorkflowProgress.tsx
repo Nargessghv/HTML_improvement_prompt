@@ -51,7 +51,7 @@ interface WorkflowProgressProps {
   autoRefreshEnabled?: boolean
 }
 
-// Define the AI agent workflow stages in order
+// Define the AI agent workflow stages in order (matching backend agent names)
 const WORKFLOW_STAGES = [
   {
     name: 'layout_analysis',
@@ -62,23 +62,30 @@ const WORKFLOW_STAGES = [
   },
   {
     name: 'planning',
-    label: 'Content Planning', 
-    description: 'Planning slide content and structure',
+    label: 'Presentation Planning', 
+    description: 'Creating detailed presentation outline',
     estimatedTimeMinutes: 3,
     isGlobal: true
   },
   {
-    name: 'slide_creation',
-    label: 'Creating Slides',
-    description: 'Generating individual slides in parallel',
-    estimatedTimeMinutes: 8,
+    name: 'content_generation',
+    label: 'Content Generation',
+    description: 'Generating slide content and narratives',
+    estimatedTimeMinutes: 4,
     isGlobal: true
   },
   {
-    name: 'assembly',
-    label: 'Final Assembly',
-    description: 'Assembling final presentation',
+    name: 'html_generation',
+    label: 'HTML Generation',
+    description: 'Creating HTML visualizations',
     estimatedTimeMinutes: 3,
+    isGlobal: true
+  },
+  {
+    name: 'refinement',
+    label: 'HTML Refinement',
+    description: 'Optimizing and refining HTML content',
+    estimatedTimeMinutes: 4,
     isGlobal: true
   }
 ]
@@ -217,14 +224,7 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
 
     // Calculate remaining stages
     const remainingStages = WORKFLOW_STAGES.filter(stage => {
-      const stageState = states.find(s => 
-        s.agent_name === stage.name || 
-        (s.agent_name === 'presentation_planner' && stage.name === 'planning') ||
-        (s.agent_name === 'content_generator' && stage.name === 'content_generation') ||
-        (s.agent_name === 'html_content_generator' && stage.name === 'html_generation') ||
-        (s.agent_name === 'html_refinement_agent' && stage.name === 'refinement') ||
-        (s.agent_name === 'slide_assembler' && stage.name === 'assembly')
-      )
+      const stageState = states.find(s => s.agent_name === stage.name)
       return !stageState || stageState.status !== 'completed'
     })
     
@@ -358,18 +358,8 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
       )[0]
     }
     
-    // Map UI stage names to actual backend agent names
-    const stageToAgentMap: Record<string, string> = {
-      'layout_analysis': 'layout_analysis',
-      'planning': 'planning', 
-      'slide_creation': 'content_generation', // Use content_generation for slide creation stage
-      'assembly': 'assembly'
-    }
-    
-    const agentName = stageToAgentMap[stageName]
-    if (!agentName) return null
-    
-    return getMostRecentState(agentName)
+    // Direct mapping since stage names now match backend agent names
+    return getMostRecentState(stageName)
   }
 
   const getOverallProgress = (): number => {
@@ -377,8 +367,8 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
     const completedStages = WORKFLOW_STAGES.filter(stage => {
       const state = getWorkflowStateForStage(stage.name)
       
-      // Special handling for slide_creation stage - check slide progress
-      if (stage.name === 'slide_creation') {
+      // Special handling for html_generation stage - check slide progress if available
+      if (stage.name === 'html_generation' && slideProgress) {
         return slideProgress?.completion_percentage === 100
       }
       
@@ -525,14 +515,14 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
                 const isCompleted = status === 'completed'
                 const isFailed = status === 'failed'
 
-                // Special handling for slide creation stage
-                const isSlideCreationStage = stage.name === 'slide_creation'
+                // Special handling for html_generation stage (shows slide progress if available)
+                const isHtmlGenerationStage = stage.name === 'html_generation'
                 const slideCreationStatus = slideProgress ? 
                   (slideProgress.completion_percentage === 100 ? 'completed' : 
                    slideProgress.in_progress_slides > 0 ? 'in_progress' : 'pending') : 'pending'
 
-                const finalStatus = isSlideCreationStage ? slideCreationStatus : status
-                const FinalStatusIcon = isSlideCreationStage ? statusConfig[slideCreationStatus].icon : StatusIcon
+                const finalStatus = isHtmlGenerationStage && slideProgress ? slideCreationStatus : status
+                const FinalStatusIcon = isHtmlGenerationStage && slideProgress ? statusConfig[slideCreationStatus].icon : StatusIcon
 
                 return (
                   <div key={stage.name} className={`flex items-center space-x-3 p-3 rounded-lg border ${
@@ -574,8 +564,8 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
                         {stage.description}
                       </p>
 
-                      {/* Show slide progress for slide creation stage */}
-                      {isSlideCreationStage && slideProgress && (
+                      {/* Show slide progress for html_generation stage */}
+                      {isHtmlGenerationStage && slideProgress && (
                         <div className="mt-2 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span>Individual Slides</span>
@@ -612,7 +602,7 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
                       )}
 
                       {/* Show execution time for completed stages */}
-                      {state?.execution_time_seconds && finalStatus === 'completed' && !isSlideCreationStage && (
+                      {state?.execution_time_seconds && finalStatus === 'completed' && !isHtmlGenerationStage && (
                         <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
                           Completed in {state.execution_time_seconds}s
                         </p>
@@ -626,7 +616,7 @@ export function WorkflowProgress({ project, autoRefreshEnabled = true }: Workflo
                       )}
 
                       {/* Show detailed data when details are visible */}
-                      {showDetails && state && (finalStatus === 'completed' || finalStatus === 'in_progress') && !isSlideCreationStage && (
+                      {showDetails && state && (finalStatus === 'completed' || finalStatus === 'in_progress') && !isHtmlGenerationStage && (
                         <div className="mt-2 space-y-1 text-xs text-neutral-500 dark:text-neutral-400">
                           {state.started_at && (
                             <p>Started: {new Date(state.started_at).toLocaleTimeString()}</p>

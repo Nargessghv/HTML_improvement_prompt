@@ -308,6 +308,11 @@ When the user seems ready, generate a complete presentation outline with strateg
 ORIGINAL PROJECT DESCRIPTION:
 {topic}
 
+🚨 CRITICAL REQUIREMENTS - READ FIRST:
+• START WITH TITLE SLIDE: Your presentation MUST begin with a title slide
+• ADD TO SLIDE COUNT: If user requests "4 slides", create title slide PLUS 4 content slides (5 total)
+• FOLLOW exact slide count if specified ("one slide only", "3 slides", "5-slide presentation")
+
 IMPORTANT: This is a quickstart generation, so you must carefully analyze the project description above and create an outline that EXACTLY matches what was requested. If the description specifies a certain number of slides, specific content, or particular requirements, you MUST follow them precisely.
 
 SPECIAL INSTRUCTIONS FOR USER REQUESTS:
@@ -520,6 +525,11 @@ REMINDER: Pay close attention to the original project description at the top and
 
 ORIGINAL PROJECT DESCRIPTION:
 {project_topic}
+
+🚨 CRITICAL REQUIREMENTS - READ FIRST:
+• START WITH TITLE SLIDE: Your presentation MUST begin with a title slide
+• ADD TO SLIDE COUNT: If user requests "4 slides", create title slide PLUS 4 content slides (5 total)
+• FOLLOW exact slide count if specified ("one slide only", "3 slides", "5-slide presentation")
 
 IMPORTANT: The outline must respect and incorporate the specific requirements from the original project description above, while also considering our conversation. If the original description specifies certain slides or content, make sure to include them.
 

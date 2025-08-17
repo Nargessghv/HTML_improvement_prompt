@@ -115,9 +115,21 @@ class PresentationPlanningAgent:
                 # Try to print key details for each slide step
                 # SlideSpec may have attributes like title, layout_index, content_type, etc.
                 # We'll print the most common ones, but use getattr for safety
-                slide_title = getattr(slide_spec, "title", "Untitled")
+                slide_title = getattr(slide_spec, "slide_title", "Untitled")
                 layout_index = getattr(slide_spec, "layout_index", "N/A")
-                content_type = getattr(slide_spec, "content_type", "N/A")
+                is_html = getattr(slide_spec, "is_html", False)
+                is_image = getattr(slide_spec, "is_image", False)
+                
+                # Determine content type from flags
+                if is_html and is_image:
+                    content_type = "html+image"
+                elif is_html:
+                    content_type = "html"
+                elif is_image:
+                    content_type = "image"
+                else:
+                    content_type = "text"
+                    
                 print(
                     f"  Step {idx}: Title='{slide_title}', "
                     f"Layout={layout_index}, ContentType={content_type}"

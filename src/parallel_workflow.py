@@ -1025,7 +1025,8 @@ class ParallelSlideWorkflow:
 
     def _select_appropriate_layout(self, slide_spec: Dict[str, Any], layout_state: SlideGenerationState) -> int:
         """
-        Select appropriate layout based on slide content type using same logic as presentation planning agent
+        Select appropriate layout based on slide content type using same logic as presentation planning agent.
+        IMPORTANT: Respects planned layout_index from presentation planning agent if available.
         """
         try:
             layouts_info = layout_state.get("layouts_info", {})
@@ -1042,6 +1043,18 @@ class ParallelSlideWorkflow:
                 first_layout = 0  # Always start with layout 0 as the safest fallback
                 print(f"🔧 Using fallback layout {first_layout}")
                 return first_layout
+            
+            # CRITICAL FIX: Check if presentation planning agent already selected a layout
+            planned_layout_index = slide_spec.get("layout_index")
+            if planned_layout_index is not None:
+                print(f"✅ Using planned layout_index {planned_layout_index} from presentation planning agent")
+                # Validate that the planned layout exists
+                if planned_layout_index in layouts_info:
+                    layout_name = layouts_info[planned_layout_index].get("name", f"Layout {planned_layout_index}")
+                    print(f"✅ Planned layout {planned_layout_index} exists: '{layout_name}'")
+                    return planned_layout_index
+                else:
+                    print(f"⚠️ Planned layout {planned_layout_index} not found in available layouts, falling back to content-based selection")
             
             # Check for is_html and is_image flags first (modern approach)
             is_html = slide_spec.get("is_html", False)
