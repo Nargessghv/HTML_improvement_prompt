@@ -40,12 +40,16 @@ export function PresentationPlanner({
   const [fullOutline, setFullOutline] = useState<PresentationOutline | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
   const [isApproved, setIsApproved] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
-  const handleOutlineGenerated = (newOutline: PresentationOutline, newFullOutline?: PresentationOutline) => {
+  const handleOutlineGenerated = (newOutline: PresentationOutline, newFullOutline?: PresentationOutline, newSessionId?: string) => {
     // console.log('📋 PresentationPlanner received outline:', newOutline)
     // console.log('📋 PresentationPlanner received full outline:', newFullOutline)
     setOutline(newOutline)
     setFullOutline(newFullOutline || newOutline)
+    if (newSessionId) {
+      setSessionId(newSessionId)
+    }
     // Automatically switch to outline tab when generated
     setActiveTab('outline')
   }
@@ -95,6 +99,8 @@ export function PresentationPlanner({
           {outline ? (
             <OutlineBuilder
               outline={outline}
+              sessionId={sessionId || undefined}
+              templateName="ekona_slides_template_new"
               onUpdate={handleOutlineUpdate}
               onApprove={handleApproveOutline}
               className="h-full"

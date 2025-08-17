@@ -41,7 +41,7 @@ interface ChatInterfaceProps {
   sessionId?: string
   projectId: string
   initialTopic?: string
-  onOutlineGenerated?: (outline: PresentationOutline, fullOutline?: PresentationOutline) => void
+  onOutlineGenerated?: (outline: PresentationOutline, fullOutline?: PresentationOutline, sessionId?: string) => void
   onSessionCreated?: (sessionId: string) => void
   className?: string
 }
@@ -190,7 +190,7 @@ export function ChatInterface({
 
       // If outline was generated, notify parent
       if (data.outline && onOutlineGenerated) {
-        onOutlineGenerated(data.outline, data.full_outline)
+        onOutlineGenerated(data.outline, data.full_outline, sessionId)
       }
     } catch (error) {
       console.error('Error sending message:', error)
@@ -250,7 +250,7 @@ export function ChatInterface({
       if (data.outline && onOutlineGenerated) {
         // console.log('🔍 Calling onOutlineGenerated with:', data.outline)
         // console.log('🔍 Full outline:', data.full_outline)
-        onOutlineGenerated(data.outline, data.full_outline)
+        onOutlineGenerated(data.outline, data.full_outline, sessionId)
       } else {
         // console.log('🔍 No outline found in response or no onOutlineGenerated callback')
       }

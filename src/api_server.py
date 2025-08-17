@@ -1331,8 +1331,25 @@ def _get_storage_bucket_for_type(file_type: str) -> str:
 
 # Chat endpoints for interactive presentation planning
 
-# Initialize chat agent (for interactive planning)
+# Initialize chat agent (for interactive planning) - template will be set dynamically
 chat_agent = ChatPlanningAgent()
+
+# API Models for layout management
+class LayoutOption(BaseModel):
+    index: int
+    name: str
+    description: str
+    supports_html: bool
+    supports_image: bool
+    placeholder_count: int
+
+class UpdateSlideLayoutRequest(BaseModel):
+    layout_index: int
+
+class LayoutUpdateResponse(BaseModel):
+    success: bool
+    updated_slide: Dict[str, Any]
+    message: str
 
 @app.post("/chat/start", response_model=ChatMessageResponse)
 async def start_chat_session(
@@ -1345,6 +1362,23 @@ async def start_chat_session(
         project = db.get_project(request.project_id, user.id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Initialize chat agent with template if available
+        try:
+            # Get template for this project
+            metadata = project.get("metadata", {})
+            template_name = metadata.get("template_name", "ekona_slides_template_new")
+            
+            from .template_manager import resolve_template_path
+            template_path = resolve_template_path(template_name)
+            
+            # Set template for layout intelligence
+            chat_agent.set_template(template_path)
+            print(f"✅ Chat agent initialized with template: {template_name}")
+            
+        except Exception as e:
+            print(f"⚠️ Failed to initialize chat agent template: {e}")
+            # Continue without template - chat agent will work but without layout intelligence
         
         # Start chat session
         result = await chat_agent.start_session(
@@ -1588,6 +1622,153 @@ async def generate_outline_from_chat(
     except Exception as e:
         api_logger.error(f"Error generating outline: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating outline: {str(e)}")
+
+# Layout Management Endpoints
+
+@app.get("/api/layouts/{template_name}")
+async def get_available_layouts(
+    template_name: str,
+    user = Depends(get_current_user)
+):
+    """Get available layouts for a template"""
+    try:
+        from .template_manager import resolve_template_path
+        from .agent_modules.layout_analysis_agent import LayoutAnalysisAgent
+        
+        # Resolve template path
+        template_path = resolve_template_path(template_name)
+        
+        # Run layout analysis
+        layout_analyzer = LayoutAnalysisAgent()
+        layout_state = layout_analyzer.execute({
+            "template_path": template_path,
+            "current_step": "layout_analysis"
+        })
+        
+        layouts_info = layout_state.get("layouts_info", {})
+        
+        # Convert to frontend format
+        layouts = []
+        for idx, layout_info in layouts_info.items():
+            placeholders = layout_info.get("placeholders", [])
+            
+            # Check layout capabilities
+            supports_html = any(
+                ph.get("type") == 18 or "picture" in ph.get("name", "").lower() or "html" in ph.get("name", "").lower()
+                for ph in placeholders
+            )
+            supports_image = any(
+                ph.get("type") == 18 or "picture" in ph.get("name", "").lower() or "image" in ph.get("name", "").lower()
+                for ph in placeholders
+            )
+            
+            layout_option = LayoutOption(
+                index=idx,
+                name=layout_info.get("name", f"Layout {idx}"),
+                description=f"{len(placeholders)} placeholders",
+                supports_html=supports_html,
+                supports_image=supports_image,
+                placeholder_count=len(placeholders)
+            )
+            layouts.append(layout_option)
+        
+        return {"layouts": layouts}
+        
+    except Exception as e:
+        api_logger.error(f"Error getting layouts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting layouts: {str(e)}")
+
+@app.put("/api/chat/{session_id}/slides/{slide_number}/layout")
+async def update_slide_layout(
+    session_id: str,
+    slide_number: int,
+    request: UpdateSlideLayoutRequest,
+    user = Depends(get_current_user)
+):
+    """Update layout for a specific slide in chat session"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id, data").eq(
+            "id", session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get current session data
+        session_data = session_result.data[0]["data"]
+        current_outline = session_data.get("current_outline")
+        
+        if not current_outline:
+            raise HTTPException(status_code=400, detail="No outline found in session")
+        
+        # Find and update the slide
+        slides = current_outline.get("slides", [])
+        slide_found = False
+        
+        for slide in slides:
+            if slide.get("slide_number") == slide_number:
+                # Get template info for layout validation
+                template_name = project.get("metadata", {}).get("template_name", "ekona_slides_template_new")
+                layouts_response = await get_available_layouts(template_name, user)
+                available_layouts = {layout["index"]: layout for layout in layouts_response["layouts"]}
+                
+                if request.layout_index not in available_layouts:
+                    raise HTTPException(status_code=400, detail="Invalid layout index")
+                
+                selected_layout = available_layouts[request.layout_index]
+                
+                # Update slide with new layout
+                slide["layout_index"] = request.layout_index
+                slide["layout_name"] = selected_layout["name"]
+                
+                # Auto-update flags based on layout capabilities
+                if not selected_layout["supports_html"]:
+                    slide["is_html"] = False
+                if not selected_layout["supports_image"]:
+                    slide["is_image"] = False
+                
+                slide_found = True
+                break
+        
+        if not slide_found:
+            raise HTTPException(status_code=404, detail="Slide not found")
+        
+        # Save updated session data
+        db.client.table("chat_sessions").update({
+            "data": session_data,
+            "updated_at": datetime.now().isoformat()
+        }).eq("id", session_id).execute()
+        
+        # Send real-time update
+        await send_realtime_update(
+            project_id=project_id,
+            user_id=user.id,
+            event_type="slide_layout_updated",
+            data={
+                "session_id": session_id,
+                "slide_number": slide_number,
+                "layout_index": request.layout_index,
+                "updated_outline": current_outline
+            }
+        )
+        
+        return LayoutUpdateResponse(
+            success=True,
+            updated_slide=slide,
+            message=f"Layout updated to '{selected_layout['name']}'"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error updating slide layout: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating slide layout: {str(e)}")
 
 # Background task function
 async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str, approved_outline: Optional[Dict[str, Any]] = None, template_name: Optional[str] = None):

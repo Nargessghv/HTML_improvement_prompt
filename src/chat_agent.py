@@ -22,6 +22,9 @@ import os
 
 from .database import get_supabase_client, DatabaseError
 from .llm_models import PlaceholderRequirement
+from .agent_modules.layout_analysis_agent import LayoutAnalysisAgent
+from .agent_modules.prompts.presentation_planning_prompts import get_planning_system_prompt
+from .llm_client import LangchainLLMClient
 
 
 class SlideOutline(BaseModel):
@@ -31,6 +34,9 @@ class SlideOutline(BaseModel):
     key_points: List[str]
     suggested_layout: Optional[str] = None
     notes: Optional[str] = None
+    # Layout intelligence from presentation planning agent
+    layout_index: Optional[int] = None
+    layout_name: Optional[str] = None
     # NEW: Use the same structure as SlideSpec for consistency
     is_html: bool = False
     is_image: bool = False
@@ -70,13 +76,14 @@ class PresentationPlanningAgent:
     Maintains conversation context and generates structured outlines.
     """
     
-    def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.7):
+    def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.7, template_path: Optional[str] = None):
         """
         Initialize the planning agent.
         
         Args:
             model_name: OpenAI model to use
             temperature: Model temperature for response generation
+            template_path: Path to PowerPoint template for layout analysis
         """
         self.llm = ChatOpenAI(model=model_name, temperature=temperature)
         self.db = get_supabase_client()
@@ -90,44 +97,87 @@ class PresentationPlanningAgent:
         self.model_name = model_name
         self.temperature = temperature
         
-        # System prompt for presentation planning
-        self.system_prompt = """You are an expert presentation planning assistant. Your role is to help users create well-structured, engaging presentations through conversational planning.
+        # Layout intelligence for enhanced planning
+        self.layout_analyzer = LayoutAnalysisAgent()
+        self.layouts_info = {}
+        self.template_path = template_path
+        
+        # LLM client for intelligent layout selection
+        self.llm_client = LangchainLLMClient()
+        
+        # Initialize layouts if template provided
+        if template_path:
+            self._initialize_layouts(template_path)
+            
+    def _initialize_layouts(self, template_path: str):
+        """Initialize layout analysis for the given template"""
+        try:
+            # Run layout analysis
+            layout_state = self.layout_analyzer.execute({
+                "template_path": template_path,
+                "current_step": "layout_analysis"
+            })
+            
+            self.layouts_info = layout_state.get("layouts_info", {})
+            print(f"✅ Chat agent initialized with {len(self.layouts_info)} layouts")
+            
+        except Exception as e:
+            print(f"⚠️ Failed to initialize layouts: {e}")
+            self.layouts_info = {}
+    
+    def set_template(self, template_path: str):
+        """Set template and initialize layouts"""
+        self.template_path = template_path
+        self._initialize_layouts(template_path)
+        
+        # Enhanced system prompt with layout awareness
+        self.base_system_prompt = """You are an expert presentation planning assistant with advanced layout intelligence. Your role is to help users create well-structured, engaging presentations through conversational planning.
+
+🎯 CORE MISSION: Create engaging presentation outlines with intelligent layout selection for optimal visual impact.
 
 Your responsibilities:
 1. ALWAYS respect and incorporate the original project description/requirements provided by the user
-2. Ask clarifying questions to understand the user's needs beyond the original description
-3. Suggest presentation structures and content organization that align with the original requirements
+2. Ask clarifying questions to understand the user's needs beyond the original description  
+3. Suggest presentation structures with smart layout selection that align with requirements
 4. Provide industry-specific insights and best practices
-5. Create detailed slide outlines with intelligent content type selection
-6. Recommend visual elements strategically for maximum impact
+5. Create detailed slide outlines with strategic layout and content type selection
+6. Recommend visual elements and layouts for maximum impact
 
 Key principles:
 - Be conversational and friendly
 - Ask one or two questions at a time
-- Provide specific, actionable suggestions
+- Provide specific, actionable suggestions with layout reasoning
 - Consider the target audience and context
-- Balance information density with visual appeal
+- Balance information density with visual appeal through smart layout choices
 - Suggest 8-15 slides for most presentations
 - CRITICAL: If the original project description specifies certain content, slides, or requirements, ALWAYS include them in the final outline
 
-Visual Content Strategy:
-- Use HTML VISUALIZATION for: timelines, charts, comparisons, diagrams, infographics, visual representations
-- Use HTML for: process flows, workflows, data visualizations, system architectures, conceptual diagrams
-- Use AI-GENERATED IMAGES for: creative visuals, transformations, artistic representations
-- Use TEXT ONLY for: simple introductions, conclusions, basic bullet points without visual elements
+🎨 VISUAL CONTENT & LAYOUT STRATEGY:
 
-Content Type Selection Examples:
-- "Project timeline" → HTML (timeline visualization)
-- "Performance metrics" → HTML (chart visualization)
-- "Before vs After results" → HTML (comparison visualization)
-- "Process workflow" → HTML (process diagram)
-- "AI agents overview" → HTML (conceptual diagram)
-- "System architecture" → HTML (component diagram)
-- "How it works" → HTML (infographic)
-- "Transformation story" → AI-generated image
-- "Company introduction" → Text only
+For HTML VISUALIZATIONS (use layouts with picture placeholders):
+- Timelines, process flows, workflows → "Title and Picture generated from HTML" layouts
+- Charts, comparisons, diagrams → "Title and Picture generated from HTML" layouts  
+- Infographics, system architectures → "Title and Picture generated from HTML" layouts
+- Data visualizations, conceptual diagrams → "Title and Picture generated from HTML" layouts
 
-When the user seems ready, generate a complete presentation outline with strategic content type selection that will enable powerful HTML visualizations where appropriate."""
+For AI-GENERATED IMAGES (use picture layouts):
+- Creative visuals, transformations → "Title and Picture" layouts
+- Artistic representations, scenes → "Title and Picture" layouts
+
+For TEXT CONTENT (use text/content layouts):
+- Simple introductions, conclusions → "Title and Text Content" layouts
+- Bullet points, basic information → "Title and Text Content" layouts
+- Two-column comparisons → "Title and Two Column Content" layouts
+
+For TITLE SLIDES:
+- Presentation opening → "Title Slide with subtitle and presenter name"
+- Section introductions → Title-focused layouts
+
+When the user seems ready, generate a complete presentation outline with:
+- Strategic layout selection for each slide
+- Proper is_html and is_image flags based on content
+- Layout reasoning and visual impact considerations
+- Structured output ready for slide generation"""
     
     async def start_session(self, project_id: str, initial_topic: str) -> Dict[str, Any]:
         """
@@ -192,7 +242,7 @@ When the user seems ready, generate a complete presentation outline with strateg
             messages = session["messages"]
             
             # Convert to LangChain messages
-            lc_messages = [SystemMessage(content=self.system_prompt)]
+            lc_messages = [SystemMessage(content=self.base_system_prompt)]
             for msg in messages:
                 if msg["role"] == "user":
                     lc_messages.append(HumanMessage(content=msg["content"]))
@@ -297,7 +347,7 @@ When the user seems ready, generate a complete presentation outline with strateg
         session = await self._load_session(session_id)
         messages = session["messages"]
         
-        lc_messages = [SystemMessage(content=self.system_prompt)]
+        lc_messages = [SystemMessage(content=self.base_system_prompt)]
         for msg in messages:
             if msg["role"] == "user":
                 lc_messages.append(HumanMessage(content=msg["content"]))
@@ -645,12 +695,219 @@ Please create a structured presentation outline that follows these guidelines.""
                 temperature=self.temperature
             )
             
+            # Enhance outline with layout intelligence
+            if self.layouts_info:
+                outline = self._enhance_outline_with_layouts(outline)
+            
             return outline
             
         except Exception as e:
             print(f"Error generating outline: {e}")
         
         return None
+    
+    def _enhance_outline_with_layouts(self, outline: PresentationOutline) -> PresentationOutline:
+        """Enhance outline with intelligent layout selection"""
+        try:
+            print(f"🎨 Enhancing outline with layout intelligence for {len(outline.slides)} slides")
+            
+            for slide in outline.slides:
+                layout_info = self._select_layout_for_slide(slide)
+                slide.layout_index = layout_info["index"]
+                slide.layout_name = layout_info["name"]
+                
+                # Update flags based on selected layout capabilities
+                layout_details = self.layouts_info.get(layout_info["index"], {})
+                slide = self._update_slide_flags_from_layout(slide, layout_details)
+                
+                print(f"  📋 Slide {slide.slide_number}: '{slide.title}' → Layout {slide.layout_index} ('{slide.layout_name}') - HTML:{slide.is_html}, Image:{slide.is_image}")
+            
+            return outline
+            
+        except Exception as e:
+            print(f"⚠️ Error enhancing outline with layouts: {e}")
+            return outline
+    
+    def _select_layout_for_slide(self, slide: SlideOutline) -> Dict[str, Any]:
+        """Select best layout for a slide based on content and flags using LLM intelligence"""
+        
+        # Use LLM to intelligently select layout based on slide content
+        if not self.layouts_info:
+            return {"index": 0, "name": "Default Layout"}
+            
+        layout_index = self._select_layout_with_llm(
+            self.layouts_info,
+            slide.title,
+            slide.key_points,
+            slide.is_html,
+            slide.is_image,
+            slide.placeholder_requirements or []
+        )
+        
+        # Get layout name from the selected index
+        layout_info = self.layouts_info.get(layout_index, {})
+        layout_name = layout_info.get("name", f"Layout {layout_index}")
+        
+        return {
+            "index": layout_index,
+            "name": layout_name
+        }
+    
+    def _select_layout_with_llm(
+        self, 
+        layouts_info: Dict[int, Dict[str, Any]], 
+        slide_title: str,
+        key_points: List[str],
+        is_html: bool,
+        is_image: bool,
+        placeholder_requirements: List[Any]
+    ) -> int:
+        """
+        Use LLM to intelligently select the best layout based on slide content
+        
+        Args:
+            layouts_info: Dictionary of all available layouts with their details
+            slide_title: Title of the slide
+            key_points: Key points for the slide
+            is_html: Whether slide needs HTML visualization
+            is_image: Whether slide needs AI-generated image
+            placeholder_requirements: Specific placeholder requirements
+            
+        Returns:
+            Layout index selected by LLM
+        """
+        # Build detailed layout descriptions for LLM
+        layout_options = []
+        for idx, layout_info in layouts_info.items():
+            layout_name = layout_info.get("name", f"Layout {idx}")
+            placeholders = layout_info.get("placeholders", [])
+            
+            # Build detailed placeholder info
+            placeholder_details = []
+            for p in placeholders:
+                if isinstance(p, dict):
+                    name = p.get("name", "Unknown")
+                    p_type = p.get("type", "Unknown")
+                    placeholder_details.append(f"{name} ({p_type})")
+                else:
+                    placeholder_details.append(str(p))
+                    
+            layout_options.append({
+                "index": idx,
+                "name": layout_name,
+                "placeholders": placeholder_details
+            })
+        
+        # Create prompt for layout selection
+        prompt = f"""Select the BEST layout for this slide based on content requirements:
+
+SLIDE CONTENT:
+- Title: {slide_title}
+- Key Points: {', '.join(key_points) if key_points else 'None'}
+- Needs HTML visualization: {is_html}
+- Needs AI-generated image: {is_image}
+- Content Type: {'HTML/Visual' if is_html else 'Image' if is_image else 'Text'}
+
+AVAILABLE LAYOUTS:
+"""
+        
+        for layout in layout_options:
+            prompt += f"\nLayout {layout['index']}: {layout['name']}\n"
+            prompt += f"  Placeholders: {', '.join(layout['placeholders'])}\n"
+        
+        prompt += """\n
+SELECTION CRITERIA:
+1. For HTML content: Choose layouts with picture/image placeholders that can display rendered HTML
+2. For AI images: Choose layouts with picture placeholders for generated images  
+3. For text content: Choose layouts with content/text placeholders
+4. Match the number and type of placeholders to the content needs
+5. Consider the slide's purpose and how to best present the information
+
+RETURN ONLY THE LAYOUT INDEX NUMBER (e.g., 3)
+"""
+        
+        try:
+            # Use LLM to select layout
+            response = self.llm_client.generate_content(
+                system_prompt="You are a presentation layout expert. Select the most appropriate layout index based on content requirements.",
+                user_prompt=prompt
+            )
+            
+            # Extract layout index from response
+            import re
+            match = re.search(r'\b(\d+)\b', response)
+            if match:
+                selected_index = int(match.group(1))
+                if selected_index in layouts_info:
+                    print(f"      LLM selected layout {selected_index}: {layouts_info[selected_index].get('name', 'Unknown')}")
+                    return selected_index
+                    
+        except Exception as e:
+            print(f"      Warning: LLM layout selection failed: {e}")
+        
+        # Fallback: Select first suitable layout based on content type
+        print("      Falling back to default layout selection")
+        if is_html or is_image:
+            # Find first layout with picture placeholder
+            for idx, layout_info in layouts_info.items():
+                placeholders = layout_info.get("placeholders", [])
+                for p in placeholders:
+                    if isinstance(p, dict):
+                        name = p.get("name", "").lower()
+                        if any(word in name for word in ["picture", "image", "visual", "html"]):
+                            return idx
+        
+        # Default to first non-logo layout
+        for idx, layout_info in layouts_info.items():
+            if "logo" not in layout_info.get("name", "").lower():
+                return idx
+                
+        return list(layouts_info.keys())[0] if layouts_info else 0
+    
+    def _find_layout_by_type(self, layout_type: str) -> Optional[Dict[str, Any]]:
+        """Find layout by type (title, html, picture, text)"""
+        
+        for layout_idx, layout_info in self.layouts_info.items():
+            layout_name = layout_info.get("name", "").lower()
+            
+            if layout_type == "title":
+                if "title" in layout_name and "subtitle" in layout_name:
+                    return {"index": layout_idx, "name": layout_info.get("name")}
+            
+            elif layout_type == "html":
+                if "html" in layout_name or ("picture" in layout_name and "html" in layout_name):
+                    return {"index": layout_idx, "name": layout_info.get("name")}
+            
+            elif layout_type == "picture":
+                if "picture" in layout_name and "html" not in layout_name:
+                    return {"index": layout_idx, "name": layout_info.get("name")}
+            
+            elif layout_type == "text":
+                # Prioritize layouts with "text content" in the name for text-only slides
+                if ("text content" in layout_name) or ("content" in layout_name and "picture" not in layout_name and "html" not in layout_name):
+                    return {"index": layout_idx, "name": layout_info.get("name")}
+        
+        return None
+    
+    def _update_slide_flags_from_layout(self, slide: SlideOutline, layout_details: Dict[str, Any]) -> SlideOutline:
+        """Update slide flags based on layout capabilities"""
+        
+        # Check if layout has picture placeholders (can support HTML or images)
+        placeholders = layout_details.get("placeholders", [])
+        has_picture_placeholder = any(
+            ph.get("type") == 18 or "picture" in ph.get("name", "").lower() or "image" in ph.get("name", "").lower()
+            for ph in placeholders
+        )
+        
+        # If slide is marked for HTML but layout doesn't support it, keep the flag but warn
+        if slide.is_html and not has_picture_placeholder:
+            print(f"  ⚠️ Slide {slide.slide_number} marked for HTML but selected layout may not fully support it")
+        
+        # If slide is marked for image but layout doesn't support it, keep the flag but warn  
+        if slide.is_image and not has_picture_placeholder:
+            print(f"  ⚠️ Slide {slide.slide_number} marked for image but selected layout may not fully support it")
+        
+        return slide
     
     def _generate_skeleton_structure(self, outline: PresentationOutline) -> Dict[str, Any]:
         """Generate skeleton structure for the presentation"""

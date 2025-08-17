@@ -1046,6 +1046,8 @@ class ParallelSlideWorkflow:
             
             # CRITICAL FIX: Check if presentation planning agent already selected a layout
             planned_layout_index = slide_spec.get("layout_index")
+            print(f"🔍 DEBUG: Slide {slide_spec.get('slide_number', 'unknown')} - planned_layout_index: {planned_layout_index}")
+            print(f"🔍 DEBUG: slide_spec keys: {list(slide_spec.keys())}")
             if planned_layout_index is not None:
                 print(f"✅ Using planned layout_index {planned_layout_index} from presentation planning agent")
                 # Validate that the planned layout exists
