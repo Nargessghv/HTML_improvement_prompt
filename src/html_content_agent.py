@@ -2067,8 +2067,29 @@ without any content being cropped or lost."""
             return html_content
 
     def _is_html_visualization(self, content: str) -> bool:
-        """Check if content is an HTML visualization"""
-        return self._validate_html_content(content)
+        """Check if content is an HTML visualization (valid HTML only)"""
+        return self._is_valid_html(content)
+    
+    def _is_valid_html(self, content: str) -> bool:
+        """Check if content is valid HTML (stricter validation)"""
+        content_lower = content.lower().strip()
+        
+        # Check for basic HTML structure
+        has_doctype = "<!doctype" in content_lower or "<html" in content_lower
+        has_body = "<body" in content_lower
+        
+        # Check for common HTML elements
+        has_elements = any(
+            tag in content_lower for tag in ["<div", "<p", "<h1", "<h2", "<h3", "<span"]
+        )
+        
+        # Relaxed validation - if it has HTML structure, accept it
+        has_basic_html = "<" in content and ">" in content
+        
+        # For HTML visualization counting, only count VALID HTML
+        is_valid = (has_doctype and has_body and has_elements) or (has_doctype and has_basic_html)
+        
+        return is_valid
 
     def _save_html_debug_file(
         self,

@@ -234,6 +234,16 @@ class SlideGenerationWorkflow:
         print(f"📁 Template: {template_path}")
         print(f"💾 Output: {output_path}")
         print(f"📄 Approved slides count: {len(approved_outline.get('slides', []))}")
+        
+        # Debug: Print details of approved outline slides
+        print("🔍 DEBUG: Approved outline slide details:")
+        for i, slide in enumerate(approved_outline.get('slides', [])):
+            print(f"   Slide {i+1}: {slide.get('title', 'No title')}")
+            print(f"     - is_html: {slide.get('is_html', False)}")
+            print(f"     - is_image: {slide.get('is_image', False)}")
+            print(f"     - content_type: {slide.get('content_type', 'N/A')}")
+            if slide.get('placeholder_requirements'):
+                print(f"     - placeholder_requirements: {len(slide.get('placeholder_requirements', []))} items")
 
         try:
             # Initialize parallel workflow with configurable concurrency

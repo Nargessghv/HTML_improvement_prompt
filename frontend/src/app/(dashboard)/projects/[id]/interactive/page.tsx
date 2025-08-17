@@ -56,7 +56,7 @@ export default function InteractivePlanningPage() {
     fetchProject()
   }, [projectId, user, supabase, router])
 
-  const handleApproveOutline = async (outline: unknown) => {
+  const handleApproveOutline = async (fullOutline: unknown) => {
     setIsGenerating(true)
     
     try {
@@ -79,7 +79,7 @@ export default function InteractivePlanningPage() {
           title: project?.title || 'Interactive Presentation',
           topic: project?.topic || 'Generated from interactive planning',
           project_id: projectId, // This tells the API to start workflow on existing project
-          approved_outline: outline // Include the approved outline for the agents
+          approved_outline: fullOutline // Include the approved outline for the agents
         })
       })
 

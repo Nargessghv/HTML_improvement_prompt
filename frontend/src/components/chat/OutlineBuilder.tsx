@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils'
 interface SlideOutline {
   slide_number: number
   title: string
-  content_type: 'text' | 'visual' | 'chart' | 'timeline' | 'comparison'
+  is_html: boolean
+  is_image: boolean
   key_points: string[]
   suggested_layout?: string
   notes?: string
@@ -61,7 +62,7 @@ export function OutlineBuilder({
           <div>
             <CardTitle>{outline.title}</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {outline.slides.length} slides • ~{outline.estimated_duration || outline.slides.length * 2} minutes
+              {outline.slides?.length || 0} slides • ~{outline.estimated_duration || (outline.slides?.length || 0) * 2} minutes
             </p>
           </div>
           <Button onClick={onApprove} size="sm">
@@ -78,7 +79,7 @@ export function OutlineBuilder({
               <span className="font-medium">Audience:</span> {outline.target_audience}
             </div>
           )}
-          {outline.objectives.length > 0 && (
+          {outline.objectives && outline.objectives.length > 0 && (
             <div className="text-sm">
               <span className="font-medium">Objectives:</span>
               <ul className="list-disc list-inside mt-1">
@@ -91,7 +92,7 @@ export function OutlineBuilder({
         </div>
 
         <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-          {outline.slides.map((slide, index) => (
+          {outline.slides && outline.slides.map((slide, index) => (
             <div key={`slide-${slide.slide_number}`} className="group">
               <Card className="p-3">
                 <div className="flex items-start gap-2">
@@ -101,11 +102,13 @@ export function OutlineBuilder({
                         #{slide.slide_number}
                       </Badge>
                       <Badge className="text-xs bg-blue-100 text-blue-700">
-                        {slide.content_type}
+                        {slide.is_html && slide.is_image ? 'html+image' : 
+                         slide.is_html ? 'html' : 
+                         slide.is_image ? 'image' : 'text'}
                       </Badge>
                     </div>
                     <h4 className="font-medium text-sm">{slide.title}</h4>
-                    {slide.key_points.length > 0 && (
+                    {slide.key_points && slide.key_points.length > 0 && (
                       <ul className="text-xs text-muted-foreground mt-1 space-y-0.5">
                         {slide.key_points.slice(0, 2).map((point, idx) => (
                           <li key={idx} className="truncate">• {point}</li>

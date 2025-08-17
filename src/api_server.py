@@ -1327,6 +1327,8 @@ def _get_storage_bucket_for_type(file_type: str) -> str:
     }
     return bucket_mapping.get(file_type, "presentations")
 
+# Removed transformation function - using is_html/is_image flags everywhere
+
 # Chat endpoints for interactive presentation planning
 
 # Initialize chat agent (for interactive planning)
@@ -1463,6 +1465,8 @@ async def regenerate_outline(
         # Regenerate outline
         result = await chat_agent.regenerate_outline(session_id, feedback)
         
+        # No transformation needed - using is_html/is_image flags
+        
         # Send real-time update
         await send_realtime_update(
             project_id=project_id,
@@ -1478,6 +1482,43 @@ async def regenerate_outline(
     except Exception as e:
         api_logger.error(f"Error regenerating outline: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error regenerating outline: {str(e)}")
+
+@app.get("/chat/{session_id}/full-outline")
+async def get_full_outline_from_chat(
+    session_id: str,
+    user = Depends(get_current_user)
+):
+    """Get the full presentation outline from a chat session for workflow approval"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id").eq(
+            "id", session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get full outline from presentation drafts
+        draft_result = db.client.table("presentation_drafts").select("presentation_outline").eq(
+            "chat_session_id", session_id
+        ).execute()
+        
+        if not draft_result.data:
+            raise HTTPException(status_code=404, detail="No outline found for this session")
+        
+        full_outline = draft_result.data[0]["presentation_outline"]
+        return {"outline": full_outline}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error getting full outline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting full outline: {str(e)}")
 
 @app.get("/projects/{project_id}/chat-sessions", response_model=List[ChatSessionResponse])
 async def get_project_chat_sessions(
@@ -1504,6 +1545,49 @@ async def get_project_chat_sessions(
     except Exception as e:
         api_logger.error(f"Error getting chat sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error getting chat sessions: {str(e)}")
+
+@app.post("/chat/{session_id}/generate-outline", response_model=ChatMessageResponse)
+async def generate_outline_from_chat(
+    session_id: str,
+    user = Depends(get_current_user)
+):
+    """Manually generate outline from current chat session"""
+    try:
+        # Verify session belongs to user's project
+        session_result = db.client.table("chat_sessions").select("project_id").eq(
+            "id", session_id
+        ).execute()
+        
+        if not session_result.data:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        project_id = session_result.data[0]["project_id"]
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Force outline generation
+        result = await chat_agent.send_message(
+            session_id=session_id,
+            message="Please generate the presentation outline based on our discussion so far."
+        )
+        
+        # Send real-time update if outline generated
+        if result.get("outline"):
+            await send_realtime_update(
+                project_id=project_id,
+                user_id=user.id,
+                event_type="outline_generated",
+                data={"outline": result["outline"]}
+            )
+        
+        return ChatMessageResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error generating outline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating outline: {str(e)}")
 
 # Background task function
 async def start_slide_generation_workflow(project_id: str, topic: str, user_id: str, approved_outline: Optional[Dict[str, Any]] = None, template_name: Optional[str] = None):

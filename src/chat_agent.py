@@ -16,6 +16,9 @@ from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from pydantic import BaseModel, Field
+import instructor
+from openai import AsyncOpenAI
+import os
 
 from .database import get_supabase_client, DatabaseError
 from .llm_models import PlaceholderRequirement
@@ -77,6 +80,15 @@ class PresentationPlanningAgent:
         """
         self.llm = ChatOpenAI(model=model_name, temperature=temperature)
         self.db = get_supabase_client()
+        
+        # Initialize instructor client for structured outputs
+        openai_client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL")  # Support custom base URLs like OpenRouter
+        )
+        self.instructor_client = instructor.from_openai(openai_client)
+        self.model_name = model_name
+        self.temperature = temperature
         
         # System prompt for presentation planning
         self.system_prompt = """You are an expert presentation planning assistant. Your role is to help users create well-structured, engaging presentations through conversational planning.
@@ -199,7 +211,17 @@ When the user seems ready, generate a complete presentation outline with strateg
             if self._should_generate_outline(message, response_text, len(messages)):
                 outline = await self._generate_outline(session_id, lc_messages)
                 if outline:
-                    response_text += f"\n\nBased on our discussion, I've created a presentation outline with {len(outline.slides)} slides. You can review it and let me know if you'd like any changes!"
+                    response_text += (
+                        f"\n\n🎯 **Presentation Outline Created!**\n\n"
+                        f"I've created a detailed presentation outline with {len(outline.slides)} slides "
+                        f"based on our discussion. You can review it in the 'Presentation Outline' tab.\n\n"
+                        f"**Next Steps:**\n"
+                        f"1. Review the outline structure and slide titles\n"
+                        f"2. If you're happy with it, click 'Approve & Generate' to start creating your presentation\n"
+                        f"3. If you'd like changes, just let me know what to adjust!\n\n"
+                        f"The outline includes strategic visual content recommendations for maximum impact. "
+                        f"Ready to generate your presentation?"
+                    )
             
             # Save new messages
             new_messages = [
@@ -214,7 +236,7 @@ When the user seems ready, generate a complete presentation outline with strateg
             
             return {
                 "response": response_text,
-                "outline": outline.dict() if outline else None,
+                "outline": outline.model_dump() if outline else None,
                 "suggestions": self._generate_suggestions(message, response_text)
             }
             
@@ -287,7 +309,7 @@ When the user seems ready, generate a complete presentation outline with strateg
         
         return {
             "response": result["response"],
-            "outline": outline.dict()
+            "outline": outline.model_dump()
         }
 
     async def generate_outline_for_quickstart(self, topic: str, project_id: Optional[str] = None) -> Optional[PresentationOutline]:
@@ -322,8 +344,6 @@ SPECIAL INSTRUCTIONS FOR USER REQUESTS:
 - If user asks for "chart", "diagram", "visualization" → Set is_html=true
 - If user specifies exact number of slides → Create EXACTLY that many slides
 - If user specifies content types → Use those EXACT specifications
-
-Create a detailed presentation outline using strategic presentation planning principles.
 
 🎨 CONTENT TYPE DECISION GUIDE
 
@@ -372,42 +392,9 @@ For slides requiring neither HTML nor images, use is_html=false and is_image=fal
 - How it works → is_html=true (process diagram)
 - Key concepts visualization → is_html=true (infographic)
 
-Return the outline in this exact JSON format:
-        {{
-            "title": "Presentation Title",
-            "topic": "Main topic",
-            "target_audience": "Target audience description",
-            "objectives": ["Objective 1", "Objective 2"],
-            "key_themes": ["Theme 1", "Theme 2"],
-            "slides": [
-                {{
-                    "slide_number": 1,
-                    "title": "Slide Title",
-                    "key_points": ["Point 1", "Point 2"],
-                    "suggested_layout": "layout name",
-                    "notes": "Additional notes",
-                    "is_html": false,
-                    "is_image": false,
-                    "placeholder_requirements": [
-                        {{
-                            "placeholder_name": "Picture 16:9",
-                            "content_type": "image",
-                            "description": "AI-generated image showing..."
-                        }}
-                    ]
-                }}
-            ],
-            "estimated_duration": 30,
-            "style_preferences": {{
-                "tone": "professional|casual|academic",
-                "visual_style": "modern|classic|minimal",
-                "color_scheme": "suggestions"
-            }}
-        }}
-
 CRITICAL: Always specify placeholder_requirements when is_html=true or is_image=true. For image slides, use placeholder_name "Picture 16:9". For HTML slides, use placeholder_name "Content Placeholder 1" or similar based on the slide layout.
 
-REMINDER: Pay close attention to the original project description at the top and follow its requirements exactly."""
+Please create a structured presentation outline that follows these guidelines and exactly matches the project requirements."""
             
             # Create messages for the LLM
             messages = [
@@ -415,16 +402,25 @@ REMINDER: Pay close attention to the original project description at the top and
                 HumanMessage(content=outline_prompt)
             ]
             
-            # Generate response
-            response = await self.llm.ainvoke(messages)
+            # Convert langchain messages to OpenAI format for instructor
+            openai_messages = []
+            for msg in messages:
+                if isinstance(msg, SystemMessage):
+                    openai_messages.append({"role": "system", "content": msg.content})
+                elif isinstance(msg, HumanMessage):
+                    openai_messages.append({"role": "user", "content": msg.content})
+                elif isinstance(msg, AIMessage):
+                    openai_messages.append({"role": "assistant", "content": msg.content})
             
-            # Parse JSON from response
-            json_start = response.content.find('{')
-            json_end = response.content.rfind('}') + 1
+            # Use instructor for guaranteed structured output
+            outline = await self.instructor_client.chat.completions.create(
+                model=self.model_name,
+                response_model=PresentationOutline,
+                messages=openai_messages,
+                temperature=self.temperature
+            )
             
-            if json_start >= 0 and json_end > json_start:
-                outline_data = json.loads(response.content[json_start:json_end])
-                return PresentationOutline(**outline_data)
+            return outline
             
         except Exception as e:
             print(f"Error generating quickstart outline: {e}")
@@ -432,6 +428,38 @@ REMINDER: Pay close attention to the original project description at the top and
         return None
     
     # Private helper methods
+    
+    def _extract_json_from_response(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """Extract JSON from LLM response that may contain extra text"""
+        import re
+        
+        # Try to find JSON in code blocks first
+        code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if code_block_match:
+            try:
+                return json.loads(code_block_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # Try to find JSON object directly
+        brace_count = 0
+        start_pos = -1
+        
+        for i, char in enumerate(response_text):
+            if char == '{':
+                if brace_count == 0:
+                    start_pos = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start_pos >= 0:
+                    try:
+                        json_str = response_text[start_pos:i+1]
+                        return json.loads(json_str)
+                    except json.JSONDecodeError:
+                        continue
+        
+        return None
     
     async def _load_session(self, session_id: str) -> Dict[str, Any]:
         """Load chat session from database"""
@@ -463,7 +491,7 @@ REMINDER: Pay close attention to the original project description at the top and
         draft_data = {
             "project_id": project_id,
             "chat_session_id": session_id,
-            "presentation_outline": outline.dict(),
+            "presentation_outline": outline.model_dump(),
             "skeleton_structure": self._generate_skeleton_structure(outline)
         }
         
@@ -491,7 +519,12 @@ REMINDER: Pay close attention to the original project description at the top and
             "let's proceed",
             "that sounds good",
             "looks good",
-            "perfect"
+            "perfect",
+            "approve",
+            "start generating",
+            "begin generation",
+            "generate the slides",
+            "create the presentation"
         ]
         
         message_lower = message.lower()
@@ -541,8 +574,6 @@ SPECIAL INSTRUCTIONS FOR USER REQUESTS:
 - If user specifies exact number of slides → Create EXACTLY that many slides
 - If user specifies content types → Use those EXACT specifications
 
-Based on our conversation and the original project requirements, create a detailed presentation outline using strategic presentation planning principles.
-
 🎨 CONTENT TYPE DECISION GUIDE
 
 SET is_html=true FOR:
@@ -589,22 +620,32 @@ For slides requiring neither HTML nor images, use is_html=false and is_image=fal
 - How it works → is_html=true (process diagram)
 - Key concepts visualization → is_html=true (infographic)
 
-Return the outline in this exact JSON format with proper is_html, is_image, and placeholder_requirements fields:
+CRITICAL: Always specify placeholder_requirements when is_html=true or is_image=true. For image slides, use placeholder_name "Picture 16:9". For HTML slides, use placeholder_name "Content Placeholder 1" or similar based on the slide layout.
 
-CRITICAL: Always specify placeholder_requirements when is_html=true or is_image=true. For image slides, use placeholder_name "Picture 16:9". For HTML slides, use placeholder_name "Content Placeholder 1" or similar based on the slide layout."""
+Please create a structured presentation outline that follows these guidelines."""
         
         messages_with_prompt = messages + [HumanMessage(content=outline_prompt)]
         
         try:
-            response = await self.llm.ainvoke(messages_with_prompt)
+            # Convert langchain messages to OpenAI format for instructor
+            openai_messages = []
+            for msg in messages_with_prompt:
+                if isinstance(msg, SystemMessage):
+                    openai_messages.append({"role": "system", "content": msg.content})
+                elif isinstance(msg, HumanMessage):
+                    openai_messages.append({"role": "user", "content": msg.content})
+                elif isinstance(msg, AIMessage):
+                    openai_messages.append({"role": "assistant", "content": msg.content})
             
-            # Parse JSON from response
-            json_start = response.content.find('{')
-            json_end = response.content.rfind('}') + 1
+            # Use instructor for guaranteed structured output
+            outline = await self.instructor_client.chat.completions.create(
+                model=self.model_name,
+                response_model=PresentationOutline,
+                messages=openai_messages,
+                temperature=self.temperature
+            )
             
-            if json_start >= 0 and json_end > json_start:
-                outline_data = json.loads(response.content[json_start:json_end])
-                return PresentationOutline(**outline_data)
+            return outline
             
         except Exception as e:
             print(f"Error generating outline: {e}")

@@ -11,6 +11,7 @@ anthropic>=0.7.0  # For Anthropic Claude integration
 langgraph>=0.0.40  # For AI agent workflows and graph orchestration
 langchain>=0.1.0  # Core framework for Langgraph
 langchain-openai>=0.1.0  # OpenAI integration for Langchain
+instructor>=1.0.0  # For structured LLM outputs with Pydantic models
 
 # LLM Monitoring and Observability
 langfuse>=2.20.0,<3.0.0  # For LLM call monitoring and analytics (SDK v2)

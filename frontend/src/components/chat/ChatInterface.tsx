@@ -23,20 +23,26 @@ interface Message {
 interface PresentationOutline {
   title: string
   topic: string
+  target_audience?: string
+  objectives: string[]
+  key_themes: string[]
+  estimated_duration?: number
+  style_preferences: Record<string, unknown>
   slides: Array<{
     slide_number: number
     title: string
-    content_type: string
+    is_html: boolean
+    is_image: boolean
     key_points: string[]
   }>
-  estimated_duration?: number
 }
 
 interface ChatInterfaceProps {
   sessionId?: string
   projectId: string
   initialTopic?: string
-  onOutlineGenerated?: (outline: PresentationOutline) => void
+  onOutlineGenerated?: (outline: PresentationOutline, fullOutline?: PresentationOutline) => void
+  onSessionCreated?: (sessionId: string) => void
   className?: string
 }
 
@@ -45,6 +51,7 @@ export function ChatInterface({
   projectId, 
   initialTopic,
   onOutlineGenerated,
+  onSessionCreated,
   className 
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -52,6 +59,7 @@ export function ChatInterface({
   const [isLoading, setIsLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | undefined>(initialSessionId)
   const [suggestions, setSuggestions] = useState<string[]>([])
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { supabase } = useSupabaseAuth()
@@ -101,6 +109,9 @@ export function ChatInterface({
       // Set session ID from response
       if (data.session_id) {
         setSessionId(data.session_id)
+        if (onSessionCreated) {
+          onSessionCreated(data.session_id)
+        }
       }
 
       // Add initial messages
@@ -179,7 +190,7 @@ export function ChatInterface({
 
       // If outline was generated, notify parent
       if (data.outline && onOutlineGenerated) {
-        onOutlineGenerated(data.outline)
+        onOutlineGenerated(data.outline, data.full_outline)
       }
     } catch (error) {
       console.error('Error sending message:', error)
@@ -192,6 +203,68 @@ export function ChatInterface({
       }])
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const generateOutline = async () => {
+    if (!sessionId || isGeneratingOutline) return
+
+    setIsGeneratingOutline(true)
+
+    try {
+      // Get the current session for auth token
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication session')
+      }
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`/api/chat/${sessionId}/generate-outline`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) throw new Error('Failed to generate outline')
+
+      const data = await response.json()
+
+      // console.log('🔍 Generate outline response:', data)
+      // console.log('🔍 Has outline:', !!data.outline) 
+      // console.log('🔍 Outline data:', data.outline)
+
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: data.response,
+        timestamp: new Date().toISOString(),
+        suggestions: data.suggestions
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+      setSuggestions(data.suggestions || [])
+
+      // If outline was generated, notify parent
+      if (data.outline && onOutlineGenerated) {
+        // console.log('🔍 Calling onOutlineGenerated with:', data.outline)
+        // console.log('🔍 Full outline:', data.full_outline)
+        onOutlineGenerated(data.outline, data.full_outline)
+      } else {
+        // console.log('🔍 No outline found in response or no onOutlineGenerated callback')
+      }
+    } catch (error) {
+      console.error('Error generating outline:', error)
+      // Add error message
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: 'Sorry, I encountered an error while generating the outline. Please try again.',
+        timestamp: new Date().toISOString()
+      }])
+    } finally {
+      setIsGeneratingOutline(false)
     }
   }
 
@@ -327,6 +400,30 @@ export function ChatInterface({
       )}
 
       <div className="p-4 border-t">
+        {/* Generate Outline button - show when we have some conversation */}
+        {messages.length >= 2 && sessionId && (
+          <div className="mb-3">
+            <Button
+              onClick={generateOutline}
+              disabled={isGeneratingOutline || isLoading}
+              variant="outline"
+              className="w-full bg-primary/5 hover:bg-primary/10 border-primary/20"
+            >
+              {isGeneratingOutline ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating Outline...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate Presentation Outline
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+        
         <div className="flex gap-2">
           <Textarea
             ref={textareaRef}

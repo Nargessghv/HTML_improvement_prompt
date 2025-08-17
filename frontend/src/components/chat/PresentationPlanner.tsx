@@ -11,19 +11,24 @@ import { Badge } from '@/components/ui/badge'
 interface PresentationOutline {
   title: string
   topic: string
+  target_audience?: string
+  objectives: string[]
+  key_themes: string[]
+  estimated_duration?: number
+  style_preferences: Record<string, unknown>
   slides: Array<{
     slide_number: number
     title: string
-    content_type: string
+    is_html: boolean
+    is_image: boolean
     key_points: string[]
   }>
-  estimated_duration?: number
 }
 
 interface PresentationPlannerProps {
   projectId: string
   initialTopic?: string
-  onApproveOutline?: (outline: PresentationOutline) => void
+  onApproveOutline?: (fullOutline: PresentationOutline) => void
 }
 
 export function PresentationPlanner({ 
@@ -32,11 +37,15 @@ export function PresentationPlanner({
   onApproveOutline 
 }: PresentationPlannerProps) {
   const [outline, setOutline] = useState<PresentationOutline | null>(null)
+  const [fullOutline, setFullOutline] = useState<PresentationOutline | null>(null)
   const [activeTab, setActiveTab] = useState('chat')
   const [isApproved, setIsApproved] = useState(false)
 
-  const handleOutlineGenerated = (newOutline: PresentationOutline) => {
+  const handleOutlineGenerated = (newOutline: PresentationOutline, newFullOutline?: PresentationOutline) => {
+    // console.log('📋 PresentationPlanner received outline:', newOutline)
+    // console.log('📋 PresentationPlanner received full outline:', newFullOutline)
     setOutline(newOutline)
+    setFullOutline(newFullOutline || newOutline)
     // Automatically switch to outline tab when generated
     setActiveTab('outline')
   }
@@ -47,8 +56,9 @@ export function PresentationPlanner({
 
   const handleApproveOutline = () => {
     setIsApproved(true)
-    if (onApproveOutline) {
-      onApproveOutline(outline)
+    if (onApproveOutline && outline) {
+      // Use the full outline for workflow processing, fallback to simplified outline
+      onApproveOutline(fullOutline || outline)
     }
   }
 

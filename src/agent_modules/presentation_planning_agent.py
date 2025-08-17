@@ -71,6 +71,12 @@ class PresentationPlanningAgent:
                 print(
                     f"📋 {self.name}: Approved outline slides count: {len(approved_outline.get('slides', []))}"
                 )
+                # Debug: Print slide details to verify is_html and is_image flags
+                for i, slide in enumerate(approved_outline.get('slides', [])):
+                    print(f"🔍 Approved slide {i+1}: {slide.get('title', 'No title')}")
+                    print(f"   - is_html: {slide.get('is_html', False)}")
+                    print(f"   - is_image: {slide.get('is_image', False)}")
+                    print(f"   - content_type: {slide.get('content_type', 'N/A')}")
 
             # Check if we have an approved outline from interactive planning
             if approved_outline:
