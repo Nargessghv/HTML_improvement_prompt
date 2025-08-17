@@ -380,6 +380,9 @@ async def create_slide_records_from_outline(project_id: str, approved_outline: D
         api_logger.info(f"Creating {len(slides_data)} slide records for immediate display")
         
         for slide_spec in slides_data:
+            # Determine if this slide needs HTML generation
+            is_html = slide_spec.get("is_html", False)
+            
             slide_data = {
                 "id": str(uuid.uuid4()),
                 "project_id": project_id,
@@ -388,7 +391,9 @@ async def create_slide_records_from_outline(project_id: str, approved_outline: D
                 "content": slide_spec,
                 "layout_type": slide_spec.get("layout_type"),
                 "layout_index": slide_spec.get("layout_index", 0),  # Include layout_index for proper slide generation
-                "status": "pending"  # Initially pending, will be updated during processing
+                "status": "pending",  # Initially pending, will be updated during processing
+                "requires_html": is_html,  # Track if HTML generation is needed
+                "html_ready": False  # Flag to indicate when HTML content is ready
             }
             
             result = db.client.table("slides").insert(slide_data).execute()
@@ -2131,6 +2136,7 @@ async def get_templates():
                     "display_name": template.display_name,
                     "size_mb": round(template.size_mb, 2),
                     "slide_count": template.slide_count,
+                    "layout_count": template.layout_count,
                     "is_valid": template.is_valid,
                     "error_message": template.error_message,
                     "folder_path": template.folder_path,

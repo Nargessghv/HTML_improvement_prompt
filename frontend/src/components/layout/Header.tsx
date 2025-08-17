@@ -101,7 +101,7 @@ export function Header({ className }: HeaderProps) {
             </div>
             <div className="hidden sm:block">
               <p className="text-sm lg:text-base font-light text-gray-700 dark:text-gray-300 tracking-wide">
-                Slide Creator
+                CONTENT CREATION HUB
               </p>
             </div>
           </Link>
@@ -122,7 +122,7 @@ export function Header({ className }: HeaderProps) {
         {/* Right side actions */}
         <div className="flex items-center space-x-3">
           {/* Dark Mode Toggle */}
-          <Button
+          {/* <Button
             variant="ghost"
             size="icon"
             onClick={toggleDarkMode}
@@ -136,7 +136,7 @@ export function Header({ className }: HeaderProps) {
           </Button>
 
           {/* Notifications */}
-          <Button variant="ghost" size="icon" className="relative">
+          {/* <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-4 w-4" />
             <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
               2

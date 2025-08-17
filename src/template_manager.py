@@ -6,6 +6,7 @@ Provides functionality to list, validate, and select templates from the template
 """
 
 import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -24,7 +25,8 @@ class TemplateInfo:
     name: str
     size_mb: float
     slide_count: int
-    is_valid: bool
+    layout_count: int = 0
+    is_valid: bool = True
     error_message: Optional[str] = None
     folder_path: Optional[str] = None
     locked_backgrounds: int = 0
@@ -82,6 +84,31 @@ class TemplateManager:
         logger.info(f"Found {len(templates)} templates")
         return templates
     
+    def _get_layout_count(self, template_name: str) -> int:
+        """
+        Get the number of layouts available for a template from layouts_export.json
+        
+        Args:
+            template_name: Name of the template
+            
+        Returns:
+            Number of layouts available, or 0 if not found
+        """
+        try:
+            layouts_file = Path("layouts_export.json")
+            if layouts_file.exists():
+                with open(layouts_file, 'r') as f:
+                    layouts_data = json.load(f)
+                    count = len(layouts_data)
+                    logger.debug(f"Found {count} layouts for template {template_name}")
+                    return count
+            else:
+                logger.warning(f"layouts_export.json not found, cannot determine layout count for {template_name}")
+                return 0
+        except Exception as e:
+            logger.error(f"Error reading layout count for {template_name}: {e}")
+            return 0
+    
     def _analyze_template(self, template_path: Path, template_folder: Optional[Path] = None) -> TemplateInfo:
         """
         Analyze a template file to extract information
@@ -128,12 +155,18 @@ class TemplateManager:
             locked_png_files = list(template_folder.glob("LOCKED_*.png"))
             locked_backgrounds = len(locked_png_files)
         
+        # Get layout count from layouts_export.json
+        layout_count = self._get_layout_count(name)
+        if layout_count is None:
+            layout_count = 0
+        
         return TemplateInfo(
             filename=filename,
             path=str(template_path),
             name=name,
             size_mb=size_mb,
             slide_count=slide_count,
+            layout_count=layout_count,
             is_valid=is_valid,
             error_message=error_message,
             folder_path=folder_path_str,

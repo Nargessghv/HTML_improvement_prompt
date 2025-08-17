@@ -26,8 +26,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
-import { Loader2, Sparkles, FileText } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 
 const projectSchema = z.object({
   title: z.string()
@@ -36,11 +37,11 @@ const projectSchema = z.object({
   topic: z.string()
     .min(20, 'Topic description must be at least 20 characters')
     .max(5000, 'Topic description must be less than 5000 characters'),
-  templateName: z.string().optional(),
+  templateName: z.string().min(1, 'Please select a template'),
   htmlRefinementIterations: z.number()
     .min(1, 'Must be at least 1 iteration')
     .max(5, 'Maximum 5 iterations allowed')
-    .default(2),
+    .default(3),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
@@ -51,6 +52,7 @@ interface Template {
   display_name: string
   size_mb: number
   slide_count: number
+  layout_count: number
   is_valid: boolean
   error_message?: string
   folder_path?: string
@@ -75,8 +77,8 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
     defaultValues: {
       title: '',
       topic: initialTopic || '',
-      templateName: 'auto',
-      htmlRefinementIterations: 2,
+      templateName: undefined,
+      htmlRefinementIterations: 3,
     },
   })
 
@@ -138,7 +140,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
           status: 'draft',
           // Store template selection and refinement iterations in metadata
           metadata: {
-            template_name: data.templateName === 'auto' ? undefined : data.templateName,
+            template_name: data.templateName,
             html_refinement_iterations: data.htmlRefinementIterations
           }
         })
@@ -171,175 +173,187 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <div className="p-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/30">
-              <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
+      <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+        <div className="p-8">
+          {/* Header */}
+          <DialogHeader className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+              <Sparkles className="w-8 h-8 text-gray-600 dark:text-gray-400" />
             </div>
-            Create New Presentation
-          </DialogTitle>
-          <DialogDescription>
-            Let AI agents create a professional PowerPoint for you.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Presentation Title</FormLabel>
-                  <FormControl>
-                    <Input 
-                      placeholder="e.g., Q4 Business Review, Marketing Strategy 2024"
-                      className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30"
-                      {...field} 
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Give your presentation a clear, descriptive title.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="topic"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Topic Description</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Textarea
-                        placeholder="Describe what you want your presentation to cover. Include key points, target audience, specific data or themes you'd like included."
-                        className="min-h-[120px] max-h-[300px] focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30 resize-none overflow-y-auto"
-                        {...field}
+            <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Create Presentation
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
+              AI will generate a professional presentation for you
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Title */}
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Title
+                    </FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Q4 Business Review"
+                        className="h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base bg-white dark:bg-gray-800"
+                        {...field} 
                       />
-                      <div className="absolute bottom-2 right-2 text-xs text-gray-400 dark:text-gray-500">
-                        {field.value.length}/5000
-                      </div>
-                    </div>
-                  </FormControl>
-                  <FormDescription>
-                    Be specific about your content needs. More details help our AI create better presentations.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="templateName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Presentation Template</FormLabel>
-                  <FormControl>
-                    <Select 
-                      value={field.value} 
-                      onValueChange={field.onChange}
-                      disabled={loadingTemplates}
-                    >
-                      <SelectTrigger className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30">
-                        <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Auto-select (recommended)"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium">Auto-select</span>
-                            <span className="text-xs text-gray-500">Use the default template</span>
-                          </div>
-                        </SelectItem>
-                        {templates.map((template) => (
-                          <SelectItem key={template.name} value={template.name}>
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">{template.display_name}</span>
-                              <div className="flex items-center gap-2 text-xs text-gray-500">
-                                <span>{template.slide_count} slides</span>
-                                <span>•</span>
-                                <span>{template.size_mb.toFixed(1)} MB</span>
-                                {template.locked_backgrounds && template.locked_backgrounds > 0 && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-red-600 font-medium">
-                                      🔒 {template.locked_backgrounds} backgrounds
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormDescription>
-                    Choose a PowerPoint template for your presentation, or let us auto-select the best one.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="htmlRefinementIterations"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>HTML Visual Refinement Iterations</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      placeholder="2"
-                      className="focus:border-red-300 focus:ring-red-200 dark:focus:border-red-700 dark:focus:ring-red-800/30"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 2)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Number of refinement iterations for HTML visualizations (1-5). More iterations improve visual quality but take longer.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <div className="flex justify-end space-x-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isCreating}
-              >
-                Cancel
-              </Button>
-              <Button 
-                type="submit" 
-                disabled={isCreating}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                {isCreating ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Create Presentation
-                  </>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </Button>
-            </div>
-          </form>
-        </Form>
+              />
+
+              {/* Topic */}
+              <FormField
+                control={form.control}
+                name="topic"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Content
+                    </FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Textarea
+                          placeholder="Describe what you want to present..."
+                          className="min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base resize-none bg-white dark:bg-gray-800"
+                          {...field}
+                        />
+                        <div className="absolute bottom-3 right-3 text-xs text-gray-400">
+                          {field.value.length}/5000
+                        </div>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Template */}
+              <FormField
+                control={form.control}
+                name="templateName"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Template
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                        disabled={loadingTemplates}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Choose a template"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((template) => (
+                            <SelectItem key={template.name} value={template.name}>
+                              <div className="flex flex-col items-start">
+                                <span className="font-medium">{template.display_name}</span>
+                                <span className="text-xs text-gray-500">
+                                  {template.layout_count} layouts
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Quality */}
+              <FormField
+                control={form.control}
+                name="htmlRefinementIterations"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Quality
+                    </FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        value={field.value?.toString()}
+                        onValueChange={(value) => field.onChange(parseInt(value))}
+                        className="space-y-2"
+                      >
+                        {[
+                          { value: '1', label: 'Draft', time: '1 min', desc: 'Quick draft generation' },
+                          { value: '3', label: 'Balanced', time: '3 min', desc: 'Good quality and speed' },
+                          { value: '5', label: 'High Quality', time: '5 min', desc: 'Best visual results' }
+                        ].map((option) => (
+                          <div key={option.value} className="flex items-center space-x-3">
+                            <RadioGroupItem value={option.value} id={option.value} />
+                            <label
+                              htmlFor={option.value}
+                              className="flex-1 cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    {option.label}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {option.desc}
+                                  </div>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  ~{option.time}
+                                </span>
+                              </div>
+                            </label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Actions */}
+              <div className="flex space-x-3 pt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  disabled={isCreating}
+                  className="flex-1 h-12 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={isCreating}
+                  className="flex-1 h-12 bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-gray-200 dark:text-gray-900 text-white"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      Create
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </div>
       </DialogContent>
     </Dialog>
   )
