@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, Union
+from .simple_debug import save_prompt_debug
 
 
 class HTMLPromptManager:
@@ -158,6 +159,10 @@ class HTMLPromptManager:
         text = color_config.get("text", {})
         background = color_config.get("background", {})
         
+        # Handle transparent backgrounds properly
+        component_bg = background.get('components', {})
+        component_bg_value = component_bg.get('value', component_bg.get('hex', '#ffffff'))
+        
         prompt = f"""HTML VISUAL DESIGN SPECIFICATIONS:
 
 TEMPLATE COLOR PALETTE:
@@ -166,7 +171,7 @@ TEMPLATE COLOR PALETTE:
 - Body Text: {text.get('body', {}).get('name', 'Black')} ({text.get('body', {}).get('hex', '#000000')}) - Body text and descriptions
 - Heading Text: {text.get('heading', {}).get('name', 'Dark Grey')} ({text.get('heading', {}).get('hex', '#2d3748')}) - All headings
 - HTML Body Background: {background.get('body', {}).get('value', 'transparent')} - CRITICAL for PowerPoint integration
-- Component Backgrounds: {background.get('components', {}).get('name', 'White')} ({background.get('components', {}).get('hex', '#ffffff')}) - Cards, panels
+- Component Backgrounds: {component_bg.get('name', 'White')} ({component_bg_value}) - Cards, panels
 
 HTML TYPOGRAPHY:
 - Font Stack: {typography.get('font_family', "'Segoe UI', system-ui, sans-serif")}
@@ -188,12 +193,12 @@ HTML VISUALIZATION RULES:
 CRITICAL COLOR IMPLEMENTATION:
 - Use inline styles with exact hex values from above
 - Example: style="color: {primary.get('hex', '#0052cc')};" for primary accent
-- Example: style="background-color: {background.get('components', {}).get('hex', '#ffffff')};" for card backgrounds
+- Example: style="background-color: {component_bg_value};" for component backgrounds
 - NEVER rely on default component colors - always override"""
         
         return prompt
     
-    def _get_prompt_path(self, prompt_type: str, filename: str) -> Path:
+    def _get_prompt_path(self, prompt_type: str, filename: str, use_default_fallback: bool = True) -> Path:
         """
         Get the path to a prompt file, checking template-specific first, then defaults.
         
@@ -217,6 +222,24 @@ CRITICAL COLOR IMPLEMENTATION:
                 return template_file
         
         # Fall back to default prompts
+        if use_default_fallback:
+            if prompt_type == "system":
+                default_file = self.default_system_dir / filename
+            else:
+                default_file = self.default_templates_dir / filename
+            
+            # If default doesn't exist, try html_prompts_default folder
+            if not default_file.exists():
+                default_folder = Path("templates/html_prompts_default")
+                if prompt_type == "system":
+                    fallback_file = default_folder / "system" / filename
+                else:
+                    fallback_file = default_folder / "templates" / filename
+                if fallback_file.exists():
+                    return fallback_file
+            return default_file
+        
+        # Return non-existent path if no fallback requested
         if prompt_type == "system":
             return self.default_system_dir / filename
         else:
@@ -446,7 +469,7 @@ IMPORTANT HTML NOTES:
         file_path.write_text(mermaid_examples)
         print(f"✅ Created default Mermaid HTML examples at: {file_path}")
     
-    def get_html_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
+    def get_html_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603, placeholder_name: str = "unknown", slide_number: int = 0) -> str:
         """
         Get the HTML system prompt for content generation.
         
@@ -483,6 +506,22 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
 - Use single-row layouts where possible"""
             base_prompt += "\n\n" + layout_addon
         
+        # Save system prompt for debugging
+        if placeholder_name != "unknown":
+            self._save_generated_html_prompt(base_prompt, placeholder_name, slide_number, "system")
+            
+            # Also save debug info
+            debug_info = f"\n\n[DEBUG INFO]\nTemplate: {self.current_template or 'default'}\n"
+            debug_info += f"System Prompt File: {system_prompt_file}\n"
+            debug_prompt = base_prompt + debug_info
+            self._save_generated_html_prompt(debug_prompt, placeholder_name, slide_number, "system_with_debug")
+            
+            # Also use simple debug
+            try:
+                save_prompt_debug("system", base_prompt, self.current_template, f"slide_{slide_number}_{placeholder_name}")
+            except:
+                pass
+        
         return base_prompt
     
     def get_html_user_prompt(
@@ -495,6 +534,7 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
         viewport_width: int = 1577,
         viewport_height: int = 603,
         slide_spec: Optional[Any] = None,
+        placeholder_instructions: Optional[str] = None,
     ) -> str:
         """
         Get the HTML user prompt for content generation.
@@ -512,9 +552,21 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
         Returns:
             HTML user prompt string
         """
+        # Add placeholder instructions to the beginning if provided
+        instructions_section = ""
+        if placeholder_instructions:
+            instructions_section = f"""CRITICAL TEMPLATE INSTRUCTIONS FROM PLACEHOLDER:
+The PowerPoint template placeholder contains these specific instructions that MUST be followed:
+"{placeholder_instructions}"
+
+These instructions are the PRIMARY requirements for this HTML visualization.
+
+"""
+        
         # Load HTML templates
         user_template_file = self._get_prompt_path("templates", "html_generation_template.txt")
         design_prompt_file = self._get_prompt_path("templates", "visual_design.txt")
+        requirements_file = self._get_prompt_path("templates", "html_requirements.txt")
         
         # Read templates with fallback
         if user_template_file.exists():
@@ -544,8 +596,8 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
                 detailed_specs = "DETAILED HTML SPECIFICATIONS:\n" + "\n".join(specs)
                 detailed_specs += "\n\nCRITICAL: Your HTML must implement these specifications exactly."
         
-        # Format the HTML prompt
-        prompt = user_template.format(
+        # Format the HTML prompt with instructions at the beginning
+        prompt = instructions_section + user_template.format(
             topic=topic,
             slide_number=slide_number,
             total_slides=total_slides,
@@ -556,19 +608,52 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
             detailed_specs=detailed_specs
         )
         
-        # Add HTML design specifications with colors from JSON
-        if design_prompt:
-            # Replace the design prompt with color-aware version
+        # Add HTML requirements if available (highest priority for template-specific)
+        if requirements_file.exists():
+            requirements = requirements_file.read_text()
+            # Replace viewport placeholders
+            requirements = requirements.replace("{viewport_width}", str(viewport_width))
+            requirements = requirements.replace("{viewport_height}", str(viewport_height))
+            prompt += "\n\nTEMPLATE-SPECIFIC REQUIREMENTS (HIGHEST PRIORITY):\n" + requirements
+        
+        # Add HTML design specifications - prioritize template-specific over defaults
+        if design_prompt and self.current_template:
+            # For template-specific prompts, use the visual_design.txt directly
+            # as it contains template-specific requirements
+            prompt += "\n\nTEMPLATE-SPECIFIC DESIGN REQUIREMENTS:\n" + design_prompt
+        elif design_prompt:
+            # Only use color-aware design for default templates
+            colors = self.get_template_colors()
+            color_aware_design = self._generate_color_aware_design_prompt(colors)
+            prompt += "\n\n" + color_aware_design
+        else:
+            # Fallback to color-aware design if no design prompt exists
             colors = self.get_template_colors()
             color_aware_design = self._generate_color_aware_design_prompt(colors)
             prompt += "\n\n" + color_aware_design
         
         # Save the generated HTML prompt for debugging/review
-        self._save_generated_html_prompt(prompt, placeholder_name, slide_number)
+        self._save_generated_html_prompt(prompt, placeholder_name, slide_number, "user")
+        
+        # Also log which template is being used
+        template_info = f"\n\n[DEBUG INFO]\nTemplate: {self.current_template or 'default'}\n"
+        template_info += f"Visual Design File: {design_prompt_file}\n"
+        template_info += f"Requirements File: {requirements_file}\n"
+        template_info += f"Colors: {self.get_template_colors().get('colors', {}).get('background', {})}\n"
+        
+        debug_prompt = prompt + template_info
+        self._save_generated_html_prompt(debug_prompt, placeholder_name, slide_number, "user_with_debug")
+        
+        # Also use simple debug
+        try:
+            full_debug = prompt + template_info
+            save_prompt_debug("user", full_debug, self.current_template, f"slide_{slide_number}_{placeholder_name}")
+        except:
+            pass
         
         return prompt
     
-    def _save_generated_html_prompt(self, prompt: str, placeholder_name: str, slide_number: int):
+    def _save_generated_html_prompt(self, prompt: str, placeholder_name: str, slide_number: int, prompt_type: str = "user"):
         """
         Save generated HTML prompts for review and debugging.
         
@@ -586,7 +671,7 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
         generated_dir.mkdir(parents=True, exist_ok=True)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"html_slide_{slide_number}_{placeholder_name}_{timestamp}.txt"
+        filename = f"{prompt_type}_prompt_slide_{slide_number}_{placeholder_name}_{timestamp}.txt"
         
         file_path = generated_dir / filename
         file_path.write_text(prompt)
@@ -710,7 +795,7 @@ QUALITY CHECKLIST:
         file_path.write_text(refinement_prompt)
         print(f"✅ Created default HTML refinement prompt at: {file_path}")
     
-    def get_html_refinement_prompt(self, width: int, height: int) -> str:
+    def get_html_refinement_prompt(self, width: int, height: int, placeholder_name: str = "unknown", slide_number: int = 0) -> str:
         """
         Get the HTML refinement system prompt with viewport dimensions.
         
@@ -755,5 +840,23 @@ TEMPLATE-SPECIFIC COLOR REQUIREMENTS:
 - Transparent background for body - CRITICAL for PowerPoint integration"""
             
             base_prompt += color_section
+        
+        # Save refinement prompt for debugging
+        if placeholder_name != "unknown":
+            self._save_generated_html_prompt(base_prompt, placeholder_name, slide_number, "refinement")
+            
+            # Also save debug info
+            debug_info = f"\n\n[DEBUG INFO]\nTemplate: {self.current_template or 'default'}\n"
+            debug_info += f"Refinement Prompt File: {refinement_prompt_file}\n"
+            debug_info += f"Width: {width}, Height: {height}\n"
+            debug_prompt = base_prompt + debug_info
+            self._save_generated_html_prompt(debug_prompt, placeholder_name, slide_number, "refinement_with_debug")
+            
+            # Also use simple debug
+            try:
+                full_debug = base_prompt + debug_info
+                save_prompt_debug("refinement", full_debug, self.current_template, f"slide_{slide_number}_{placeholder_name}_w{width}_h{height}")
+            except:
+                pass
         
         return base_prompt

@@ -1845,36 +1845,21 @@ class SlideGenerator:
         except Exception as e:
             print(f"  → Could not extract layout formatting: {e}")
         
-        # Get placeholder index for formatting application
-        try:
-            placeholder_idx = placeholder.placeholder_format.idx
-        except:
-            placeholder_idx = 0
-        
         # Apply markdown formatting while preserving template styling
-        # Pass the layout formatting to the markdown formatter
         self.markdown_formatter.format_text_frame(text_frame, text, layout_formatting)
         
-        # Now apply additional paragraph-level formatting from layout
-        # This ensures alignment, bullets, and spacing are preserved
+        # Now apply the layout formatting to ALL paragraphs and runs
+        # This ensures fonts, colors, and bullet styles are preserved
         if layout_formatting:
-            print("  ✓ Applying complete formatting from layout")
+            print(f"  ✓ Applying complete formatting from layout")
             
             for paragraph in text_frame.paragraphs:
-                # Apply paragraph-level formatting from the layout extractor
-                self.layout_formatter.apply_paragraph_formatting(
-                    paragraph, placeholder_idx
-                )
-                
-                # Apply bullet formatting if needed
-                if paragraph.level > 0 or layout_formatting.get('bullet'):
-                    self.layout_formatter.apply_bullet_formatting(
-                        paragraph, placeholder_idx
-                    )
-                
-                # Apply text run formatting for each run in the paragraph
-                for run in paragraph.runs:
-                    self.layout_formatter.apply_formatting_to_run(run, placeholder_idx)
+                # Apply bullet formatting if this is a bulleted list
+                if layout_formatting.get('bullet_char'):
+                    try:
+                        paragraph.bullet.char = layout_formatting['bullet_char']
+                    except:
+                        pass
                 
                 # Apply to paragraph font if possible
                 if hasattr(paragraph, 'font') and paragraph.font:

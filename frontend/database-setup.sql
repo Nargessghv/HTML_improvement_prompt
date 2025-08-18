@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS slides (
   html_content TEXT, -- generated HTML visualizations
   refined_html TEXT, -- refined HTML after processing
   layout_type TEXT,
+  layout_index INTEGER DEFAULT 0, -- index of layout in PowerPoint template
+  status TEXT DEFAULT 'pending', -- processing status: pending, in_progress, completed, failed
+  requires_html BOOLEAN DEFAULT false, -- indicates if HTML generation is needed
+  html_ready BOOLEAN DEFAULT false, -- flag when HTML content is ready
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

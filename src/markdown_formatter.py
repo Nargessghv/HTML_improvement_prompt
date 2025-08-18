@@ -322,8 +322,8 @@ class MarkdownFormatter:
                 "level", template_formatting.get("paragraph_level", 0)
             )
             
-            # Apply paragraph-level formatting from template
-            self._apply_paragraph_formatting(paragraph, template_formatting)
+            # Skip paragraph-level formatting as it causes text positioning issues
+            # self._apply_paragraph_formatting(paragraph, template_formatting)
 
             # Handle different element types
             if element_type in ["bullet", "numbered"]:
@@ -396,62 +396,10 @@ class MarkdownFormatter:
             paragraph: PowerPoint paragraph object
             template_formatting: Template formatting to apply
         """
-        from pptx.enum.text import PP_ALIGN
-        
-        # Apply alignment
-        if 'alignment' in template_formatting:
-            alignment_map = {
-                'l': PP_ALIGN.LEFT,
-                'ctr': PP_ALIGN.CENTER,
-                'r': PP_ALIGN.RIGHT,
-                'just': PP_ALIGN.JUSTIFY
-            }
-            if template_formatting['alignment'] in alignment_map:
-                try:
-                    paragraph.alignment = alignment_map[template_formatting['alignment']]
-                except:
-                    pass
-        
-        # Note: Bullet formatting in python-pptx is controlled by paragraph level
-        # The template defines whether bullets appear at each level
-        # We can't directly set bullet properties through python-pptx
-        # but the level will trigger the template's bullet settings
-        
-        # Apply indentation
-        if 'margin_left' in template_formatting:
-            try:
-                from pptx.util import Emu
-                paragraph.left_indent = Emu(template_formatting['margin_left'])
-            except:
-                pass
-        
-        if 'indent' in template_formatting:
-            try:
-                from pptx.util import Emu
-                paragraph.first_line_indent = Emu(template_formatting['indent'])
-            except:
-                pass
-        
-        # Apply spacing
-        if 'line_spacing' in template_formatting:
-            try:
-                paragraph.line_spacing = template_formatting['line_spacing']
-            except:
-                pass
-        
-        if 'space_before' in template_formatting:
-            try:
-                from pptx.util import Pt
-                paragraph.space_before = Pt(template_formatting['space_before'] / 100)
-            except:
-                pass
-        
-        if 'space_after' in template_formatting:
-            try:
-                from pptx.util import Pt
-                paragraph.space_after = Pt(template_formatting['space_after'] / 100)
-            except:
-                pass
+        # Skip paragraph-level formatting for now as it's causing text to go out of bounds
+        # The template's default paragraph formatting will be used instead
+        # We'll only apply text run formatting which is safer
+        pass
     
     def _apply_run_formatting_preserving_template(
         self, run, markdown_formatting: dict, template_formatting: Dict[str, Any]

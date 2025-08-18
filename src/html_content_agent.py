@@ -18,6 +18,7 @@ from langchain_core.runnables import RunnableConfig
 from .agents import SlideGenerationState
 from .html_renderer import HTMLRenderer
 from .html_prompt_manager import HTMLPromptManager
+from .html_debug_logger import get_debug_logger
 from .llm_client import LangchainLLMClient, SlideContent
 from .monitoring import monitor_agent_execution
 
@@ -35,6 +36,9 @@ class HTMLContentGenerationAgent:
         # Initialize HTML prompt manager
         self.html_prompt_manager = HTMLPromptManager()
         print(f"✅ {self.name}: HTML prompt manager initialized")
+        
+        # Initialize debug logger
+        self.debug_logger = get_debug_logger()
 
         # Initialize HTML renderer with error handling
         try:
@@ -95,28 +99,67 @@ class HTMLContentGenerationAgent:
             # Try to extract template name from template_folder_path or template_path
             template_name = None
             
+            # Debug: Print state keys to see what's available
+            print(f"🔍 {self.name}: State keys available: {list(state.keys())}")
+            
             # First try template_folder_path (more specific)
             template_folder_path = state.get("template_folder_path")
+            print(f"🔍 {self.name}: template_folder_path = {template_folder_path}")
             if template_folder_path:
                 # Extract folder name from path
                 from pathlib import Path
-                template_name = Path(template_folder_path).name
+                # Handle both string and Path objects
+                if isinstance(template_folder_path, str):
+                    template_name = Path(template_folder_path).name
+                else:
+                    template_name = template_folder_path.name if hasattr(template_folder_path, 'name') else str(template_folder_path).split('/')[-1]
+                print(f"🔍 {self.name}: Extracted template name from folder path: {template_name}")
             
             # Fallback to extracting from template_path
             if not template_name:
                 template_path = state.get("template_path")
-                if template_path and "templates/" in template_path:
-                    # Extract template folder name from path
-                    from pathlib import Path
-                    path_parts = Path(template_path).parts
-                    if "templates" in path_parts:
-                        idx = path_parts.index("templates")
-                        if idx + 1 < len(path_parts):
-                            template_name = path_parts[idx + 1]
+                print(f"🔍 {self.name}: template_path = {template_path}")
+                if template_path:
+                    # Handle both string and Path objects
+                    template_path_str = str(template_path)
+                    if "templates/" in template_path_str or "templates\\" in template_path_str:
+                        # Extract template folder name from path
+                        from pathlib import Path
+                        path_parts = Path(template_path_str).parts
+                        if "templates" in path_parts:
+                            idx = path_parts.index("templates")
+                            if idx + 1 < len(path_parts):
+                                # Get the folder name, not the .pptx file
+                                potential_name = path_parts[idx + 1]
+                                # If it's a .pptx file, get the parent folder
+                                if potential_name.endswith('.pptx'):
+                                    if idx + 2 < len(path_parts):
+                                        template_name = path_parts[idx + 2]
+                                else:
+                                    template_name = potential_name
+                                print(f"🔍 {self.name}: Extracted template name from path: {template_name}")
             
+            # Also check for template_name directly in state
+            if not template_name:
+                template_name = state.get("template_name")
+                print(f"🔍 {self.name}: template_name from state = {template_name}")
+            
+            # Final cleanup of template name
             if template_name:
+                # Remove any file extensions if present
+                template_name = template_name.replace('.pptx', '')
+                # Handle numbered templates (e.g., "Brochure_template_leaflet_4sides_1" -> "Brochure_template_leaflet_4sides")
+                if template_name.endswith('_1') or template_name.endswith('_2'):
+                    template_name = template_name[:-2]
+                
                 self.html_prompt_manager.set_template(template_name)
                 print(f"📁 {self.name}: Using template '{template_name}' for HTML prompts")
+                
+                # Verify the template was actually set
+                colors = self.html_prompt_manager.get_template_colors()
+                print(f"🔍 {self.name}: Template colors background = {colors.get('colors', {}).get('background', {})}")
+            else:
+                print(f"⚠️ {self.name}: No template name found, using default prompts")
 
             # Use parallel HTML generation (workflow handles async context properly)
             processed_slides = self._process_slides_for_html_content(
@@ -179,6 +222,15 @@ class HTMLContentGenerationAgent:
         )
 
         try:
+            # CRITICAL: Extract and set template for HTML prompt manager
+            template_name = self._extract_template_name_from_state(state)
+            if template_name:
+                print(f"🎯 {self.name}: Setting template for HTML generation: {template_name}")
+                self.html_prompt_manager.set_template(template_name)
+            else:
+                print(f"⚠️ {self.name}: No template detected, using defaults")
+                self.html_prompt_manager.set_template(None)
+            
             # Check prerequisites
             slide_contents = state.get("slide_contents")
             presentation_plan = state.get("presentation_plan")
@@ -220,6 +272,13 @@ class HTMLContentGenerationAgent:
 
             # Use truly parallel HTML generation
             layouts_info = state.get("layouts_info", {})
+            # Store layouts_info for use in async methods
+            self._current_layouts_info = layouts_info
+            
+            # Ensure template is set and persisted before parallel processing
+            if self.html_prompt_manager.current_template:
+                print(f"📌 {self.name}: Template '{self.html_prompt_manager.current_template}' is set for all parallel tasks")
+            
             processed_slides = await self._process_planned_html_slides_parallel(
                 slide_contents, slides, state.get("topic", ""), layouts_info, config
             )
@@ -279,6 +338,13 @@ class HTMLContentGenerationAgent:
         Returns:
             List of processed slide content with HTML visualizations
         """
+        # Ensure template is set before processing (as a fallback)
+        if not self.html_prompt_manager.current_template:
+            template_name = self._extract_template_name_from_state(state)
+            if template_name:
+                self.html_prompt_manager.set_template(template_name)
+                print(f"🔄 {self.name}: Set template '{template_name}' in _process_slides_for_html_content")
+        
         processed_slides = []
         html_generated_count = 0
 
@@ -286,6 +352,8 @@ class HTMLContentGenerationAgent:
 
         # Get layouts info from state
         layouts_info = state.get("layouts_info", {})
+        # Store for use in HTML generation
+        self._current_layouts_info = layouts_info
 
         for i, slide_content in enumerate(slide_contents, 1):
             print(f"  📄 Processing slide {i} (Layout {slide_content.layout_index})...")
@@ -319,7 +387,92 @@ class HTMLContentGenerationAgent:
         print(f"      Coverage: {html_generated_count}/{len(slide_contents)} slides")
 
         return processed_slides
+    
+    def _extract_template_name_from_state(self, state: dict) -> Optional[str]:
+        """
+        Extract template name from state using multiple strategies.
+        
+        Args:
+            state: Workflow state
+            
+        Returns:
+            Template name or None
+        """
+        template_name = None
+        
+        # Try template_folder_path first
+        template_folder_path = state.get("template_folder_path")
+        if template_folder_path:
+            from pathlib import Path
+            if isinstance(template_folder_path, str):
+                template_name = Path(template_folder_path).name
+            else:
+                template_name = template_folder_path.name if hasattr(template_folder_path, 'name') else str(template_folder_path).split('/')[-1]
+        
+        # Try template_path
+        if not template_name:
+            template_path = state.get("template_path")
+            if template_path:
+                template_path_str = str(template_path)
+                # Generic template extraction - no hardcoded names
+                if "templates/" in template_path_str or "templates\\" in template_path_str:
+                    from pathlib import Path
+                    path_parts = Path(template_path_str).parts
+                    if "templates" in path_parts:
+                        idx = path_parts.index("templates")
+                        # The folder after "templates" is the template name
+                        if idx + 1 < len(path_parts):
+                            potential_name = path_parts[idx + 1]
+                            # Skip if it's a .pptx file at this level
+                            if not potential_name.endswith('.pptx'):
+                                template_name = potential_name
+                            elif idx + 2 < len(path_parts):
+                                # Try the next level if we hit a .pptx
+                                template_name = path_parts[idx + 2].replace('.pptx', '')
+        
+        # Try direct template_name
+        if not template_name:
+            template_name = state.get("template_name")
+        
+        # Clean up template name
+        if template_name:
+            template_name = template_name.replace('.pptx', '')
+            if template_name.endswith('_1') or template_name.endswith('_2'):
+                template_name = template_name[:-2]
+        
+        return template_name
 
+    def _get_placeholder_instructions(self, layout_index: int, placeholder_name: str, layouts_info: dict) -> str:
+        """
+        Get placeholder instructions from layout information.
+        
+        Args:
+            layout_index: The layout index for the slide
+            placeholder_name: The name of the placeholder
+            layouts_info: Layout information dictionary
+            
+        Returns:
+            Instructions string or empty string if not found
+        """
+        try:
+            # Handle both string and integer keys in layout info
+            layout_info = layouts_info.get(layout_index) or layouts_info.get(str(layout_index))
+            if not layout_info:
+                return ""
+                
+            placeholders = layout_info.get("placeholders", [])
+            for placeholder_info in placeholders:
+                if placeholder_info.get("name") == placeholder_name:
+                    instructions = placeholder_info.get("instructions", "")
+                    if instructions:
+                        print(f"        📋 Found placeholder instructions: {instructions[:100]}...")
+                    return instructions
+            return ""
+            
+        except Exception as e:
+            print(f"        ⚠️ Error getting placeholder instructions: {e}")
+            return ""
+    
     def _get_placeholder_dimensions(self, layout_index: int, placeholder_name: str, layouts_info: dict) -> tuple[int, int]:
         """
         Get placeholder dimensions from layout information.
@@ -785,8 +938,19 @@ class HTMLContentGenerationAgent:
         try:
             # Use HTML prompt manager to get prompts
             system_prompt = self.html_prompt_manager.get_html_system_prompt(
-                viewport_width, viewport_height
+                viewport_width, viewport_height, placeholder_name, slide_number
             )
+            
+            # Try to get placeholder instructions from layouts_info
+            placeholder_instructions = ""
+            if hasattr(self, '_current_layouts_info') and self._current_layouts_info:
+                # Extract layout index from slide_spec or use slide_number - 1
+                layout_index = slide_number - 1
+                if slide_spec and hasattr(slide_spec, 'layout_index'):
+                    layout_index = slide_spec.layout_index
+                placeholder_instructions = self._get_placeholder_instructions(
+                    layout_index, placeholder_name, self._current_layouts_info
+                )
             
             user_prompt = self.html_prompt_manager.get_html_user_prompt(
                 placeholder_name=placeholder_name,
@@ -797,8 +961,27 @@ class HTMLContentGenerationAgent:
                 viewport_width=viewport_width,
                 viewport_height=viewport_height,
                 slide_spec=slide_spec,
+                placeholder_instructions=placeholder_instructions,
             )
 
+            # Debug: Print template info
+            print(f"        🔍 HTML DEBUG: Template = {self.html_prompt_manager.current_template}")
+            print(f"        🔍 HTML DEBUG: Colors = {self.html_prompt_manager.get_template_colors().get('colors', {}).get('background', {})}")
+            
+            # Log prompts and template info for debugging
+            try:
+                self.debug_logger.log_generation(
+                    slide_number=slide_number,
+                    placeholder_name=placeholder_name,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    generated_html="",  # Will be updated after generation
+                    template_name=self.html_prompt_manager.current_template,
+                    colors=self.html_prompt_manager.get_template_colors()
+                )
+            except Exception as e:
+                print(f"        ⚠️ Error logging generation: {e}")
+            
             # Generate HTML content
             generated_html = self.llm_client.generate_content(
                 system_prompt=system_prompt,
@@ -809,6 +992,17 @@ class HTMLContentGenerationAgent:
             if not generated_html:
                 print("        ⚠️ No HTML content generated")
                 return original_content
+            
+            # Log the actual generated HTML
+            self.debug_logger.log_generation(
+                slide_number=slide_number,
+                placeholder_name=placeholder_name,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                generated_html=generated_html,
+                template_name=self.html_prompt_manager.current_template,
+                colors=self.html_prompt_manager.get_template_colors()
+            )
 
             # Clean the response
             cleaned_html = self._clean_llm_response(generated_html)
@@ -974,8 +1168,8 @@ class HTMLContentGenerationAgent:
         return html_content.strip()
 
     # DEPRECATED: This method is replaced by HTMLPromptManager.get_html_user_prompt()
-    # Kept for reference only - DO NOT USE
-    def _create_html_generation_prompt(
+    # All template-specific content has been moved to template folders
+    def _create_html_generation_prompt_deprecated(
         self,
         placeholder_name: str,
         original_content: str,
@@ -1629,8 +1823,8 @@ See the mandatory D3.js timeline example above - use this exact pattern for all 
         )
 
     # DEPRECATED: This method is replaced by HTMLPromptManager.get_html_system_prompt()
-    # Kept for reference only - DO NOT USE
-    def _get_html_generation_system_prompt(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
+    # All template-specific content has been moved to template folders
+    def _get_html_generation_system_prompt_deprecated(self, viewport_width: int = 1577, viewport_height: int = 603) -> str:
         """Get system prompt for HTML generation with adaptive layout guidance"""
         
         # Determine layout guidance based on viewport dimensions
@@ -2500,10 +2694,25 @@ CRITICAL REQUIREMENTS:
         Returns (placeholder_name, html_content)
         """
         try:
+            # Debug: Check if template is set for this async task
+            current_template = self.html_prompt_manager.current_template
+            print(f"    🔍 Async HTML generation for '{placeholder_name}' - Template: {current_template or 'default'}")
+            
             # Use HTML prompt manager to get prompts
             system_prompt = self.html_prompt_manager.get_html_system_prompt(
-                viewport_width, viewport_height
+                viewport_width, viewport_height, placeholder_name, slide_number
             )
+            
+            # Try to get placeholder instructions from layouts_info
+            placeholder_instructions = ""
+            if hasattr(self, '_current_layouts_info') and self._current_layouts_info:
+                # Extract layout index from slide_spec or use slide_number - 1
+                layout_index = slide_number - 1
+                if slide_spec and hasattr(slide_spec, 'layout_index'):
+                    layout_index = slide_spec.layout_index
+                placeholder_instructions = self._get_placeholder_instructions(
+                    layout_index, placeholder_name, self._current_layouts_info
+                )
             
             user_prompt = self.html_prompt_manager.get_html_user_prompt(
                 placeholder_name=placeholder_name,
@@ -2514,6 +2723,7 @@ CRITICAL REQUIREMENTS:
                 viewport_width=viewport_width,
                 viewport_height=viewport_height,
                 slide_spec=slide_spec,
+                placeholder_instructions=placeholder_instructions,
             )
 
             # Use async LLM client method for true parallelism

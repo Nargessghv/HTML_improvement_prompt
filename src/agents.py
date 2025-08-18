@@ -1331,28 +1331,73 @@ class HTMLRefinementAgent:
 
         # Set template for HTML prompt selection if available
         template_name = None
+        
+        # Debug: Print state keys related to template
+        print(f"📁 {self.name}: Extracting template from state...")
+        print(f"   - template_folder_path: {state.get('template_folder_path')}")
+        print(f"   - template_path: {state.get('template_path')}")
+        print(f"   - template_name: {state.get('template_name')}")
+        
         template_folder_path = state.get("template_folder_path")
         if template_folder_path:
             from pathlib import Path
 
             template_name = Path(template_folder_path).name
+            print(f"   - Extracted from folder_path: {template_name}")
 
         if not template_name:
             template_path = state.get("template_path")
-            if template_path and "templates/" in template_path:
-                from pathlib import Path
-
-                path_parts = Path(template_path).parts
-                if "templates" in path_parts:
-                    idx = path_parts.index("templates")
-                    if idx + 1 < len(path_parts):
-                        template_name = path_parts[idx + 1]
+            if template_path:
+                template_path_str = str(template_path)
+                print(f"   - Checking template_path: {template_path_str}")
+                
+                # Generic template extraction from path
+                if "templates/" in template_path_str or "templates\\" in template_path_str:
+                    from pathlib import Path
+                    path_parts = Path(template_path_str).parts
+                    
+                    # Find the templates directory
+                    if "templates" in path_parts:
+                        idx = path_parts.index("templates")
+                        # The next part after "templates" should be the template folder name
+                        if idx + 1 < len(path_parts):
+                            # Get the folder name (not the .pptx file)
+                            potential_name = path_parts[idx + 1]
+                            # If it's a .pptx file, we're looking at the wrong level
+                            if potential_name.endswith('.pptx'):
+                                # Try to get the parent folder name
+                                if idx + 2 < len(path_parts):
+                                    potential_name = path_parts[idx + 2]
+                            
+                            # Clean the name (remove .pptx if present)
+                            template_name = potential_name.replace('.pptx', '')
+                            print(f"   - Extracted template from path: {template_name}")
+        
+        # Try direct template_name from state
+        if not template_name:
+            direct_name = state.get("template_name")
+            if direct_name:
+                template_name = direct_name
+                print(f"   - Got direct template_name: {template_name}")
+        
+        # Clean up template name
+        if template_name:
+            original = template_name
+            template_name = template_name.replace('.pptx', '')
+            if template_name.endswith('_1') or template_name.endswith('_2'):
+                template_name = template_name[:-2]
+            if original != template_name:
+                print(f"   - Cleaned template name: {original} -> {template_name}")
 
         if template_name:
             self.html_prompt_manager.set_template(template_name)
             print(
                 f"📁 {self.name}: Using template '{template_name}' for refinement prompts"
             )
+            # Store template name for debugging
+            self._current_template_name = template_name
+        else:
+            self._current_template_name = None
 
         slide_contents = state.get("slide_contents")
         if not slide_contents:
@@ -1499,7 +1544,7 @@ class HTMLRefinementAgent:
             refinement_history = state.get(refinement_history_key, [])
 
             correction_response = self._get_html_correction(
-                html_content, image_url, slide_purpose, refinement_history, config
+                html_content, image_url, slide_purpose, refinement_history, config, current_slide_index
             )
             if (
                 correction_response
@@ -1576,28 +1621,73 @@ class HTMLRefinementAgent:
 
         # Set template for HTML prompt selection if available
         template_name = None
+        
+        # Debug: Print state keys related to template
+        print(f"📁 {self.name}: Extracting template from state...")
+        print(f"   - template_folder_path: {state.get('template_folder_path')}")
+        print(f"   - template_path: {state.get('template_path')}")
+        print(f"   - template_name: {state.get('template_name')}")
+        
         template_folder_path = state.get("template_folder_path")
         if template_folder_path:
             from pathlib import Path
 
             template_name = Path(template_folder_path).name
+            print(f"   - Extracted from folder_path: {template_name}")
 
         if not template_name:
             template_path = state.get("template_path")
-            if template_path and "templates/" in template_path:
-                from pathlib import Path
-
-                path_parts = Path(template_path).parts
-                if "templates" in path_parts:
-                    idx = path_parts.index("templates")
-                    if idx + 1 < len(path_parts):
-                        template_name = path_parts[idx + 1]
+            if template_path:
+                template_path_str = str(template_path)
+                print(f"   - Checking template_path: {template_path_str}")
+                
+                # Generic template extraction from path
+                if "templates/" in template_path_str or "templates\\" in template_path_str:
+                    from pathlib import Path
+                    path_parts = Path(template_path_str).parts
+                    
+                    # Find the templates directory
+                    if "templates" in path_parts:
+                        idx = path_parts.index("templates")
+                        # The next part after "templates" should be the template folder name
+                        if idx + 1 < len(path_parts):
+                            # Get the folder name (not the .pptx file)
+                            potential_name = path_parts[idx + 1]
+                            # If it's a .pptx file, we're looking at the wrong level
+                            if potential_name.endswith('.pptx'):
+                                # Try to get the parent folder name
+                                if idx + 2 < len(path_parts):
+                                    potential_name = path_parts[idx + 2]
+                            
+                            # Clean the name (remove .pptx if present)
+                            template_name = potential_name.replace('.pptx', '')
+                            print(f"   - Extracted template from path: {template_name}")
+        
+        # Try direct template_name from state
+        if not template_name:
+            direct_name = state.get("template_name")
+            if direct_name:
+                template_name = direct_name
+                print(f"   - Got direct template_name: {template_name}")
+        
+        # Clean up template name
+        if template_name:
+            original = template_name
+            template_name = template_name.replace('.pptx', '')
+            if template_name.endswith('_1') or template_name.endswith('_2'):
+                template_name = template_name[:-2]
+            if original != template_name:
+                print(f"   - Cleaned template name: {original} -> {template_name}")
 
         if template_name:
             self.html_prompt_manager.set_template(template_name)
             print(
                 f"📁 {self.name}: Using template '{template_name}' for parallel refinement prompts"
             )
+            # Store template name for debugging
+            self._current_template_name = template_name
+        else:
+            self._current_template_name = None
 
         slide_contents = state.get("slide_contents")
         if not slide_contents:
@@ -1863,6 +1953,15 @@ class HTMLRefinementAgent:
         current_html = initial_html_content
         slide_number = slide_index + 1
         print(f"  🚀 Starting full refinement loop for slide {slide_number}...")
+        
+        # Debug: Check if template is still set for this async task
+        current_template = self.html_prompt_manager.current_template
+        print(f"      📁 Template for slide {slide_number} refinement: {current_template or 'default'}")
+        
+        # If template was lost, restore it from saved value
+        if not current_template and hasattr(self, '_current_template_name') and self._current_template_name:
+            print(f"      🔄 Restoring template '{self._current_template_name}' for slide {slide_number}")
+            self.html_prompt_manager.set_template(self._current_template_name)
 
         # Get or create slide ID for Supabase tracking
         slide_id = None
@@ -1915,7 +2014,7 @@ class HTMLRefinementAgent:
 
             # Get LLM correction
             correction_response = await self._get_html_correction_async(
-                current_html, image_url, slide_purpose, refinement_history, config
+                current_html, image_url, slide_purpose, refinement_history, config, slide_index
             )
 
             # Track this refinement iteration in Supabase
@@ -2159,6 +2258,7 @@ class HTMLRefinementAgent:
         slide_purpose: str,
         refinement_history: Optional[list[str]] = None,
         config: Optional[RunnableConfig] = None,
+        slide_index: Optional[int] = None,
     ) -> Optional[RefinedHTML]:
         """
         Async version of _get_html_correction for true parallel LLM calls
@@ -2167,8 +2267,33 @@ class HTMLRefinementAgent:
 
         from .llm_models import RefinedHTML
 
+        # Try to extract placeholder name and slide number from context
+        placeholder_name = "unknown"
+        slide_number = slide_index + 1 if slide_index is not None else 0
+        
+        # Try to extract placeholder name from slide_purpose or HTML content
+        if slide_purpose:
+            # Look for placeholder name in purpose (e.g., "HTML content leaflet front left far side")
+            import re
+            # Try to extract placeholder name from purpose
+            if "HTML content" in slide_purpose:
+                # Extract everything after "HTML content" as placeholder name
+                placeholder_match = re.search(r'HTML content\s+(.+?)(?:\s+for|\s+on|\s+in|$)', slide_purpose, re.IGNORECASE)
+                if placeholder_match:
+                    placeholder_name = placeholder_match.group(1).strip()
+                    print(f"      🔍 Extracted placeholder name: '{placeholder_name}' for slide {slide_number}")
+            
+            # Also try to extract slide number if not already set
+            if slide_number == 0:
+                slide_match = re.search(r'slide[\s_]*(\d+)', slide_purpose, re.IGNORECASE)
+                if slide_match:
+                    slide_number = int(slide_match.group(1))
+        
+        if placeholder_name == "unknown":
+            print(f"      ⚠️ Could not extract placeholder name from purpose: '{slide_purpose[:100]}...'")
+        
         system_prompt = self._get_system_prompt(
-            html_content
+            html_content, placeholder_name, slide_number
         )  # Pass HTML to extract dimensions
         user_prompt = self._create_user_prompt(
             html_content, image_url, slide_purpose, refinement_history
@@ -2238,12 +2363,38 @@ class HTMLRefinementAgent:
         slide_purpose: str,
         refinement_history: Optional[list[str]] = None,
         config: Optional[RunnableConfig] = None,
+        slide_index: Optional[int] = None,
     ) -> Optional[RefinedHTML]:
         """
         Synchronous version (kept for compatibility with sequential processing)
         """
+        # Try to extract placeholder name and slide number from context
+        placeholder_name = "unknown"
+        slide_number = slide_index + 1 if slide_index is not None else 0
+        
+        # Try to extract placeholder name from slide_purpose or HTML content
+        if slide_purpose:
+            # Look for placeholder name in purpose (e.g., "HTML content leaflet front left far side")
+            import re
+            # Try to extract placeholder name from purpose
+            if "HTML content" in slide_purpose:
+                # Extract everything after "HTML content" as placeholder name
+                placeholder_match = re.search(r'HTML content\s+(.+?)(?:\s+for|\s+on|\s+in|$)', slide_purpose, re.IGNORECASE)
+                if placeholder_match:
+                    placeholder_name = placeholder_match.group(1).strip()
+                    print(f"      🔍 Extracted placeholder name: '{placeholder_name}' for slide {slide_number}")
+            
+            # Also try to extract slide number if not already set
+            if slide_number == 0:
+                slide_match = re.search(r'slide[\s_]*(\d+)', slide_purpose, re.IGNORECASE)
+                if slide_match:
+                    slide_number = int(slide_match.group(1))
+        
+        if placeholder_name == "unknown":
+            print(f"      ⚠️ Could not extract placeholder name from purpose: '{slide_purpose[:100]}...'")
+        
         system_prompt = self._get_system_prompt(
-            html_content
+            html_content, placeholder_name, slide_number
         )  # Pass HTML to extract dimensions
         user_prompt = self._create_user_prompt(
             html_content, image_url, slide_purpose, refinement_history
@@ -2402,7 +2553,7 @@ If any content is missing in the image it means it is either outside the boundar
 
         return width, height
 
-    def _get_system_prompt(self, html_content: str = None) -> str:
+    def _get_system_prompt(self, html_content: str = None, placeholder_name: str = "unknown", slide_number: int = 0) -> str:
         """Get the system prompt for HTML refinement with template-aware colors."""
         # Extract viewport dimensions from HTML if provided
         if html_content:
@@ -2411,7 +2562,13 @@ If any content is missing in the image it means it is either outside the boundar
             width, height = 1577, 603  # Default dimensions
 
         # Use HTML prompt manager to get template-aware refinement prompt
-        return self.html_prompt_manager.get_html_refinement_prompt(width, height)
+        prompt = self.html_prompt_manager.get_html_refinement_prompt(width, height, placeholder_name, slide_number)
+        
+        # Debug: Print template info
+        print(f"  🔍 REFINEMENT DEBUG: Template = {self.html_prompt_manager.current_template}")
+        print(f"  🔍 REFINEMENT DEBUG: Colors = {self.html_prompt_manager.get_template_colors().get('colors', {}).get('background', {})}")
+        
+        return prompt
 
     def _get_system_prompt_legacy(self) -> str:
         """DEPRECATED: Old hardcoded system prompt - DO NOT USE"""
@@ -2641,14 +2798,47 @@ class ImagePromptAgent:
 
         if not template_name:
             template_path = state.get("template_path")
-            if template_path and "templates/" in template_path:
-                from pathlib import Path
-
-                path_parts = Path(template_path).parts
-                if "templates" in path_parts:
-                    idx = path_parts.index("templates")
-                    if idx + 1 < len(path_parts):
-                        template_name = path_parts[idx + 1]
+            if template_path:
+                template_path_str = str(template_path)
+                print(f"   - Checking template_path: {template_path_str}")
+                
+                # Generic template extraction from path
+                if "templates/" in template_path_str or "templates\\" in template_path_str:
+                    from pathlib import Path
+                    path_parts = Path(template_path_str).parts
+                    
+                    # Find the templates directory
+                    if "templates" in path_parts:
+                        idx = path_parts.index("templates")
+                        # The next part after "templates" should be the template folder name
+                        if idx + 1 < len(path_parts):
+                            # Get the folder name (not the .pptx file)
+                            potential_name = path_parts[idx + 1]
+                            # If it's a .pptx file, we're looking at the wrong level
+                            if potential_name.endswith('.pptx'):
+                                # Try to get the parent folder name
+                                if idx + 2 < len(path_parts):
+                                    potential_name = path_parts[idx + 2]
+                            
+                            # Clean the name (remove .pptx if present)
+                            template_name = potential_name.replace('.pptx', '')
+                            print(f"   - Extracted template from path: {template_name}")
+        
+        # Try direct template_name from state
+        if not template_name:
+            direct_name = state.get("template_name")
+            if direct_name:
+                template_name = direct_name
+                print(f"   - Got direct template_name: {template_name}")
+        
+        # Clean up template name
+        if template_name:
+            original = template_name
+            template_name = template_name.replace('.pptx', '')
+            if template_name.endswith('_1') or template_name.endswith('_2'):
+                template_name = template_name[:-2]
+            if original != template_name:
+                print(f"   - Cleaned template name: {original} -> {template_name}")
 
         return template_name
 

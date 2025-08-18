@@ -2,65 +2,66 @@
   "template_name": "Brochure Template - Leaflet",
   "colors": {
     "primary": {
-      "name": "Blue",
-      "hex": "#0066cc",
-      "usage": "Headlines, CTAs, key features"
+      "name": "White",
+      "hex": "#ffffff",
+      "usage": "ALL text - headlines, body, captions (for contrast on gradient background)"
     },
     "secondary": {
-      "name": "Green",
-      "hex": "#00a652",
-      "usage": "Subheadings, secondary information, success indicators"
+      "name": "Light Blue",
+      "hex": "#5bc0de",
+      "usage": "Accent icons, checkmarks, highlights only"
     },
     "text": {
       "body": {
-        "name": "Black",
-        "hex": "#000000",
-        "usage": "Body text, descriptions, main content"
+        "name": "White",
+        "hex": "#ffffff",
+        "usage": "ALL body text - must be white for brochure overlay"
       },
       "heading": {
-        "name": "Blue",
-        "hex": "#0066cc",
-        "usage": "Major section headings"
+        "name": "White",
+        "hex": "#ffffff",
+        "usage": "ALL headings - must be white for brochure overlay"
       }
     },
     "background": {
       "body": {
         "name": "Transparent",
         "value": "transparent",
-        "usage": "HTML body background for PowerPoint integration"
+        "usage": "CRITICAL - HTML body MUST be transparent for brochure overlay"
       },
       "components": {
-        "name": "White",
-        "hex": "#ffffff",
-        "usage": "Cards, info boxes, containers"
+        "name": "Transparent",
+        "value": "transparent",
+        "usage": "ALL components MUST be transparent - no backgrounds"
       }
     },
     "accent": {
-      "light_grey": {
-        "name": "Light Grey",
-        "hex": "#9ca3af",
-        "usage": "Supporting elements, dividers, borders"
+      "light_purple": {
+        "name": "Light Purple",
+        "hex": "#b19cd9",
+        "usage": "Alternative accent for icons and highlights"
       },
-      "dark_grey": {
-        "name": "Dark Grey",
-        "hex": "#6b7280",
-        "usage": "Secondary text, captions"
+      "white_muted": {
+        "name": "White Muted",
+        "rgba": "rgba(255,255,255,0.7)",
+        "usage": "Secondary text, dividers with reduced opacity"
       }
     }
   },
   "typography": {
-    "font_family": "'Segoe UI', system-ui, sans-serif",
+    "font_family": "'Helvetica Neue', Helvetica, Arial, sans-serif",
     "sizes": {
       "h1": "32px",
       "h2": "24px",
-      "h3": "18px",
-      "body": "14px",
-      "small": "12px"
+      "h3": "20px",
+      "body": "16px",
+      "small": "14px"
     }
   },
-  "image_generation": {
-    "primary_accent": "blue (#0066cc)",
-    "secondary_accent": "green (#00a652)",
-    "style": "vibrant, engaging, marketing-oriented"
+  "html_requirements": {
+    "transparency": "CRITICAL - All HTML must render as transparent PNG",
+    "no_cards": "Never use DaisyUI cards with backgrounds",
+    "white_text_only": "All text must be white (#ffffff)",
+    "no_backgrounds": "No background colors on any element"
   }
 }

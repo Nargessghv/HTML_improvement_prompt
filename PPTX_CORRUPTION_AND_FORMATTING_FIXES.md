@@ -353,45 +353,47 @@ def validate_pptx(filepath):
 - ✅ RGB colors applied correctly
 - ✅ No corruption warnings in PowerPoint
 
-## Issue 4: Paragraph and Bullet Formatting Not Preserved
+## Issue 4: Paragraph and Bullet Formatting Extraction
 
 ### Root Cause
-python-pptx doesn't automatically preserve paragraph-level formatting like alignment, bullets, indentation, and spacing when setting text. These properties need to be explicitly extracted from the layout XML and reapplied.
+python-pptx doesn't automatically preserve paragraph-level formatting like alignment, bullets, indentation, and spacing when setting text. These properties need to be explicitly extracted from the layout XML.
 
-### Enhanced Formatting Extraction
+### Enhanced Formatting Extraction Capability
 The `LayoutFormattingExtractor` was enhanced to capture:
 - **Text Alignment**: Left, Center, Right, Justify
 - **Bullet Properties**: Character, font, color, size, enabled/disabled
 - **Indentation**: Left margin, right margin, first line indent
 - **Spacing**: Line spacing, space before/after paragraphs
 
-### Integration in Slide Generation
+### Implementation Note
+While the extraction capability is in place, applying paragraph-level formatting (margins, indentation, spacing) can cause text positioning issues where content appears outside the placeholder bounds. Therefore:
+- **Text formatting** (font, size, color, bold) is applied ✅
+- **Paragraph levels** for bullets are set ✅
+- **Paragraph spacing/margins** are extracted but NOT applied by default ⚠️
+
+### Current Integration
 ```python
 # In slide_generator.py
 def _set_text_preserving_formatting_with_layout():
-    # Apply markdown formatting with layout properties
+    # Apply markdown formatting with text properties only
     self.markdown_formatter.format_text_frame(
         text_frame, text, layout_formatting
     )
     
-    # Apply paragraph-level formatting
+    # Apply safe formatting (fonts, colors) to runs
     for paragraph in text_frame.paragraphs:
-        self.layout_formatter.apply_paragraph_formatting(
-            paragraph, placeholder_idx
-        )
-        
-        # Apply bullet formatting if needed
-        if paragraph.level > 0 or layout_formatting.get('bullet'):
-            self.layout_formatter.apply_bullet_formatting(
-                paragraph, placeholder_idx
-            )
+        for run in paragraph.runs:
+            # Apply font formatting safely
+            if layout_formatting.get('font_name'):
+                run.font.name = layout_formatting['font_name']
 ```
 
-### python-pptx Bullet Limitations
+### python-pptx Limitations with Paragraph Formatting
 - Bullets are controlled by paragraph **level** (0-4)
 - Template defines bullet appearance at each level
-- Cannot directly set all bullet properties through API
-- Setting `paragraph.level` triggers template's bullet definition
+- Setting margins/indentation can push text outside bounds
+- EMU to pixel conversions may not match PowerPoint's internal calculations
+- Best to let template defaults handle paragraph spacing
 
 ## Key Learnings
 

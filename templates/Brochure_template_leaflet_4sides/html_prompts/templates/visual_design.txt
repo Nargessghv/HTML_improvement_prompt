@@ -1,37 +1,90 @@
-BROCHURE TEMPLATE - HTML VISUAL DESIGN SPECIFICATIONS:
+BROCHURE OVERLAY - CRITICAL VISUAL DESIGN REQUIREMENTS
 
-BROCHURE COLOR PALETTE:
-- Primary: White- Headlines and call-to-action elements
-- Secondary: White - Subheadings and secondary information
-- Body Text: White - Main content text
-- Accent: light purple - Supporting elements and dividers
-- HTML Background: ALWAYS TRANSPARENT - For seamless brochure integration
-- Component Backgrounds: ALWAYS TRANSPARENT
+🚨 TRANSPARENCY IS ABSOLUTELY MANDATORY 🚨
 
-BROCHURE HTML TYPOGRAPHY:
-- Display Font: 'Helvetica Neue', Helvetica, Arial, sans-serif
-- Heading Hierarchy:
-  - H1: 32px (text-4xl), bold, White - Major sections
-  - H2: 24px (text-2xl), semibold, White - Subsections
-  - H3: 18px (text-lg), medium, White - Points
-- Body: 14px (text-sm), regular, White - Compact for brochures
-- Fine Print: 12px (text-xs), regular, White
+CRITICAL COLOR RULES:
+1. Body Background: transparent (NEVER change this)
+2. ALL Text: #ffffff (white) - NO EXCEPTIONS
+3. ALL Elements: NO backgrounds whatsoever
+4. Accents: #5bc0de (light blue) or #b19cd9 (light purple) - Icons only
+5. Text Shadows: 0 2px 4px rgba(0,0,0,0.5) - For readability
 
-BROCHURE HTML COMPONENTS:
-- Info Boxes: No borders and transparent containers with icon headers
-- Feature Lists: Checkmark icons with light blue or green accents
+FORBIDDEN STYLES (NEVER USE):
+❌ background-color: (any value except transparent on body)
+❌ background: (any value)
+❌ color: black or any dark color
+❌ border: (unless white/transparent)
+❌ Any DaisyUI card classes
+❌ Any bg-* Tailwind classes
 
-BROCHURE VISUALIZATION STYLE:
-- Infographics: Bold, simple icons with minimal text
-- Statistics: Large numbers with descriptive labels
-- Process Steps: Numbered circles connected by lines
-- Comparison Tables: Alternating row colors for readability
-- Maps/Locations: Simple pin markers with labels
+MANDATORY STYLES (ALWAYS USE):
+✅ style="background-color: transparent;" on body
+✅ style="color: #ffffff;" or style="color: white;" on ALL text
+✅ text-shadow: 0 2px 4px rgba(0,0,0,0.5) on text
+✅ Simple div containers with NO backgrounds
+✅ Flexbox/grid for layout
 
-BROCHURE LAYOUT APPROACH:
-- Compact, very light information design
-- large padding for easy reading
+TYPOGRAPHY REQUIREMENTS:
+- Font: 'Helvetica Neue', Helvetica, Arial, sans-serif
+- H1: 36-40px, bold, WHITE
+- H2: 28-32px, semibold, WHITE  
+- H3: 20-24px, medium, WHITE
+- Body: 16-18px, regular, WHITE
+- ALL text MUST be white with shadows
 
-BROCHURE-SPECIFIC HTML RULES:
-- Optimize for print-like appearance
-- Use large fonts for easy to read
+LAYOUT PRINCIPLES:
+1. NO cards, panels, or containers with backgrounds
+2. Use only transparent divs with flexbox/grid
+3. Generous padding for readability
+4. Clean, minimal design
+5. Professional brochure aesthetic
+
+COMPONENT PATTERNS:
+Instead of cards with backgrounds, use:
+```html
+<!-- WRONG - Never use this -->
+<div class="card bg-white">...</div>
+
+<!-- CORRECT - Always use this -->
+<div class="flex flex-col gap-4">
+  <h2 style="color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">Title</h2>
+  <p style="color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">Content</p>
+</div>
+```
+
+ICON AND SYMBOL GUIDELINES:
+- Primary: White (#ffffff)
+- Accent: Light blue (#5bc0de) sparingly
+- Always add shadows for depth
+- Keep minimal and clean
+
+CRITICAL HTML STRUCTURE:
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * {
+      color: white !important;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5) !important;
+    }
+    div, span, p, h1, h2, h3, ul, li {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+  </style>
+</head>
+<body style="background-color: transparent;">
+  <!-- Only transparent divs with white text -->
+</body>
+</html>
+```
+
+VALIDATION BEFORE OUTPUT:
+☐ Is body background transparent?
+☐ Are ALL texts white?
+☐ Are there NO background colors on any element?
+☐ Are there NO cards or panels with backgrounds?
+☐ Is the design clean and minimal?
+
+REMEMBER: This overlays on a gradient brochure - EVERYTHING must be transparent except white text!

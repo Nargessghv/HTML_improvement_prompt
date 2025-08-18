@@ -1,0 +1,90 @@
+BROCHURE HTML - ABSOLUTE MANDATORY REQUIREMENTS
+
+⛔ CRITICAL: FAILURE TO FOLLOW = UNUSABLE OUTPUT ⛔
+
+1. TRANSPARENCY IS NON-NEGOTIABLE:
+   ☑ Body MUST have: style="background-color: transparent;"
+   ☑ ALL elements: NO backgrounds whatsoever
+   ☑ FORBIDDEN: bg-white, bg-base-100, bg-gray-*, card classes
+   ☑ FORBIDDEN: Any background-color except transparent on body
+   ☑ This creates transparent PNG overlays for brochure
+
+2. WHITE TEXT ONLY (MANDATORY):
+   ☑ Every text element: style="color: #ffffff;" or white
+   ☑ Add shadows: text-shadow: 0 2px 4px rgba(0,0,0,0.5)
+   ☑ NO black text - EVER
+   ☑ NO dark colors - EVER
+   ☑ Icons/symbols also white
+
+3. VIEWPORT STRICT COMPLIANCE:
+   ☑ Body: class="w-[{viewport_width}px] h-[{viewport_height}px]"
+   ☑ Content MUST fit exactly - NO overflow
+   ☑ NO scrolling possible
+   ☑ Minimal padding (p-4 max)
+
+4. ABSOLUTELY FORBIDDEN:
+   ❌ <div class="card"> - NEVER
+   ❌ <div class="bg-*"> - NEVER
+   ❌ background-color: (anything except transparent on body)
+   ❌ color: black or dark colors
+   ❌ DaisyUI cards/panels/components with backgrounds
+   ❌ Any borders (unless white/transparent)
+
+5. MANDATORY HTML TEMPLATE:
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* CRITICAL: Force white text globally */
+        * {
+            color: white !important;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5) !important;
+        }
+        /* CRITICAL: Remove ALL backgrounds */
+        body, div, span, p, h1, h2, h3, h4, h5, h6, ul, ol, li, section, article {
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+        /* CRITICAL: Remove card backgrounds */
+        .card, .card-body {
+            background: transparent !important;
+            background-color: transparent !important;
+            border: none !important;
+        }
+    </style>
+</head>
+<body class="w-[{viewport_width}px] h-[{viewport_height}px] p-4" style="background-color: transparent; color: white;">
+    <!-- ONLY transparent divs with white text -->
+    <!-- NO cards, NO backgrounds, NO borders -->
+</body>
+</html>
+```
+
+6. LAYOUT RULES:
+   ☑ Simple flex/grid containers ONLY
+   ☑ NO visual containers (cards/panels)
+   ☑ Clean, minimal design
+   ☑ Professional brochure look
+   ☑ Large fonts (16px+ body, 32px+ headings)
+
+7. PRE-OUTPUT VALIDATION:
+   ⬜ Body has transparent background?
+   ⬜ ALL text is white with shadows?
+   ⬜ ZERO background colors on any element?
+   ⬜ NO cards/panels used?
+   ⬜ Content fits viewport exactly?
+   ⬜ Clean, minimal layout achieved?
+
+8. COMMON MISTAKES TO AVOID:
+   ❌ Using class="card" anywhere
+   ❌ Adding bg-white to divs
+   ❌ Forgetting text shadows
+   ❌ Using black/dark text
+   ❌ Adding borders to containers
+
+FINAL CHECK: If you see ANY background color other than transparent on body, or ANY non-white text, START OVER.
+
+REMEMBER: This becomes a transparent overlay on a gradient brochure - ONLY white text should be visible!
