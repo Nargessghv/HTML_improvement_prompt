@@ -890,6 +890,16 @@ class ParallelSlideWorkflow:
             
             print(f"📄 Generating individual PPTX for slide {slide_state.slide_number}")
             
+            # Get the final refined HTML image path if HTML refinement was done
+            html_image_path = None
+            if slide_state.refined_html:
+                html_image_path = await self._get_final_html_image_path(
+                    slide_state.project_id, 
+                    slide_state.slide_id
+                )
+                if html_image_path:
+                    print(f"  📸 Using refined HTML image: {html_image_path}")
+            
             # Generate individual slide PPTX
             result = await self.slide_generator.generate_individual_slide(
                 slide_id=slide_state.slide_id,
@@ -898,7 +908,8 @@ class ParallelSlideWorkflow:
                 template_path=slide_state.template_path,
                 slide_number=slide_state.slide_number,
                 layouts_info=layout_state.get("layouts_info") or {},
-                dynamic_models=layout_state.get("dynamic_models") or {}
+                dynamic_models=layout_state.get("dynamic_models") or {},
+                html_image_path=html_image_path
             )
             
             if result.get("success"):
@@ -908,6 +919,53 @@ class ParallelSlideWorkflow:
                 
         except Exception as e:
             print(f"❌ Error generating individual PPTX for slide {slide_state.slide_number}: {e}")
+
+    async def _get_final_html_image_path(self, project_id: str, slide_id: str) -> Optional[str]:
+        """Get the final HTML image path from the last refinement iteration and download it locally"""
+        try:
+            # Get the final refinement iteration (is_final=true)
+            response = self.supabase.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).eq('is_final', True).execute()
+            
+            image_url = None
+            if response.data:
+                image_url = response.data[0]['image_file_url']
+            else:
+                # Fallback: get the latest iteration if no final iteration found
+                response = self.supabase.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).order('iteration_number', desc=True).limit(1).execute()
+                if response.data:
+                    image_url = response.data[0]['image_file_url']
+            
+            if not image_url:
+                return None
+            
+            # Download the image to a local file
+            import aiohttp
+            import tempfile
+            from pathlib import Path
+            
+            # Create temp directory if it doesn't exist
+            temp_dir = Path(tempfile.gettempdir()) / "html_refined_images"
+            temp_dir.mkdir(exist_ok=True)
+            
+            # Generate local file path
+            local_path = temp_dir / f"{slide_id}_refined.png"
+            
+            # Download the image
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        with open(local_path, 'wb') as f:
+                            f.write(content)
+                        print(f"  📥 Downloaded refined HTML image to: {local_path}")
+                        return str(local_path)
+                    else:
+                        print(f"  ❌ Failed to download HTML image: HTTP {response.status}")
+                        return None
+                        
+        except Exception as e:
+            print(f"  ❌ Error getting final HTML image path: {e}")
+            return None
 
     async def _assemble_final_presentation(
         self,

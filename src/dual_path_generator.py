@@ -139,11 +139,17 @@ class DualPathGenerator:
             slides_added = 0
             for i, slide_content in enumerate(slide_contents):
                 try:
+                    # Check if slide has HTML image path
+                    html_image_path = None
+                    if hasattr(slide_content, 'html_image_path'):
+                        html_image_path = slide_content.html_image_path
+                    
                     success = await self._add_slide_using_core_process(
                         presentation=presentation,
                         slide_content=slide_content,
                         slide_number=i + 1,
-                        layouts_info=layouts_info
+                        layouts_info=layouts_info,
+                        html_image_path=html_image_path
                     )
                     
                     if success:

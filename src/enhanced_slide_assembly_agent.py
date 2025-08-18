@@ -32,6 +32,8 @@ class EnhancedSlideAssemblyAgent:
 
     def __init__(self):
         self.name = "enhanced_slide_assembler"
+        from .database import get_supabase_client
+        self.db = get_supabase_client()
 
     @monitor_agent_execution("enhanced_slide_assembler")
     def execute(
@@ -140,6 +142,16 @@ class EnhancedSlideAssemblyAgent:
                     if hasattr(slide_content, 'html_image_path'):
                         html_image_path = slide_content.html_image_path
                     
+                    # If no html_image_path but we have project_id, try to fetch from database
+                    if not html_image_path and project_id:
+                        # Get the slide ID from database
+                        slide_db_id = self._get_slide_id_from_database(project_id, i + 1)
+                        if slide_db_id:
+                            # Get the final refined HTML image path
+                            html_image_path = self._get_final_html_image_path(project_id, slide_db_id)
+                            if html_image_path:
+                                logger.debug(f"Retrieved refined HTML image for slide {i + 1}: {html_image_path}")
+                    
                     # Generate individual slide
                     individual_result = await dual_generator.generate_individual_slide_for_preview(
                         slide_id=slide_id,
@@ -162,6 +174,17 @@ class EnhancedSlideAssemblyAgent:
                     individual_results.append({"success": False, "error": str(e)})
             
             logger.info("🎯 Phase 2: Generating final presentation with identical process...")
+            
+            # Attach HTML image paths to slide_contents for final presentation
+            for i, slide_content in enumerate(slide_contents):
+                if not hasattr(slide_content, 'html_image_path') or not slide_content.html_image_path:
+                    # Try to get the HTML image path from database
+                    slide_db_id = self._get_slide_id_from_database(project_id, i + 1)
+                    if slide_db_id:
+                        html_image_path = self._get_final_html_image_path(project_id, slide_db_id)
+                        if html_image_path:
+                            slide_content.html_image_path = html_image_path
+                            logger.debug(f"Attached refined HTML image to slide {i + 1} for final presentation")
             
             # Generate final presentation using the SAME process
             final_result = await dual_generator.generate_complete_presentation(
@@ -248,6 +271,16 @@ class EnhancedSlideAssemblyAgent:
                     if hasattr(slide_content, 'html_image_path'):
                         html_image_path = slide_content.html_image_path
                     
+                    # If no html_image_path but we have project_id, try to fetch from database
+                    if not html_image_path and project_id:
+                        # Get the slide ID from database
+                        slide_db_id = self._get_slide_id_from_database(project_id, i + 1)
+                        if slide_db_id:
+                            # Get the final refined HTML image path
+                            html_image_path = self._get_final_html_image_path(project_id, slide_db_id)
+                            if html_image_path:
+                                logger.debug(f"Retrieved refined HTML image for slide {i + 1}: {html_image_path}")
+                    
                     # Generate individual slide synchronously for immediate availability
                     individual_pptx_path = dual_generator._create_individual_slide_pptx(
                         slide_content=slide_content,
@@ -317,6 +350,62 @@ class EnhancedSlideAssemblyAgent:
                 "final_presentation": {},
                 "error": str(e)
             }
+    
+    def _get_slide_id_from_database(self, project_id: str, slide_number: int) -> Optional[str]:
+        """Get slide ID from database using project_id and slide_number"""
+        try:
+            response = self.db.table('slides').select('id').eq('project_id', project_id).eq('slide_number', slide_number).execute()
+            if response.data:
+                return response.data[0]['id']
+            return None
+        except Exception as e:
+            logger.error(f"Error getting slide ID: {e}")
+            return None
+    
+    def _get_final_html_image_path(self, project_id: str, slide_id: str) -> Optional[str]:
+        """Get the final HTML image path from the last refinement iteration and download it locally"""
+        try:
+            # Get the final refinement iteration (is_final=true)
+            response = self.db.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).eq('is_final', True).execute()
+            
+            image_url = None
+            if response.data:
+                image_url = response.data[0]['image_file_url']
+            else:
+                # Fallback: get the latest iteration if no final iteration found
+                response = self.db.table('html_refinements').select('image_file_url').eq('project_id', project_id).eq('slide_id', slide_id).order('iteration_number', desc=True).limit(1).execute()
+                if response.data:
+                    image_url = response.data[0]['image_file_url']
+            
+            if not image_url:
+                return None
+            
+            # Download the image to a local file
+            import requests
+            import tempfile
+            from pathlib import Path
+            
+            # Create temp directory if it doesn't exist
+            temp_dir = Path(tempfile.gettempdir()) / "html_refined_images"
+            temp_dir.mkdir(exist_ok=True)
+            
+            # Generate local file path
+            local_path = temp_dir / f"{slide_id}_refined.png"
+            
+            # Download the image
+            response = requests.get(image_url)
+            if response.status_code == 200:
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                logger.debug(f"Downloaded refined HTML image to: {local_path}")
+                return str(local_path)
+            else:
+                logger.error(f"Failed to download HTML image: HTTP {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting final HTML image path: {e}")
+            return None
 
 
 # For backward compatibility, create an alias
