@@ -28,6 +28,27 @@ class PresentationPlanningAgent:
     def __init__(self):
         self.name = "presentation_planner"
         self.llm_client = LangchainLLMClient()
+        self.document_processor = None  # Will be initialized lazily if needed
+    
+    def _get_document_context_sync(self, project_id: str) -> str:
+        """Synchronous wrapper for getting document context"""
+        try:
+            import asyncio
+            import nest_asyncio
+            
+            # Enable nested event loops
+            nest_asyncio.apply()
+            
+            # Create new event loop and run the async function
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(self.document_processor.get_combined_context(project_id))
+            finally:
+                loop.close()
+        except Exception as e:
+            print(f"Error getting document context: {e}")
+            return ""
 
     @monitor_agent_execution("presentation_planner")
     def execute(
@@ -62,6 +83,25 @@ class PresentationPlanningAgent:
             topic = state["topic"]
             title = state.get("title")  # Get title from state (may be None)
             approved_outline = state.get("approved_outline")
+            project_id = state.get("project_id")
+            
+            # Try to get document context if project_id is available
+            document_context = None
+            if project_id:
+                try:
+                    # Lazy initialize document processor if needed
+                    if self.document_processor is None:
+                        from ..document_processor import DocumentProcessor
+                        self.document_processor = DocumentProcessor()
+                    
+                    # Get combined context from all project documents
+                    # Use synchronous method to avoid async issues
+                    document_context = self._get_document_context_sync(project_id)
+                    if document_context:
+                        print(f"📄 {self.name}: Found document context ({len(document_context)} chars)")
+                except Exception as e:
+                    print(f"⚠️ {self.name}: Could not load document context: {e}")
+                    # Continue without document context
 
             # Debug logging for approved outline
             print(
@@ -90,7 +130,7 @@ class PresentationPlanningAgent:
                 print(f"📋 {self.name}: Generating new presentation plan with LLM")
                 # Use LLM to create intelligent presentation plan with callback tracing
                 presentation_plan = self._plan_presentation_with_tracing(
-                    layouts_info, topic, title, config
+                    layouts_info, topic, title, config, document_context
                 )
                 print(f"✅ {self.name}: Presentation plan: {presentation_plan}")
 
@@ -156,6 +196,7 @@ class PresentationPlanningAgent:
         topic: str,
         title: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
+        document_context: Optional[str] = None,
     ) -> List[SlideSpec]:
         """
         Create intelligent presentation plan using Langchain LLM with tracing
@@ -165,6 +206,7 @@ class PresentationPlanningAgent:
             topic: The presentation topic/description
             title: The presentation title (optional)
             config: Langchain configuration with callbacks
+            document_context: Optional context from uploaded documents
 
         Returns:
             List of SlideSpec objects defining the presentation structure
@@ -172,7 +214,7 @@ class PresentationPlanningAgent:
         from ..llm_models import PresentationPlan
 
         # Create the planning prompt using the extracted prompt function
-        prompt = create_presentation_planning_prompt(layouts_info, topic, title)
+        prompt = create_presentation_planning_prompt(layouts_info, topic, title, document_context)
         system_prompt = get_planning_system_prompt()
         
         # Debug: Log the topic being processed

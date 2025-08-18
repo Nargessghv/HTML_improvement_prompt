@@ -91,6 +91,7 @@ class ImageWebhookClient:
         placeholder_width: int = 1200,
         placeholder_height: int = 456,
         quality: str = "high",
+        image_size: str = "auto",
     ) -> Optional[bytes]:
         """
         Generate a single image using the webhook API
@@ -100,17 +101,26 @@ class ImageWebhookClient:
             placeholder_description: Description of the placeholder (for aspect ratio detection)
             placeholder_width: Width of the placeholder in pixels
             placeholder_height: Height of the placeholder in pixels
-            quality: Image quality ("high", "medium", "low")
+            quality: Image quality ("high", "medium", "low", "auto")
+            image_size: Image size ("1024x1024", "1536x1024", "1024x1536", "auto")
 
         Returns:
             Image data as bytes, or None if generation failed
         """
         try:
-            # Determine optimal image size
-            aspect_ratio = self._extract_aspect_ratio_from_description(placeholder_description)
-            image_size = self._get_image_size_from_aspect_ratio(
-                aspect_ratio, placeholder_width, placeholder_height
-            )
+            # Use provided image_size and quality directly - webhook accepts "auto"
+            if image_size == "auto":
+                # Determine optimal image size based on placeholder
+                aspect_ratio = self._extract_aspect_ratio_from_description(placeholder_description)
+                actual_image_size = self._get_image_size_from_aspect_ratio(
+                    aspect_ratio, placeholder_width, placeholder_height
+                )
+            else:
+                # Use the provided image size
+                actual_image_size = image_size
+            
+            # Use provided quality directly (webhook accepts "auto", "low", "medium", "high")
+            actual_quality = quality
 
             # Prepare webhook payload according to GPT-image-1 API spec
             output_format = "png"  # Using PNG for PowerPoint compatibility
@@ -121,8 +131,8 @@ class ImageWebhookClient:
             payload = {
                 "prompt": cleaned_prompt,
                 "model": self.image_model,
-                "size": image_size,
-                "quality": quality,
+                "size": actual_image_size,
+                "quality": actual_quality,
                 "n": 1,
                 "output_format": output_format,
                 "background": "auto",  # Must be one of: "transparent", "opaque", "auto"
@@ -134,7 +144,7 @@ class ImageWebhookClient:
             if output_format in ["webp", "jpeg"]:
                 payload["output_compression"] = 90
 
-            print(f"🎨 Generating image with size {image_size} for prompt: {prompt[:100]}...")
+            print(f"🎨 Generating image with size {actual_image_size}, quality {actual_quality} for prompt: {prompt[:100]}...")
             
             # Debug: Log the payload being sent (excluding the full prompt for brevity)
             debug_payload = payload.copy()
@@ -270,6 +280,8 @@ class ImageWebhookClient:
                 placeholder_width=spec.get("placeholder_width", 1200),
                 placeholder_height=spec.get("placeholder_height", 456),
                 slide_index=spec.get("slide_index", 0),
+                quality=spec.get("image_quality", "high"),
+                image_size=spec.get("image_size", "auto"),
             )
             tasks.append(task)
 
@@ -294,6 +306,8 @@ class ImageWebhookClient:
         placeholder_width: int,
         placeholder_height: int,
         slide_index: int,
+        quality: str = "high",
+        image_size: str = "auto",
     ) -> tuple[int, Optional[bytes]]:
         """
         Generate image with retry logic
@@ -311,6 +325,8 @@ class ImageWebhookClient:
                         placeholder_description=placeholder_description,
                         placeholder_width=placeholder_width,
                         placeholder_height=placeholder_height,
+                        quality=quality,
+                        image_size=image_size,
                     )
 
                     if image_data:

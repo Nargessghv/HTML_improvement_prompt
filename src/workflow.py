@@ -221,6 +221,8 @@ class SlideGenerationWorkflow:
         template_folder_path: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
         html_refinement_iterations: int = 3,
+        image_quality: str = "auto",
+        image_size: str = "auto",
     ) -> Dict[str, Any]:
         """
         Run parallel workflow for approved outlines - processes slides in parallel
@@ -265,6 +267,8 @@ class SlideGenerationWorkflow:
                 title=title,
                 config=config,
                 html_refinement_iterations=html_refinement_iterations,
+                image_quality=image_quality,
+                image_size=image_size,
             )
             
             # Update project status based on result

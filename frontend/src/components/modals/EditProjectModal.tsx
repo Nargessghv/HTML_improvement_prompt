@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,28 +10,63 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Label } from '@/components/ui/label'
-import { Loader2 } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { Loader2, Sparkles, FileText, ChevronDown } from 'lucide-react'
+import { DocumentUpload } from '@/components/DocumentUpload'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 
 const editProjectSchema = z.object({
   title: z
     .string()
-    .min(1, 'Project title is required')
+    .min(3, 'Title must be at least 3 characters')
     .max(100, 'Title must be less than 100 characters'),
   topic: z
     .string()
-    .min(10, 'Topic must be at least 10 characters'),
+    .min(20, 'Topic description must be at least 20 characters')
+    .max(5000, 'Topic description must be less than 5000 characters'),
+  templateName: z.string().min(1, 'Please select a template'),
+  htmlRefinementIterations: z.number()
+    .min(1, 'Must be at least 1 iteration')
+    .max(5, 'Maximum 5 iterations allowed')
+    .default(3),
+  imageQuality: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
+  imageSize: z.enum(['1024x1024', '1536x1024', '1024x1536', 'auto']).default('auto'),
 })
 
 type EditProjectFormData = z.infer<typeof editProjectSchema>
+
+interface Template {
+  filename: string
+  name: string
+  display_name: string
+  size_mb: number
+  slide_count: number
+  layout_count: number
+  is_valid: boolean
+  error_message?: string
+  folder_path?: string
+  locked_backgrounds?: number
+}
 
 interface Project {
   id: string
@@ -41,6 +76,12 @@ interface Project {
   created_at: string
   updated_at: string
   completed_at: string | null
+  metadata?: {
+    template_name?: string
+    html_refinement_iterations?: number
+    image_quality?: string
+    image_size?: string
+  }
 }
 
 interface EditProjectModalProps {
@@ -56,40 +97,85 @@ export function EditProjectModal({
   project,
   onProjectUpdated
 }: EditProjectModalProps) {
-  const { supabase } = useSupabaseAuth()
+  const { user, supabase } = useSupabaseAuth()
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([])
+  const [showDocuments, setShowDocuments] = useState(false)
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting }
-  } = useForm<EditProjectFormData>({
+  const form = useForm<EditProjectFormData>({
     resolver: zodResolver(editProjectSchema),
     defaultValues: {
       title: '',
-      topic: ''
+      topic: '',
+      templateName: undefined,
+      htmlRefinementIterations: 3,
+      imageQuality: 'auto',
+      imageSize: 'auto',
     }
   })
+
+  // Load templates when modal opens
+  const loadTemplates = useCallback(async () => {
+    if (!user) return
+    
+    setLoadingTemplates(true)
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/templates`, {
+        headers: {
+          'Authorization': `Bearer dummy-token`, // Backend doesn't validate tokens yet
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch templates')
+      }
+      
+      const data = await response.json()
+      setTemplates(data.templates?.filter((t: Template) => t.is_valid) || [])
+    } catch (error) {
+      console.error('Error loading templates:', error)
+      toast.error('Failed to load templates')
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (open && user) {
+      loadTemplates()
+    }
+  }, [open, user, loadTemplates])
 
   // Reset form when project changes
   useEffect(() => {
     if (project) {
-      reset({
+      form.reset({
         title: project.title,
-        topic: project.topic
+        topic: project.topic,
+        templateName: project.metadata?.template_name || '',
+        htmlRefinementIterations: project.metadata?.html_refinement_iterations || 3,
+        imageQuality: (project.metadata?.image_quality as any) || 'auto',
+        imageSize: (project.metadata?.image_size as any) || 'auto',
       })
     }
-  }, [project, reset])
+  }, [project, form])
 
   const onSubmit = async (data: EditProjectFormData) => {
-    if (!project) return
+    if (!project || !user) return
 
     try {
       const { data: updatedProject, error } = await supabase
         .from('projects')
         .update({
           title: data.title,
-          topic: data.topic
+          topic: data.topic,
+          metadata: {
+            template_name: data.templateName,
+            html_refinement_iterations: data.htmlRefinementIterations,
+            image_quality: data.imageQuality,
+            image_size: data.imageSize
+          }
         })
         .eq('id', project.id)
         .select()
@@ -101,7 +187,48 @@ export function EditProjectModal({
         return
       }
 
+      // Upload documents if any were added
+      if (uploadedDocuments.length > 0) {
+        console.log(`Uploading ${uploadedDocuments.length} documents for project ${project.id}`)
+        try {
+          const uploadPromises = uploadedDocuments.map(async (doc) => {
+            const formData = new FormData()
+            formData.append('file', doc.file)
+            
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/projects/${project.id}/documents`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                },
+                body: formData
+              }
+            )
+            
+            if (!response.ok) {
+              const errorText = await response.text()
+              throw new Error(`Failed to upload ${doc.file.name}: ${response.status} ${errorText}`)
+            }
+            
+            return response.json()
+          })
+          
+          await Promise.all(uploadPromises)
+          toast.success(`Uploaded ${uploadedDocuments.length} document(s) as context`)
+        } catch (uploadError) {
+          console.error('Document upload error:', uploadError)
+          toast.warning('Project updated but some documents failed to upload')
+        }
+      }
+
       toast.success('Project updated successfully!')
+      form.reset()
+      setUploadedDocuments([])
+      setShowDocuments(false)
       onProjectUpdated(updatedProject)
       onOpenChange(false)
     } catch (error) {
@@ -111,77 +238,343 @@ export function EditProjectModal({
   }
 
   const handleClose = () => {
-    if (!isSubmitting) {
+    if (!form.formState.isSubmitting) {
       onOpenChange(false)
-      reset()
+      form.reset()
+      setUploadedDocuments([])
+      setShowDocuments(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Edit Project</DialogTitle>
-          <DialogDescription>
-            Update your project title and topic description.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Project Title</Label>
-            <Input
-              id="title"
-              placeholder="Enter a descriptive title for your presentation"
-              {...register('title')}
-              disabled={isSubmitting}
-            />
-            {errors.title && (
-              <p className="text-sm text-red-600">{errors.title.message}</p>
-            )}
-          </div>
+      <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+        <div className="p-8">
+          {/* Header */}
+          <DialogHeader className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
+              <Sparkles className="w-8 h-8 text-gray-600 dark:text-gray-400" />
+            </div>
+            <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Edit Project
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-500 dark:text-gray-400">
+              Update your presentation settings and content
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="space-y-2">
-            <Label htmlFor="topic">Topic Description</Label>
-            <ScrollArea className="h-[140px]">
-              <Textarea
-                id="topic"
-                placeholder="Describe what you want your presentation to be about. Be as detailed as possible - this helps our AI create better slides."
-                className="min-h-[140px] max-h-none resize-none border-0 shadow-none focus-visible:ring-0"
-                {...register('topic')}
-                disabled={isSubmitting}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* Title */}
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Title
+                    </FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Q4 Business Review"
+                        className="h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base bg-white dark:bg-gray-800"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </ScrollArea>
-            {errors.topic && (
-              <p className="text-sm text-red-600">{errors.topic.message}</p>
-            )}
-          </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Updating...
-                </>
-              ) : (
-                'Update Project'
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
+              {/* Topic */}
+              <FormField
+                control={form.control}
+                name="topic"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Content
+                    </FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Textarea
+                          placeholder="Describe what you want to present..."
+                          className="min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base resize-none bg-white dark:bg-gray-800"
+                          {...field}
+                        />
+                        <div className="absolute bottom-3 right-3 text-xs text-gray-400">
+                          {field.value.length}/5000
+                        </div>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Template */}
+              <FormField
+                control={form.control}
+                name="templateName"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Template
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                        disabled={loadingTemplates}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Choose a template"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((template) => (
+                            <SelectItem key={template.name} value={template.name}>
+                              <div className="flex flex-col items-start">
+                                <span className="font-medium">{template.display_name}</span>
+                                <span className="text-xs text-gray-500">
+                                  {template.layout_count} layouts
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Quality */}
+              <FormField
+                control={form.control}
+                name="htmlRefinementIterations"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Quality
+                    </FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        value={field.value?.toString()}
+                        onValueChange={(value) => field.onChange(parseInt(value))}
+                        className="space-y-2"
+                      >
+                        {[
+                          { value: '1', label: 'Draft', time: '1 min', desc: 'Quick draft generation' },
+                          { value: '3', label: 'Balanced', time: '3 min', desc: 'Good quality and speed' },
+                          { value: '5', label: 'High Quality', time: '5 min', desc: 'Best visual results' }
+                        ].map((option) => (
+                          <div key={option.value} className="flex items-center space-x-3">
+                            <RadioGroupItem value={option.value} id={`quality-${option.value}`} />
+                            <label
+                              htmlFor={`quality-${option.value}`}
+                              className="flex-1 cursor-pointer"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    {option.label}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {option.desc}
+                                  </div>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  ~{option.time}
+                                </span>
+                              </div>
+                            </label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Image Quality */}
+              <FormField
+                control={form.control}
+                name="imageQuality"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Image Quality
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder="Select image quality" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Auto</span>
+                              <span className="text-xs text-gray-500">
+                                Let AI decide based on content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="low">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Low</span>
+                              <span className="text-xs text-gray-500">
+                                Fast generation, lower quality
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="medium">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Medium</span>
+                              <span className="text-xs text-gray-500">
+                                Balanced quality and speed
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="high">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">High</span>
+                              <span className="text-xs text-gray-500">
+                                Best quality, slower generation
+                              </span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Image Size */}
+              <FormField
+                control={form.control}
+                name="imageSize"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Image Resolution
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder="Select image resolution" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Auto</span>
+                              <span className="text-xs text-gray-500">
+                                Let AI decide based on content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1024x1024">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Square (1024x1024)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for icons and balanced content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1024x1536">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Portrait (1024x1536)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for vertical content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1536x1024">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Landscape (1536x1024)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for horizontal content
+                              </span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Document Upload (Optional) */}
+              <Collapsible open={showDocuments} onOpenChange={setShowDocuments}>
+                <CollapsibleTrigger className="w-full">
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+                    <div className="flex items-center space-x-2">
+                      <FileText className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Add Context Documents
+                      </span>
+                      {uploadedDocuments.length > 0 && (
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                          {uploadedDocuments.length} file{uploadedDocuments.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showDocuments ? 'rotate-180' : ''}`} />
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Upload PDF, Word, PowerPoint, or text files to provide context for your presentation
+                    </p>
+                    <DocumentUpload
+                      onDocumentsUploaded={setUploadedDocuments}
+                      maxFiles={5}
+                      maxSizeMB={10}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              {/* Actions */}
+              <div className="flex space-x-3 pt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleClose}
+                  disabled={form.formState.isSubmitting}
+                  className="flex-1 h-12 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={form.formState.isSubmitting}
+                  className="flex-1 h-12 bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-gray-200 dark:text-gray-900 text-white"
+                >
+                  {form.formState.isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>Update Project</>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </div>
       </DialogContent>
     </Dialog>
   )

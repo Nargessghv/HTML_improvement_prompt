@@ -3300,6 +3300,10 @@ class ImageGenerationAgent:
             Updated state with generated images
         """
         try:
+            # Extract image settings from state
+            image_quality = state.get("image_quality", "auto")
+            image_size = state.get("image_size", "auto")
+            
             # Prepare prompts and specs for parallel generation
             prompts_and_specs = []
             for slide_info in image_slides:
@@ -3313,6 +3317,8 @@ class ImageGenerationAgent:
                             ],
                             "placeholder_width": slide_info["placeholder_width"],
                             "placeholder_height": slide_info["placeholder_height"],
+                            "image_quality": image_quality,
+                            "image_size": image_size,
                         },
                     )
                 )
@@ -3408,6 +3414,10 @@ class ImageGenerationAgent:
         Returns:
             Updated state with generated images
         """
+        # Extract image settings from state
+        image_quality = state.get("image_quality", "auto")
+        image_size_setting = state.get("image_size", "auto")
+        
         generated_images = {}
 
         for slide_info in image_slides:
@@ -3425,6 +3435,8 @@ class ImageGenerationAgent:
                             placeholder_description=info["placeholder_description"],
                             placeholder_width=info["placeholder_width"],
                             placeholder_height=info["placeholder_height"],
+                            quality=image_quality,
+                            image_size=image_size_setting,
                         )
                     )
 

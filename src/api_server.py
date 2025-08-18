@@ -29,6 +29,7 @@ from .workflow import SlideGenerationWorkflow
 from .database import get_supabase_client, SupabaseClient, DatabaseError, DatabaseConnectionError, DatabaseValidationError, DatabasePermissionError
 from .chat_agent import PresentationPlanningAgent as ChatPlanningAgent, PresentationOutline
 from .agent_modules.presentation_planning_agent import PresentationPlanningAgent
+from .document_processor import DocumentProcessor
 
 # Configure logging for API server
 logging.basicConfig(
@@ -1824,18 +1825,18 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         actual_topic = project.get("topic", topic)
         api_logger.info(f"Starting workflow for project {project_id} with topic: {actual_topic[:100]}...")
         
-        # Extract template selection and refinement iterations from project metadata
+        # Extract template selection, refinement iterations, and image settings from project metadata
         html_refinement_iterations = 2  # Default value
-        if not template_name:
-            metadata = project.get("metadata", {})
-            if isinstance(metadata, dict):
+        image_quality = "auto"  # Default value
+        image_size = "auto"  # Default value
+        
+        metadata = project.get("metadata", {})
+        if isinstance(metadata, dict):
+            if not template_name:
                 template_name = metadata.get("template_name")
-                html_refinement_iterations = metadata.get("html_refinement_iterations", 2)
-        else:
-            # Still extract refinement iterations even if template_name is provided
-            metadata = project.get("metadata", {})
-            if isinstance(metadata, dict):
-                html_refinement_iterations = metadata.get("html_refinement_iterations", 2)
+            html_refinement_iterations = metadata.get("html_refinement_iterations", 2)
+            image_quality = metadata.get("image_quality", "auto")
+            image_size = metadata.get("image_size", "auto")
         
         # Update project status to processing
         db.update_project_status(project_id, "processing")
@@ -1866,6 +1867,8 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
         api_logger.info(f"Template path: {template_path}")
         api_logger.info(f"Template folder path: {template_folder_path}")
         api_logger.info(f"HTML refinement iterations: {html_refinement_iterations}")
+        api_logger.info(f"Image quality: {image_quality}")
+        api_logger.info(f"Image size: {image_size}")
         
         # Create enhanced callback with real-time updates
         realtime_callback = create_realtime_callback(project_id, user_id)
@@ -1984,7 +1987,9 @@ async def start_slide_generation_workflow(project_id: str, topic: str, user_id: 
             approved_outline=approved_outline,
             title=project.get("title"),
             template_folder_path=template_folder_path,
-            html_refinement_iterations=html_refinement_iterations
+            html_refinement_iterations=html_refinement_iterations,
+            image_quality=image_quality,
+            image_size=image_size
         )
         
         if result.get("success"):
@@ -2236,6 +2241,137 @@ async def validate_template_endpoint(template_name: str = None):
     except Exception as e:
         logger.error(f"Error validating template(s): {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Document Upload Endpoints
+# ============================================
+
+# Initialize document processor
+document_processor = DocumentProcessor()
+
+class DocumentUploadResponse(BaseModel):
+    id: str
+    filename: str
+    extracted_text: str
+    metadata: Dict[str, Any]
+    storage_url: str
+
+@app.post("/projects/{project_id}/documents", response_model=DocumentUploadResponse)
+async def upload_project_document(
+    project_id: str,
+    file: UploadFile = File(...),
+    user = Depends(get_current_user)
+):
+    """Upload a context document for a project"""
+    api_logger.info(f"Document upload requested for project {project_id}, file: {file.filename}")
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Process the document
+        result = await document_processor.process_uploaded_document(
+            file_content=file_content,
+            filename=file.filename,
+            project_id=project_id,
+            user_id=user.id,
+            mime_type=file.content_type
+        )
+        
+        api_logger.info(f"Successfully uploaded document {file.filename} for project {project_id}")
+        
+        return DocumentUploadResponse(**result)
+        
+    except ValueError as e:
+        api_logger.error(f"Document upload validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error uploading document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error uploading document: {str(e)}")
+
+@app.get("/projects/{project_id}/documents")
+async def get_project_documents(
+    project_id: str,
+    user = Depends(get_current_user)
+):
+    """Get all documents for a project"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get documents
+        documents = await document_processor.get_project_documents(project_id)
+        
+        return {"documents": documents}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error getting documents: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting documents: {str(e)}")
+
+@app.delete("/projects/{project_id}/documents/{document_id}")
+async def delete_project_document(
+    project_id: str,
+    document_id: str,
+    user = Depends(get_current_user)
+):
+    """Delete a project document"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Delete document
+        success = await document_processor.delete_document(document_id, user.id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {"message": "Document deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error deleting document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
+
+@app.get("/projects/{project_id}/context")
+async def get_project_context(
+    project_id: str,
+    user = Depends(get_current_user)
+):
+    """Get combined context from all project documents"""
+    try:
+        # Verify project belongs to user
+        project = db.get_project(project_id, user.id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get combined context
+        context = await document_processor.get_combined_context(project_id)
+        
+        return {
+            "project_id": project_id,
+            "context": context,
+            "context_length": len(context)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_logger.error(f"Error getting context: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting context: {str(e)}")
 
 
 if __name__ == "__main__":

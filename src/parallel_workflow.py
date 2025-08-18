@@ -134,6 +134,8 @@ class ParallelSlideWorkflow:
         title: Optional[str] = None,
         config: Optional[RunnableConfig] = None,
         html_refinement_iterations: int = 3,
+        image_quality: str = "auto",
+        image_size: str = "auto",
     ) -> Dict[str, Any]:
         """
         Process entire presentation with parallel slide generation
@@ -177,7 +179,8 @@ class ParallelSlideWorkflow:
             # Step 3: Process slides in parallel
             print(f"⚡ Step 3: Processing {len(slide_states)} slides in parallel...")
             completed_slides = await self._process_slides_parallel(
-                slide_states, layout_state, config, html_refinement_iterations
+                slide_states, layout_state, config, html_refinement_iterations,
+                image_quality, image_size
             )
             
             # Step 4: Assemble final presentation
@@ -340,7 +343,9 @@ class ParallelSlideWorkflow:
         slide_states: List[IndividualSlideState],
         layout_state: SlideGenerationState,
         config: Optional[RunnableConfig],
-        html_refinement_iterations: int = 3
+        html_refinement_iterations: int = 3,
+        image_quality: str = "auto",
+        image_size: str = "auto"
     ) -> List[IndividualSlideState]:
         """Process slides in parallel with controlled concurrency, starting in outline order"""
         completed_slides = []
@@ -357,7 +362,8 @@ class ParallelSlideWorkflow:
         
         async def process_single_slide(slide_state: IndividualSlideState):
             return await self._process_individual_slide(
-                slide_state, layout_state, config, html_refinement_iterations
+                slide_state, layout_state, config, html_refinement_iterations,
+                image_quality, image_size
             )
         
         # Start initial batch of slides (up to max_concurrent)
@@ -409,7 +415,9 @@ class ParallelSlideWorkflow:
         slide_state: IndividualSlideState,
         layout_state: SlideGenerationState,
         config: Optional[RunnableConfig],
-        html_refinement_iterations: int = 3
+        html_refinement_iterations: int = 3,
+        image_quality: str = "auto",
+        image_size: str = "auto"
     ) -> IndividualSlideState:
         """Process a single slide through the agent pipeline"""
         slide_state.started_at = datetime.now()
@@ -456,7 +464,7 @@ class ParallelSlideWorkflow:
             # Step 4: Image Processing
             await self._update_slide_status(slide_state, SlideStatus.IMAGE_PROMPT_GENERATION)
             slide_state = await self._run_slide_image_processing(
-                slide_state, layout_state, config
+                slide_state, layout_state, config, image_quality, image_size
             )
             if slide_state.status == SlideStatus.FAILED:
                 return slide_state
@@ -751,7 +759,8 @@ class ParallelSlideWorkflow:
             return slide_state
 
     async def _run_slide_image_processing(
-        self, slide_state: IndividualSlideState, layout_state: SlideGenerationState, config: Optional[RunnableConfig]
+        self, slide_state: IndividualSlideState, layout_state: SlideGenerationState, config: Optional[RunnableConfig],
+        image_quality: str = "auto", image_size: str = "auto"
     ) -> IndividualSlideState:
         """Run image processing pipeline for individual slide"""
         try:
@@ -786,7 +795,9 @@ class ParallelSlideWorkflow:
                 **layout_state,
                 "slide_contents": [slide_state.slide_content],
                 "presentation_plan": presentation_plan,  # Include presentation plan for context
-                "current_step": "image_processing"
+                "current_step": "image_processing",
+                "image_quality": image_quality,  # Pass image quality setting
+                "image_size": image_size  # Pass image size setting
             }
             
             # Image prompt generation - run in executor

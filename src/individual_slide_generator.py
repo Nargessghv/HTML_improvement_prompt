@@ -160,11 +160,11 @@ class IndividualSlideGenerator:
             # Create a fresh presentation from template
             prs = Presentation(template_path)
             
-            # Clear existing slides properly
-            xml_slides = prs.slides._sldIdLst[:]
-            for slide in xml_slides:
-                prs.part.drop_rel(slide.rId)
-                prs.slides._sldIdLst.remove(slide)
+            # Clear existing slides using the same method as final deck generation
+            while len(prs.slides) > 0:
+                rId = prs.slides._sldIdLst[0].rId
+                prs.part.drop_rel(rId)
+                del prs.slides._sldIdLst[0]
             
             # Determine layout index from slide content
             layout_index = self._get_layout_index_from_content(slide_content)
@@ -197,33 +197,85 @@ class IndividualSlideGenerator:
             filename = f"slide_{slide_number}_{timestamp}_{uuid.uuid4().hex[:8]}.pptx"
             file_path = self.temp_dir / filename
             
-            # Ensure all relationships are properly set before saving
-            # This is crucial to prevent corruption
-            try:
-                # Force relationship rebuild
-                for rel in prs.part.rels.values():
-                    if hasattr(rel, '_target'):
-                        # Ensure target exists
-                        pass
-            except:
-                pass
+            # Note: Removed relationship rebuild as it may be causing corruption
+            # The final deck generation doesn't do this and works correctly
             
-            # Save the presentation with proper structure
+            # Note: We don't cleanup empty placeholders as it can cause issues
+            # The final deck generation handles this properly
+            
+            # CRITICAL FIX: Ensure grpSpPr is in the correct position
+            # The grpSpPr element MUST come immediately after nvGrpSpPr in the XML structure
+            for slide in prs.slides:
+                try:
+                    # Access the slide's shape tree XML
+                    spTree = slide.shapes._spTree
+                    
+                    # Find nvGrpSpPr and grpSpPr elements
+                    nvGrpSpPr = None
+                    grpSpPr = None
+                    
+                    for child in spTree:
+                        if child.tag.endswith('nvGrpSpPr'):
+                            nvGrpSpPr = child
+                        elif child.tag.endswith('grpSpPr'):
+                            grpSpPr = child
+                    
+                    # If both exist and grpSpPr is not immediately after nvGrpSpPr, fix it
+                    if nvGrpSpPr is not None and grpSpPr is not None:
+                        nvGrpSpPr_index = list(spTree).index(nvGrpSpPr)
+                        grpSpPr_index = list(spTree).index(grpSpPr)
+                        
+                        # Check if grpSpPr is not immediately after nvGrpSpPr
+                        if grpSpPr_index != nvGrpSpPr_index + 1:
+                            # Remove grpSpPr from its current position
+                            spTree.remove(grpSpPr)
+                            # Insert it right after nvGrpSpPr
+                            spTree.insert(nvGrpSpPr_index + 1, grpSpPr)
+                            print(f"✅ Fixed grpSpPr position in slide XML structure")
+                            
+                except Exception as e:
+                    print(f"Warning: Could not fix grpSpPr position: {e}")
+            
+            # Force python-pptx to finalize all image relationships before saving
+            # This ensures all image data is properly written to the internal XML
+            try:
+                # Access the presentation part to trigger any lazy loading
+                _ = prs.part
+                # Access all slide parts to ensure images are fully loaded
+                for slide in prs.slides:
+                    _ = slide.part
+                    # Force relationship resolution for all shapes
+                    for shape in slide.shapes:
+                        try:
+                            # Access shape properties to ensure they're materialized
+                            _ = shape.shape_type
+                            _ = shape.name
+                            # For picture shapes, ensure the image is fully loaded
+                            if hasattr(shape, 'image'):
+                                _ = shape.image
+                                # Access image properties to force loading
+                                if shape.image:
+                                    _ = shape.image.blob
+                                    _ = shape.image.ext
+                        except:
+                            pass
+                    
+                    # Force slide's relationship collection to be fully resolved
+                    try:
+                        for rel in slide.part.rels.values():
+                            _ = rel.target_part
+                    except:
+                        pass
+                        
+            except Exception as e:
+                print(f"Note: Could not pre-access parts: {e}")
+            
+            # Save the presentation exactly like final deck generation
             prs.save(str(file_path))
             
-            # Verify the file was created and is not corrupted
+            # Only verify file exists, don't try to re-open (matches final deck approach)
             if not file_path.exists():
                 raise Exception(f"Failed to save PPTX file to {file_path}")
-            
-            # Try to open it again to verify it's not corrupted
-            try:
-                test_prs = Presentation(str(file_path))
-                if len(test_prs.slides) != 1:
-                    raise Exception(f"Unexpected slide count: {len(test_prs.slides)}")
-                print(f"✅ Verified PPTX structure - file is valid")
-            except Exception as verify_error:
-                print(f"⚠️ PPTX verification failed: {verify_error}")
-                # Continue anyway, as some warnings are normal
             
             logger.info(f"Created individual PPTX: {file_path}")
             return str(file_path)
@@ -233,6 +285,63 @@ class IndividualSlideGenerator:
             import traceback
             traceback.print_exc()
             return None
+
+    def _cleanup_empty_placeholders(self, slide):
+        """
+        Clean up empty picture placeholders that can cause issues in single-slide presentations
+        
+        Args:
+            slide: The slide to clean up
+        """
+        from pptx.enum.shapes import PP_PLACEHOLDER
+        
+        try:
+            placeholders_to_remove = []
+            
+            # Find empty picture placeholders
+            for placeholder in slide.placeholders:
+                if hasattr(placeholder, 'placeholder_format'):
+                    # Check if it's a picture placeholder
+                    if placeholder.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                        # Check if it's empty (no image inserted)
+                        has_image = False
+                        try:
+                            # If it has an image, this will succeed
+                            if hasattr(placeholder, 'image') and placeholder.image:
+                                has_image = True
+                        except:
+                            pass
+                        
+                        # Get placeholder name
+                        placeholder_name = getattr(placeholder, 'name', '')
+                        
+                        # Only remove empty non-LOCKED picture placeholders
+                        # LOCKED_ placeholders should already be filled with background images
+                        # If they're empty, there was an issue finding/inserting the background
+                        if not has_image and not placeholder_name.startswith('LOCKED_'):
+                            placeholders_to_remove.append(placeholder)
+                            print(f"  🧹 Cleaning up empty picture placeholder: {placeholder_name}")
+            
+            # Remove empty picture placeholders
+            for placeholder in placeholders_to_remove:
+                try:
+                    # Remove from shapes collection
+                    for shape in slide.shapes:
+                        if shape == placeholder:
+                            slide.shapes._spTree.remove(shape._element)
+                            break
+                except Exception as e:
+                    print(f"  ⚠️ Could not remove placeholder: {e}")
+                    # As fallback, try to make it invisible
+                    try:
+                        placeholder.width = 0
+                        placeholder.height = 0
+                    except:
+                        pass
+                        
+        except Exception as e:
+            print(f"  ⚠️ Error during placeholder cleanup: {e}")
+            # Non-critical error, continue with saving
 
     def _apply_content_to_slide(
         self,

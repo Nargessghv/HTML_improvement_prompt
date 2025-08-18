@@ -28,7 +28,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
-import { Loader2, Sparkles } from 'lucide-react'
+import { Loader2, Sparkles, FileText, ChevronDown } from 'lucide-react'
+import { DocumentUpload } from '@/components/DocumentUpload'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 
 const projectSchema = z.object({
   title: z.string()
@@ -42,6 +48,8 @@ const projectSchema = z.object({
     .min(1, 'Must be at least 1 iteration')
     .max(5, 'Maximum 5 iterations allowed')
     .default(3),
+  imageQuality: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
+  imageSize: z.enum(['1024x1024', '1536x1024', '1024x1536', 'auto']).default('auto'),
 })
 
 type ProjectFormData = z.infer<typeof projectSchema>
@@ -71,6 +79,8 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
   const [isCreating, setIsCreating] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [uploadedDocuments, setUploadedDocuments] = useState<any[]>([])
+  const [showDocuments, setShowDocuments] = useState(false)
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
@@ -79,6 +89,8 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
       topic: initialTopic || '',
       templateName: undefined,
       htmlRefinementIterations: 3,
+      imageQuality: 'auto',
+      imageSize: 'auto',
     },
   })
 
@@ -95,7 +107,7 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
     
     setLoadingTemplates(true)
     try {
-      const response = await fetch('http://localhost:8000/templates', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/templates`, {
         headers: {
           'Authorization': `Bearer dummy-token`, // Backend doesn't validate tokens yet
         }
@@ -141,7 +153,9 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
           // Store template selection and refinement iterations in metadata
           metadata: {
             template_name: data.templateName,
-            html_refinement_iterations: data.htmlRefinementIterations
+            html_refinement_iterations: data.htmlRefinementIterations,
+            image_quality: data.imageQuality,
+            image_size: data.imageSize
           }
         })
         .select()
@@ -154,10 +168,59 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
         return
       }
 
+      // Upload documents if any were added
+      if (uploadedDocuments.length > 0 && project?.id) {
+        console.log(`Uploading ${uploadedDocuments.length} documents for project ${project.id}`)
+        try {
+          const uploadPromises = uploadedDocuments.map(async (doc) => {
+            console.log(`Uploading document: ${doc.file.name} (${doc.file.size} bytes)`)
+            const formData = new FormData()
+            formData.append('file', doc.file)
+            
+            const uploadUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/projects/${project.id}/documents`
+            console.log(`Upload URL: ${uploadUrl}`)
+            
+            // Get the Supabase session token
+            const { data: { session } } = await supabase.auth.getSession()
+            const token = session?.access_token
+            console.log(`Got auth token: ${token ? 'yes' : 'no'}`)
+            
+            const response = await fetch(uploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`
+              },
+              body: formData
+            })
+            
+            console.log(`Upload response status: ${response.status}`)
+            
+            if (!response.ok) {
+              const errorText = await response.text()
+              console.error(`Upload failed: ${errorText}`)
+              throw new Error(`Failed to upload ${doc.file.name}: ${response.status} ${errorText}`)
+            }
+            
+            return response.json()
+          })
+          
+          const results = await Promise.all(uploadPromises)
+          console.log('All documents uploaded successfully:', results)
+          toast.success(`Uploaded ${uploadedDocuments.length} document(s) as context`)
+        } catch (uploadError) {
+          console.error('Document upload error:', uploadError)
+          toast.warning('Project created but some documents failed to upload')
+        }
+      } else {
+        console.log(`No documents to upload. Documents count: ${uploadedDocuments.length}, Project ID: ${project?.id}`)
+      }
+
       toast.success(`Project "${data.title}" created successfully!`)
       
-      // Reset form
+      // Reset form and documents
       form.reset()
+      setUploadedDocuments([])
+      setShowDocuments(false)
       onOpenChange(false)
       
       // Navigate to project detail page
@@ -322,6 +385,154 @@ export function NewProjectModal({ open, onOpenChange, initialTopic }: NewProject
                   </FormItem>
                 )}
               />
+
+              {/* Image Quality */}
+              <FormField
+                control={form.control}
+                name="imageQuality"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Image Quality
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder="Select image quality" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Auto</span>
+                              <span className="text-xs text-gray-500">
+                                Let AI decide based on content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="low">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Low</span>
+                              <span className="text-xs text-gray-500">
+                                Fast generation, lower quality
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="medium">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Medium</span>
+                              <span className="text-xs text-gray-500">
+                                Balanced quality and speed
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="high">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">High</span>
+                              <span className="text-xs text-gray-500">
+                                Best quality, slower generation
+                              </span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Image Size */}
+              <FormField
+                control={form.control}
+                name="imageSize"
+                render={({ field }) => (
+                  <FormItem className="space-y-2">
+                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Image Resolution
+                    </FormLabel>
+                    <FormControl>
+                      <Select 
+                        value={field.value} 
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                          <SelectValue placeholder="Select image resolution" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Auto</span>
+                              <span className="text-xs text-gray-500">
+                                Let AI decide based on content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1024x1024">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Square (1024x1024)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for icons and balanced content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1024x1536">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Portrait (1024x1536)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for vertical content
+                              </span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="1536x1024">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Landscape (1536x1024)</span>
+                              <span className="text-xs text-gray-500">
+                                Best for horizontal content
+                              </span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Document Upload (Optional) */}
+              <Collapsible open={showDocuments} onOpenChange={setShowDocuments}>
+                <CollapsibleTrigger className="w-full">
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+                    <div className="flex items-center space-x-2">
+                      <FileText className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Add Context Documents
+                      </span>
+                      {uploadedDocuments.length > 0 && (
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                          {uploadedDocuments.length} file{uploadedDocuments.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showDocuments ? 'rotate-180' : ''}`} />
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Upload PDF, Word, PowerPoint, or text files to provide context for your presentation
+                    </p>
+                    <DocumentUpload
+                      onDocumentsUploaded={setUploadedDocuments}
+                      maxFiles={5}
+                      maxSizeMB={10}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
 
               {/* Actions */}
               <div className="flex space-x-3 pt-6">

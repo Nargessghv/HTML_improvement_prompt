@@ -1027,6 +1027,33 @@ class SlideGenerator:
         except Exception as e:
             print(f"Error setting placeholder content: {e}")
 
+    def _remove_empty_picture_placeholder(self, placeholder):
+        """
+        Remove an empty picture placeholder from the slide to prevent corruption
+        
+        Args:
+            placeholder: The placeholder to remove
+        """
+        try:
+            # Get the slide from the placeholder
+            slide = placeholder.part.slide
+            
+            # Find and remove the placeholder shape from the slide
+            for shape in slide.shapes:
+                if shape == placeholder:
+                    # Remove the shape element from the slide's shape tree
+                    slide.shapes._spTree.remove(shape._element)
+                    print(f"    → Removed empty picture placeholder from slide")
+                    break
+        except Exception as e:
+            print(f"    → Warning: Could not remove empty placeholder: {e}")
+            # If removal fails, at least try to make it invisible
+            try:
+                placeholder.width = 0
+                placeholder.height = 0
+            except:
+                pass
+
     def _is_html_content(self, content: str) -> bool:
         """
         Check if content contains HTML that should be rendered as visualization
@@ -1447,14 +1474,28 @@ class SlideGenerator:
                     # Remove from current position
                     parent.remove(picture_element)
                     
-                    # Insert at the original position
+                    # CRITICAL: Check if we're about to insert before grpSpPr
+                    # The grpSpPr element must always come immediately after nvGrpSpPr
                     if next_sibling is not None:
-                        parent.insert(parent.index(next_sibling), picture_element)
+                        # Check if next_sibling is grpSpPr
+                        if next_sibling.tag.endswith('grpSpPr'):
+                            # Find the element after grpSpPr to insert before that instead
+                            grpSpPr_next = next_sibling.getnext()
+                            if grpSpPr_next is not None:
+                                parent.insert(parent.index(grpSpPr_next), picture_element)
+                                print(f"  - Adjusted z-order to avoid breaking grpSpPr position")
+                            else:
+                                # grpSpPr was last, append after it
+                                parent.append(picture_element)
+                                print(f"  - Appended after grpSpPr to maintain structure")
+                        else:
+                            # Safe to insert at original position
+                            parent.insert(parent.index(next_sibling), picture_element)
+                            print(f"  - Maintained z-order position: {z_order_position}")
                     else:
                         # Was at the end, append
                         parent.append(picture_element)
-                    
-                    print(f"  - Maintained z-order position: {z_order_position}")
+                        print(f"  - Maintained z-order position: {z_order_position} (end)")
 
                 print("✅ Replaced placeholder with visualization image")
             else:

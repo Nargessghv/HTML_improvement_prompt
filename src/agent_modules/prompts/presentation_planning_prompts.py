@@ -12,10 +12,17 @@ def create_presentation_planning_prompt(
     layouts_info: dict[int, dict[str, object]],
     topic: str,
     title: Optional[str] = None,
+    document_context: Optional[str] = None,
 ) -> str:
     """
     Create optimized prompt for strategic presentation planning
     with clear HTML decisions and actionable guidance.
+    
+    Args:
+        layouts_info: Dictionary of available layouts
+        topic: Main topic for the presentation
+        title: Optional presentation title
+        document_context: Optional context from uploaded documents
     """
     # Analyze layouts to identify HTML-capable ones
     layout_descriptions = []
@@ -63,10 +70,35 @@ def create_presentation_planning_prompt(
     # Build title/topic section
     title_section = f'TITLE: "{title}"\n' if title else ""
     topic_label = "TOPIC" if not title else "DESCRIPTION"
+    
+    # Add document context section if available
+    context_section = ""
+    if document_context:
+        # Truncate context if too long (keep under 10k tokens approximately)
+        max_context_chars = 40000
+        truncated_context = document_context[:max_context_chars]
+        if len(document_context) > max_context_chars:
+            truncated_context += "\n\n[... Context truncated for length ...]"
+        
+        context_section = f"""
+📄 DOCUMENT CONTEXT PROVIDED BY USER:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{truncated_context}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 IMPORTANT: The above document(s) have been provided as context for the presentation.
+Use this information to:
+• Extract key points, facts, and data for slide content
+• Maintain accuracy and consistency with the source material
+• Structure the presentation to best represent the document's information
+• Create visualizations for data or processes mentioned in the documents
+
+"""
 
     return f"""📋 CREATE STRATEGIC PRESENTATION PLAN
 
 {title_section}{topic_label}: "{topic}"
+{context_section}
 
 🚨 CRITICAL REQUIREMENTS - READ FIRST:
 • START WITH TITLE SLIDE: Your presentation MUST begin with a title slide using layout designed for titles
