@@ -18,6 +18,7 @@ from .icon_manager import IconManager
 from .icon_selector import IconSelector
 from .llm_client import SlideContent
 from .markdown_formatter import MarkdownFormatter
+from .layout_formatting_extractor import LayoutFormattingExtractor
 
 
 class SlideGenerator:
@@ -35,6 +36,7 @@ class SlideGenerator:
         self.content_generator = ContentGenerator(template_path)
         self.chart_generator = ChartGenerator()
         self.markdown_formatter = MarkdownFormatter()  # Initialize markdown formatter
+        self.layout_formatter = LayoutFormattingExtractor()  # Initialize layout formatter
 
         # Initialize HTML renderer for custom visualizations
         try:
@@ -1769,13 +1771,23 @@ class SlideGenerator:
         
         text_frame = placeholder.text_frame
         
-        # First, check if we have actual layout formatting by looking at the layout directly
+        # First, extract formatting from the layout using our extractor
         try:
             slide = placeholder.part.slide
             layout = slide.slide_layout
             placeholder_idx = placeholder.placeholder_format.idx
             
-            # Find the corresponding layout placeholder
+            # Extract layout formatting if not already done
+            if not self.layout_formatter.placeholder_formats:
+                self.layout_formatter.extract_from_layout(layout)
+            
+            # Get formatting for this specific placeholder
+            extracted_formatting = self.layout_formatter.get_placeholder_formatting(placeholder_idx)
+            if extracted_formatting:
+                layout_formatting.update(extracted_formatting)
+                print(f"  ✓ Extracted formatting for placeholder {placeholder_idx}: {extracted_formatting.get('name', 'unnamed')}")
+            
+            # Also try to get formatting directly from the layout placeholder
             for layout_ph in layout.placeholders:
                 if layout_ph.placeholder_format.idx == placeholder_idx:
                     # Get font info directly from layout
@@ -1833,21 +1845,36 @@ class SlideGenerator:
         except Exception as e:
             print(f"  → Could not extract layout formatting: {e}")
         
-        # Apply markdown formatting while preserving template styling
-        self.markdown_formatter.format_text_frame(text_frame, text)
+        # Get placeholder index for formatting application
+        try:
+            placeholder_idx = placeholder.placeholder_format.idx
+        except:
+            placeholder_idx = 0
         
-        # Now apply the layout formatting to ALL paragraphs and runs
-        # This ensures fonts, colors, and bullet styles are preserved
+        # Apply markdown formatting while preserving template styling
+        # Pass the layout formatting to the markdown formatter
+        self.markdown_formatter.format_text_frame(text_frame, text, layout_formatting)
+        
+        # Now apply additional paragraph-level formatting from layout
+        # This ensures alignment, bullets, and spacing are preserved
         if layout_formatting:
-            print(f"  ✓ Applying complete formatting from layout")
+            print("  ✓ Applying complete formatting from layout")
             
             for paragraph in text_frame.paragraphs:
-                # Apply bullet formatting if this is a bulleted list
-                if layout_formatting.get('bullet_char'):
-                    try:
-                        paragraph.bullet.char = layout_formatting['bullet_char']
-                    except:
-                        pass
+                # Apply paragraph-level formatting from the layout extractor
+                self.layout_formatter.apply_paragraph_formatting(
+                    paragraph, placeholder_idx
+                )
+                
+                # Apply bullet formatting if needed
+                if paragraph.level > 0 or layout_formatting.get('bullet'):
+                    self.layout_formatter.apply_bullet_formatting(
+                        paragraph, placeholder_idx
+                    )
+                
+                # Apply text run formatting for each run in the paragraph
+                for run in paragraph.runs:
+                    self.layout_formatter.apply_formatting_to_run(run, placeholder_idx)
                 
                 # Apply to paragraph font if possible
                 if hasattr(paragraph, 'font') and paragraph.font:
@@ -1876,13 +1903,9 @@ class SlideGenerator:
                             paragraph.font.color.rgb = layout_formatting['font_color_rgb']
                         except:
                             pass
-                    elif layout_formatting.get('font_color_theme'):
-                        try:
-                            paragraph.font.color.theme_color = layout_formatting['font_color_theme']
-                            if layout_formatting.get('font_color_brightness'):
-                                paragraph.font.color.brightness = layout_formatting['font_color_brightness']
-                        except:
-                            pass
+                    # Skip theme colors - they can cause XML corruption if not handled properly
+                    # Theme colors need special handling that python-pptx doesn't always support
+                    pass
                 
                 # Apply to all runs
                 for run in paragraph.runs:
@@ -1922,15 +1945,9 @@ class SlideGenerator:
                                 print(f"    → Applied RGB color to run")
                             except Exception as e:
                                 print(f"    → Could not apply RGB color: {e}")
-                        elif layout_formatting.get('font_color_theme'):
-                            try:
-                                from pptx.enum.dml import MSO_THEME_COLOR
-                                run.font.color.theme_color = layout_formatting['font_color_theme']
-                                if layout_formatting.get('font_color_brightness'):
-                                    run.font.color.brightness = layout_formatting['font_color_brightness']
-                                print(f"    → Applied theme color to run")
-                            except Exception as e:
-                                print(f"    → Could not apply theme color: {e}")
+                        # Skip theme colors - they can cause XML corruption
+                        # python-pptx doesn't always handle theme colors correctly
+                        pass
 
     def _set_text_preserving_formatting(self, text_frame, content: str) -> None:
         """
@@ -1945,8 +1962,28 @@ class SlideGenerator:
             # This is important because it may have template-specific fonts like Helvetica
             original_format = self._capture_original_formatting(text_frame)
             
-            # Use markdown formatter to apply proper formatting
-            self.markdown_formatter.format_text_frame(text_frame, content)
+            # Extract layout formatting if available
+            layout_formatting = {}
+            try:
+                # Get the slide and layout to extract formatting
+                for shape in text_frame._parent.part.slide.shapes:
+                    if hasattr(shape, 'text_frame') and shape.text_frame == text_frame:
+                        if hasattr(shape, 'placeholder_format'):
+                            placeholder_idx = shape.placeholder_format.idx
+                            layout = text_frame._parent.part.slide.slide_layout
+                            
+                            # Extract layout formatting if not already done
+                            if not self.layout_formatter.placeholder_formats:
+                                self.layout_formatter.extract_from_layout(layout)
+                            
+                            # Get formatting for this specific placeholder
+                            layout_formatting = self.layout_formatter.get_placeholder_formatting(placeholder_idx)
+                            break
+            except:
+                pass  # If we can't get layout formatting, continue without it
+            
+            # Use markdown formatter with layout formatting
+            self.markdown_formatter.format_text_frame(text_frame, content, layout_formatting)
             
             # After markdown formatting, ensure we restore the original font name
             # if it was captured (markdown formatter might miss it)

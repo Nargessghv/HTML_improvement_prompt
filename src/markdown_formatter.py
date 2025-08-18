@@ -25,7 +25,7 @@ class MarkdownFormatter:
     - No hardcoded font size caps - uses your template's exact specifications
     """
 
-    def format_text_frame(self, text_frame: TextFrame, markdown_content: str) -> None:
+    def format_text_frame(self, text_frame: TextFrame, markdown_content: str, layout_formatting: Dict[str, Any] = None) -> None:
         """
         Format a PowerPoint text frame with markdown content while preserving
         template styling
@@ -33,12 +33,30 @@ class MarkdownFormatter:
         Args:
             text_frame: PowerPoint text frame object
             markdown_content: Markdown-formatted content string
+            layout_formatting: Optional pre-extracted layout formatting
         """
         # STEP 1: Capture original template formatting BEFORE clearing
         original_formatting = self._capture_template_formatting(text_frame)
+        
+        # Merge with provided layout formatting if available
+        if layout_formatting:
+            original_formatting.update(layout_formatting)
 
-        # STEP 2: Clear existing content
-        text_frame.clear()
+        # STEP 2: Clear existing content carefully to preserve formatting
+        # Instead of text_frame.clear(), we'll keep the first paragraph and clear its text
+        if text_frame.paragraphs:
+            # Keep first paragraph to preserve its formatting
+            first_para = text_frame.paragraphs[0]
+            first_para.text = ""  # Clear text but keep paragraph
+            
+            # Remove additional paragraphs if any
+            while len(text_frame.paragraphs) > 1:
+                # Access the internal element to remove extra paragraphs
+                p_elem = text_frame.paragraphs[-1]._element
+                text_frame._element.remove(p_elem)
+        else:
+            # No paragraphs, need to add one
+            text_frame.add_paragraph()
 
         # STEP 3: Parse markdown into structured elements
         elements = self._parse_markdown(markdown_content)
@@ -146,10 +164,18 @@ class MarkdownFormatter:
                 elements.append(("header3", text, {"level": 0, "markdown_bold": True}))
 
             elif line.startswith("- ") or line.startswith("* "):
-                # Bullet point
-                text = line[2:].strip()
+                # Bullet point - check for indentation to determine level
+                stripped = line.lstrip()
+                indent_count = len(line) - len(stripped)
+                level = min(indent_count // 2, 4)  # Support up to 5 levels (0-4)
+                
+                text = stripped[2:].strip() if stripped.startswith(("- ", "* ")) else stripped
                 formatted_text = self._process_inline_formatting(text)
-                elements.append(("bullet", formatted_text, {"level": 1}))
+                
+                # If template has bullets defined, use level 0 for main bullets
+                # Otherwise use level 1 (PowerPoint default)
+                bullet_level = level if level > 0 else 0
+                elements.append(("bullet", formatted_text, {"level": bullet_level}))
 
             elif re.match(r"^\d+\.\s", line):
                 # Numbered list
@@ -295,6 +321,9 @@ class MarkdownFormatter:
             paragraph.level = options.get(
                 "level", template_formatting.get("paragraph_level", 0)
             )
+            
+            # Apply paragraph-level formatting from template
+            self._apply_paragraph_formatting(paragraph, template_formatting)
 
             # Handle different element types
             if element_type in ["bullet", "numbered"]:
@@ -359,6 +388,71 @@ class MarkdownFormatter:
                             paragraph.runs[0], combined_format, template_formatting
                         )
 
+    def _apply_paragraph_formatting(self, paragraph, template_formatting: Dict[str, Any]) -> None:
+        """
+        Apply paragraph-level formatting from template
+        
+        Args:
+            paragraph: PowerPoint paragraph object
+            template_formatting: Template formatting to apply
+        """
+        from pptx.enum.text import PP_ALIGN
+        
+        # Apply alignment
+        if 'alignment' in template_formatting:
+            alignment_map = {
+                'l': PP_ALIGN.LEFT,
+                'ctr': PP_ALIGN.CENTER,
+                'r': PP_ALIGN.RIGHT,
+                'just': PP_ALIGN.JUSTIFY
+            }
+            if template_formatting['alignment'] in alignment_map:
+                try:
+                    paragraph.alignment = alignment_map[template_formatting['alignment']]
+                except:
+                    pass
+        
+        # Note: Bullet formatting in python-pptx is controlled by paragraph level
+        # The template defines whether bullets appear at each level
+        # We can't directly set bullet properties through python-pptx
+        # but the level will trigger the template's bullet settings
+        
+        # Apply indentation
+        if 'margin_left' in template_formatting:
+            try:
+                from pptx.util import Emu
+                paragraph.left_indent = Emu(template_formatting['margin_left'])
+            except:
+                pass
+        
+        if 'indent' in template_formatting:
+            try:
+                from pptx.util import Emu
+                paragraph.first_line_indent = Emu(template_formatting['indent'])
+            except:
+                pass
+        
+        # Apply spacing
+        if 'line_spacing' in template_formatting:
+            try:
+                paragraph.line_spacing = template_formatting['line_spacing']
+            except:
+                pass
+        
+        if 'space_before' in template_formatting:
+            try:
+                from pptx.util import Pt
+                paragraph.space_before = Pt(template_formatting['space_before'] / 100)
+            except:
+                pass
+        
+        if 'space_after' in template_formatting:
+            try:
+                from pptx.util import Pt
+                paragraph.space_after = Pt(template_formatting['space_after'] / 100)
+            except:
+                pass
+    
     def _apply_run_formatting_preserving_template(
         self, run, markdown_formatting: dict, template_formatting: Dict[str, Any]
     ) -> None:
@@ -418,8 +512,13 @@ class MarkdownFormatter:
 
         # PRESERVE TEMPLATE COLOR (safely)
         try:
-            if template_formatting.get("color") is not None:
+            # Only apply color if we have a valid RGB color
+            if template_formatting.get("font_color_rgb") is not None:
+                font.color.rgb = template_formatting["font_color_rgb"]
+            elif template_formatting.get("color") is not None and hasattr(template_formatting["color"], "rgb"):
+                # This is a color object with RGB, apply it directly
                 font.color = template_formatting["color"]
+            # Skip theme colors - they can cause corruption if not handled properly
         except (AttributeError, TypeError):
             # Color might be theme-controlled, skip silently
             pass
