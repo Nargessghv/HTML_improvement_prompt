@@ -79,8 +79,7 @@ dmypy.json
 # Temporary files
 tmp/
 temp/
-test_*
-debug_* 
+test_* 
 
 # HTML Debug Output
 html_debug/

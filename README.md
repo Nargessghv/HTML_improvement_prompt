@@ -97,7 +97,9 @@ created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 ## ⚠️ Important Notes for New Developers
 
 ### Critical Setup Steps
-1. **MUST install Playwright browser**: `playwright install chromium` (required for HTML rendering)
+1. **MUST install Playwright browser**: `playwright install chromium` (primary HTML rendering engine)
+   - If Playwright isn't available, the system falls back to Selenium or WeasyPrint
+   - WeasyPrint requires system dependencies: `brew install cairo pango gdk-pixbuf libffi` (macOS)
 2. **MUST have Supabase configured**: Database won't work without proper Supabase setup
 3. **Templates are in folders**: Not in root - check `templates/` directory structure
 4. **Use Python 3.8+**: Async features require modern Python version
@@ -741,8 +743,17 @@ playwright install chromium
 pip install selenium
 # Requires Chrome browser installed
 
-# Option 3: WeasyPrint (lightweight)
+# Option 3: WeasyPrint (requires system dependencies)
+# macOS - Install system dependencies first:
+brew install cairo pango gdk-pixbuf libffi
+# Then install WeasyPrint:
 pip install weasyprint
+
+# Linux (Ubuntu/Debian) - Install system dependencies:
+sudo apt-get install libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 libffi-dev
+pip install weasyprint
+
+# Windows - WeasyPrint is more complex, use Playwright or Selenium instead
 ```
 
 See the test files (e.g., `test_html_prompt_manager.py`, `test_image_generation.py`) for working examples.
@@ -1014,8 +1025,11 @@ pip install -r requirements.txt
    # Install dependencies
    pip install -r requirements.txt
    
-   # Install Playwright browser
+   # Install Playwright browser (REQUIRED - primary HTML renderer)
    playwright install chromium
+   
+   # Alternative: If Playwright fails, WeasyPrint needs system deps on macOS:
+   # brew install cairo pango gdk-pixbuf libffi
    
    # Copy and configure environment variables
    cp .env.example .env

@@ -19,12 +19,14 @@ langfuse>=2.20.0,<3.0.0  # For LLM call monitoring and analytics (SDK v2)
 # Cloud Storage for Media
 azure-storage-blob>=12.26.0  # For Azure Blob Storage integration
 
-# HTML Rendering for Visualizations (install at least one)
-# Choose one based on your system and preferences:
-playwright>=1.40.0  # Recommended: Most reliable, best quality
-selenium>=4.15.0  # Alternative: Widely compatible
-weasyprint>=60.0  # Alternative: Lightweight, CSS-focused
-imgkit>=1.2.3  # Alternative: wkhtmltopdf wrapper
+# HTML Rendering for Visualizations
+playwright>=1.40.0  # PRIMARY RENDERER: Most reliable, best quality
+# IMPORTANT: After pip install, run: playwright install chromium
+
+# Optional fallback renderers (not needed for most users):
+selenium>=4.15.0  # Alternative: Requires Chrome browser
+# weasyprint>=60.0  # SKIP THIS: Requires system deps (brew install cairo pango gdk-pixbuf libffi)
+# imgkit>=1.2.3  # Alternative: wkhtmltopdf wrapper
 
 # Quarto
 quarto>=0.1.0
@@ -37,6 +39,11 @@ cairosvg>=2.5.0
 
 # Image processing for DPI metadata
 Pillow>=10.0.0
+
+# Document processing
+PyPDF2>=3.0.0  # For PDF text extraction
+python-docx>=0.8.11  # For Word document processing
+# textract>=1.6.5  # Optional: Fallback text extraction for various formats (requires additional system dependencies)
 
 # PPTX to Image Conversion
 aspose-slides>=25.7.0  # For PPTX to PNG conversion
