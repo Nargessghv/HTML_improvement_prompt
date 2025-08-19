@@ -248,8 +248,8 @@ export function EditProjectModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
-        <div className="p-8">
+      <DialogContent className="sm:max-w-[80%] max-w-[90%] p-0 gap-0 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-8 overflow-y-auto">
           {/* Header */}
           <DialogHeader className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center">
@@ -265,289 +265,298 @@ export function EditProjectModal({
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Title */}
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Title
-                    </FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="Q4 Business Review"
-                        className="h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base bg-white dark:bg-gray-800"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Two Column Layout on Large Screens */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+                {/* Left Column - Basic Fields */}
+                <div className="space-y-6">
+                  {/* Title */}
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Title
+                        </FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="Q4 Business Review"
+                            className="h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base bg-white dark:bg-gray-800"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              {/* Topic */}
-              <FormField
-                control={form.control}
-                name="topic"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Content
-                    </FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Textarea
-                          placeholder="Describe what you want to present..."
-                          className="min-h-[100px] border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base resize-none bg-white dark:bg-gray-800"
-                          {...field}
-                        />
-                        <div className="absolute bottom-3 right-3 text-xs text-gray-400">
-                          {field.value.length}/5000
-                        </div>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Template */}
-              <FormField
-                control={form.control}
-                name="templateName"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Template
-                    </FormLabel>
-                    <FormControl>
-                      <Select 
-                        value={field.value} 
-                        onValueChange={field.onChange}
-                        disabled={loadingTemplates}
-                      >
-                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
-                          <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Choose a template"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {templates.map((template) => (
-                            <SelectItem key={template.name} value={template.name}>
-                              <div className="flex flex-col items-start">
-                                <span className="font-medium">{template.display_name}</span>
-                                <span className="text-xs text-gray-500">
-                                  {template.layout_count} layouts
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Quality */}
-              <FormField
-                control={form.control}
-                name="htmlRefinementIterations"
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Quality
-                    </FormLabel>
-                    <FormControl>
-                      <RadioGroup
-                        value={field.value?.toString()}
-                        onValueChange={(value) => field.onChange(parseInt(value))}
-                        className="space-y-2"
-                      >
-                        {[
-                          { value: '1', label: 'Draft', time: '1 min', desc: 'Quick draft generation' },
-                          { value: '3', label: 'Balanced', time: '3 min', desc: 'Good quality and speed' },
-                          { value: '5', label: 'High Quality', time: '5 min', desc: 'Best visual results' }
-                        ].map((option) => (
-                          <div key={option.value} className="flex items-center space-x-3">
-                            <RadioGroupItem value={option.value} id={`quality-${option.value}`} />
-                            <label
-                              htmlFor={`quality-${option.value}`}
-                              className="flex-1 cursor-pointer"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    {option.label}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {option.desc}
-                                  </div>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  ~{option.time}
-                                </span>
-                              </div>
-                            </label>
+                  {/* Topic */}
+                  <FormField
+                    control={form.control}
+                    name="topic"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Content
+                        </FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Textarea
+                              placeholder="Describe what you want to present..."
+                              className="min-h-[200px] lg:min-h-[250px] border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base resize-none bg-white dark:bg-gray-800"
+                              {...field}
+                            />
+                            <div className="absolute bottom-3 right-3 text-xs text-gray-400">
+                              {field.value.length}/5000
+                            </div>
                           </div>
-                        ))}
-                      </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              {/* Image Quality */}
-              <FormField
-                control={form.control}
-                name="imageQuality"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Image Quality
-                    </FormLabel>
-                    <FormControl>
-                      <Select 
-                        value={field.value} 
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
-                          <SelectValue placeholder="Select image quality" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Auto</span>
-                              <span className="text-xs text-gray-500">
-                                Let AI decide based on content
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="low">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Low</span>
-                              <span className="text-xs text-gray-500">
-                                Fast generation, lower quality
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="medium">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Medium</span>
-                              <span className="text-xs text-gray-500">
-                                Balanced quality and speed
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="high">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">High</span>
-                              <span className="text-xs text-gray-500">
-                                Best quality, slower generation
-                              </span>
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  {/* Template */}
+                  <FormField
+                    control={form.control}
+                    name="templateName"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Template
+                        </FormLabel>
+                        <FormControl>
+                          <Select 
+                            value={field.value} 
+                            onValueChange={field.onChange}
+                            disabled={loadingTemplates}
+                          >
+                            <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                              <SelectValue placeholder={loadingTemplates ? "Loading templates..." : "Choose a template"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {templates.map((template) => (
+                                <SelectItem key={template.name} value={template.name}>
+                                  <div className="flex flex-col items-start">
+                                    <span className="font-medium">{template.display_name}</span>
+                                    <span className="text-xs text-gray-500">
+                                      {template.layout_count} layouts
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
-              {/* Image Size */}
-              <FormField
-                control={form.control}
-                name="imageSize"
-                render={({ field }) => (
-                  <FormItem className="space-y-2">
-                    <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Image Resolution
-                    </FormLabel>
-                    <FormControl>
-                      <Select 
-                        value={field.value} 
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
-                          <SelectValue placeholder="Select image resolution" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Auto</span>
-                              <span className="text-xs text-gray-500">
-                                Let AI decide based on content
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="1024x1024">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Square (1024x1024)</span>
-                              <span className="text-xs text-gray-500">
-                                Best for icons and balanced content
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="1024x1536">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Portrait (1024x1536)</span>
-                              <span className="text-xs text-gray-500">
-                                Best for vertical content
-                              </span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="1536x1024">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Landscape (1536x1024)</span>
-                              <span className="text-xs text-gray-500">
-                                Best for horizontal content
-                              </span>
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                {/* Right Column - Settings */}
+                <div className="space-y-6">
+                  {/* Quality */}
+                  <FormField
+                    control={form.control}
+                    name="htmlRefinementIterations"
+                    render={({ field }) => (
+                      <FormItem className="space-y-3">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Quality
+                        </FormLabel>
+                        <FormControl>
+                          <RadioGroup
+                            value={field.value?.toString()}
+                            onValueChange={(value) => field.onChange(parseInt(value))}
+                            className="space-y-2"
+                          >
+                            {[
+                              { value: '1', label: 'Draft', time: '1 min', desc: 'Quick draft generation' },
+                              { value: '3', label: 'Balanced', time: '3 min', desc: 'Good quality and speed' },
+                              { value: '5', label: 'High Quality', time: '5 min', desc: 'Best visual results' }
+                            ].map((option) => (
+                              <div key={option.value} className="flex items-center space-x-3">
+                                <RadioGroupItem value={option.value} id={`edit-quality-${option.value}`} />
+                                <label
+                                  htmlFor={`edit-quality-${option.value}`}
+                                  className="flex-1 cursor-pointer"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        {option.label}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {option.desc}
+                                      </div>
+                                    </div>
+                                    <span className="text-xs text-gray-500">
+                                      ~{option.time}
+                                    </span>
+                                  </div>
+                                </label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              {/* Document Upload (Optional) */}
-              <Collapsible open={showDocuments} onOpenChange={setShowDocuments}>
-                <CollapsibleTrigger className="w-full">
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
-                    <div className="flex items-center space-x-2">
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Add Context Documents
-                      </span>
-                      {uploadedDocuments.length > 0 && (
-                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
-                          {uploadedDocuments.length} file{uploadedDocuments.length !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showDocuments ? 'rotate-180' : ''}`} />
-                  </div>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-3">
-                  <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                      Upload PDF, Word, PowerPoint, or text files to provide context for your presentation
-                    </p>
-                    <DocumentUpload
-                      onDocumentsUploaded={setUploadedDocuments}
-                      maxFiles={5}
-                      maxSizeMB={10}
-                    />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                  {/* Image Quality */}
+                  <FormField
+                    control={form.control}
+                    name="imageQuality"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Image Quality
+                        </FormLabel>
+                        <FormControl>
+                          <Select 
+                            value={field.value} 
+                            onValueChange={field.onChange}
+                          >
+                            <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                              <SelectValue placeholder="Select image quality" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Auto</span>
+                                  <span className="text-xs text-gray-500">
+                                    Let AI decide based on content
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="low">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Low</span>
+                                  <span className="text-xs text-gray-500">
+                                    Fast generation, lower quality
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="medium">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Medium</span>
+                                  <span className="text-xs text-gray-500">
+                                    Balanced quality and speed
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="high">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">High</span>
+                                  <span className="text-xs text-gray-500">
+                                    Best quality, slower generation
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              {/* Actions */}
-              <div className="flex space-x-3 pt-6">
+                  {/* Image Size */}
+                  <FormField
+                    control={form.control}
+                    name="imageSize"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Image Resolution
+                        </FormLabel>
+                        <FormControl>
+                          <Select 
+                            value={field.value} 
+                            onValueChange={field.onChange}
+                          >
+                            <SelectTrigger className="w-full h-12 border-gray-200 dark:border-gray-700 focus:border-gray-400 dark:focus:border-gray-500 focus:ring-0 text-base">
+                              <SelectValue placeholder="Select image resolution" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Auto</span>
+                                  <span className="text-xs text-gray-500">
+                                    Let AI decide based on content
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="1024x1024">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Square (1024x1024)</span>
+                                  <span className="text-xs text-gray-500">
+                                    Best for icons and balanced content
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="1024x1536">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Portrait (1024x1536)</span>
+                                  <span className="text-xs text-gray-500">
+                                    Best for vertical content
+                                  </span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="1536x1024">
+                                <div className="flex flex-col items-start">
+                                  <span className="font-medium">Landscape (1536x1024)</span>
+                                  <span className="text-xs text-gray-500">
+                                    Best for horizontal content
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Document Upload (Optional) */}
+                  <Collapsible open={showDocuments} onOpenChange={setShowDocuments}>
+                    <CollapsibleTrigger className="w-full">
+                      <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Add Context Documents
+                          </span>
+                          {uploadedDocuments.length > 0 && (
+                            <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                              {uploadedDocuments.length} file{uploadedDocuments.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showDocuments ? 'rotate-180' : ''}`} />
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-3">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                          Upload PDF, Word, PowerPoint, or text files to provide context for your presentation
+                        </p>
+                        <DocumentUpload
+                          onDocumentsUploaded={setUploadedDocuments}
+                          maxFiles={5}
+                          maxSizeMB={10}
+                        />
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </div>
+              </div>
+
+              {/* Actions - Full Width */}
+              <div className="flex space-x-3 pt-6 border-t border-gray-200 dark:border-gray-700">
                 <Button
                   type="button"
                   variant="outline"

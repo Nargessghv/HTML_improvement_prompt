@@ -418,14 +418,9 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
+      <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent 
           className="!w-[80vw] !h-[80vh] !max-w-[80vw] !max-h-[80vh] !p-0 !gap-0 overflow-hidden bg-white sm:!max-w-[80vw] flex flex-col"
-          onPointerDownOutside={(e) => {
-            e.preventDefault()
-            onClose()
-          }}
-          onEscapeKeyDown={onClose}
           showCloseButton={false}
         >
           <DialogHeader className="sr-only">
