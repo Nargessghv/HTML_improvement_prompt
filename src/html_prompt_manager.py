@@ -288,6 +288,8 @@ CRITICAL HTML REQUIREMENTS:
 3. Apply brand colors consistently using inline styles
 4. Ensure ALL content fits within viewport without any overflow or scrolling
 5. Create clean, professional, corporate-quality visualizations
+6. NO EMOJIS - Never use emoji characters in the HTML
+7. ICONS ONLY - Use Lucide icons exclusively via <svg><use href="#icon-name"></use></svg>
 
 HTML TRANSPARENCY REQUIREMENT:
 - The main <body> background MUST be transparent: background-color: transparent;
@@ -327,7 +329,8 @@ Create a professional HTML visualization for the above content that:
 2. Uses appropriate components (cards, charts, diagrams, timelines)
 3. Maintains strict brand compliance
 4. Fits perfectly within the specified viewport
-5. Has a transparent background with solid component backgrounds"""
+5. Has a transparent background with solid component backgrounds
+6. Uses ONLY Lucide icons - NO emoji characters allowed"""
         
         file_path.write_text(user_template)
         print(f"✅ Created default HTML user template at: {file_path}")
@@ -359,7 +362,8 @@ HTML VISUALIZATION RULES:
 - Mermaid.js: Use for process flows and organizational charts ONLY
 - D3.js: REQUIRED for all timelines and roadmaps (superior styling control)
 - DaisyUI Timeline: Alternative for simple timelines
-- Icons: Use Lucide icons via <use href="#icon-name"> references only
+- Icons: Use Lucide icons via <use href="#icon-name"> references ONLY
+- NO EMOJIS: Never use emoji characters (❌ ✅ 🎯 etc.) - use Lucide icons instead
 - NEVER create custom SVG sprites or symbol definitions
 
 HTML LAYOUT PRINCIPLES:
@@ -747,7 +751,7 @@ Do NOT provide any other text, explanations, or markdown.
 
 CRITICAL EVALUATION PRIORITIES:
 
-1. 🚨 VIEWPORT DIMENSION COMPLIANCE (ABSOLUTE TOP PRIORITY) 🚨:
+1. VIEWPORT DIMENSION COMPLIANCE (ABSOLUTE TOP PRIORITY):
 - DETECT MISSING CONTENT: If ANY content is missing from the image, the HTML dimensions are incorrect
 - CHECK VIEWPORT DIMENSIONS: Extract w-[NNNpx] h-[NNNpx] from body class - this is the ABSOLUTE MAXIMUM allowed size
 - ENSURE EXACT COMPLIANCE: Body dimensions MUST match exactly w-[{width}px] h-[{height}px]
@@ -784,13 +788,15 @@ TECHNICAL REQUIREMENTS:
 - Typography: Clear font hierarchy with appropriate fallbacks
 
 QUALITY CHECKLIST:
-✅ ALL content fits within the specified viewport dimensions
-✅ All content wrapped in proper DaisyUI card structure
-✅ Template color palette enforced on ALL elements
-✅ Purpose clearly communicated through visualization
-✅ Professional, polished visual presentation
-✅ No overlapping or mispositioned elements
-✅ Optimal use of available space"""
+- ALL content fits within the specified viewport dimensions
+- All content wrapped in proper DaisyUI card structure
+- Template color palette enforced on ALL elements
+- Purpose clearly communicated through visualization
+- Professional, polished visual presentation
+- No overlapping or mispositioned elements
+- Optimal use of available space
+- NO emoji characters - only Lucide icons used
+- Clean, professional appearance"""
         
         file_path.write_text(refinement_prompt)
         print(f"✅ Created default HTML refinement prompt at: {file_path}")

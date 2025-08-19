@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { SlidePreviewModal } from './SlidePreviewModal'
 import { RefinementModal } from '@/components/refinement/RefinementModal'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
+import { useStorageUrl } from '@/hooks/useStorageUrl'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -124,6 +125,80 @@ export function SlideCard({ slide, slides = [], projectId, isParallelProcessing 
   const [showRefinement, setShowRefinement] = useState(false)
   const [refinementCount, setRefinementCount] = useState(0)
   const [currentSlide, setCurrentSlide] = useState(slide)
+  const [officeViewerUrl, setOfficeViewerUrl] = useState<string | null>(null)
+  const [isLoadingOfficeUrl, setIsLoadingOfficeUrl] = useState(false)
+  
+  // Use the hook to manage the PPTX URL refresh for direct downloads
+  const { url: refreshedPptxUrl } = useStorageUrl(slide?.individual_pptx_url, {
+    autoRefresh: true,
+    refreshInterval: 60000 // Check every minute
+  })
+  // Fetch fresh URL for Office viewer when slide has individual_pptx_url
+  useEffect(() => {
+    if (!slide?.individual_pptx_url || !supabase || !projectId) return
+    
+    let isMounted = true
+    
+    const fetchOfficeViewerUrl = async () => {
+      try {
+        setIsLoadingOfficeUrl(true)
+        
+        // First, try to use the refreshed URL from the hook if available
+        if (refreshedPptxUrl && isMounted) {
+          setOfficeViewerUrl(refreshedPptxUrl)
+          setIsLoadingOfficeUrl(false)
+          return
+        }
+        
+        // Otherwise, try to get a fresh signed URL via the API
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token && isMounted) {
+          // Call the refresh endpoint to get a new signed URL
+          const response = await fetch(`/api/projects/${projectId}/slides/${slide.id}/refresh-url`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            }
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            if (data.new_url && isMounted) {
+              setOfficeViewerUrl(data.new_url)
+              return
+            }
+          }
+        }
+        
+        // Final fallback: use the original URL
+        if (isMounted) {
+          setOfficeViewerUrl(slide.individual_pptx_url)
+        }
+      } catch (error) {
+        console.warn('Error fetching Office viewer URL:', error)
+        // Use whatever URL we have as fallback
+        if (isMounted) {
+          setOfficeViewerUrl(slide.individual_pptx_url || null)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingOfficeUrl(false)
+        }
+      }
+    }
+    
+    // Only fetch if we don't have a URL yet
+    if (!officeViewerUrl) {
+      fetchOfficeViewerUrl()
+    }
+    
+    return () => {
+      isMounted = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slide?.id, projectId]) // Only depend on core identifiers to avoid loops
+  
   // Fetch refinement count when slide changes
   useEffect(() => {
     if (!slide || !projectId || !supabase) return
@@ -236,7 +311,7 @@ export function SlideCard({ slide, slides = [], projectId, isParallelProcessing 
       isFailed ? 'border-destructive/30 bg-destructive/5 hover:border-destructive/40' : 
       'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'
     }`} onClick={() => {
-      if (!isClickable) return
+      if (!isClickable || showPreview || showRefinement) return
       
       // If slide is in HTML processing or has refinements (and not completed), show refinement modal
       if (isHtmlRefinementActive || isHtmlGenerationActive || (hasRefinements && !isCompleted)) {
@@ -306,12 +381,21 @@ export function SlideCard({ slide, slides = [], projectId, isParallelProcessing 
                   </Button>
                 )}
                 
-                {isCompleted && (
+                {isCompleted && refreshedPptxUrl && (
                   <Button 
                     variant="ghost" 
                     size="sm" 
                     className="h-6 w-6 p-0 hover:bg-emerald-100 dark:hover:bg-emerald-900"
-                    onClick={(e) => { e.stopPropagation(); window.open(`/api/projects/${projectId}/slides/${slide.id}/download`, '_blank'); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      // Use the refreshed URL for download
+                      const link = document.createElement('a')
+                      link.href = refreshedPptxUrl
+                      link.download = `slide_${slide.slide_number}.pptx`
+                      document.body.appendChild(link)
+                      link.click()
+                      document.body.removeChild(link)
+                    }}
                     title="Download slide"
                   >
                     <Download className="w-3 h-3" />
@@ -397,11 +481,11 @@ export function SlideCard({ slide, slides = [], projectId, isParallelProcessing 
               </div>
               
               {/* Show online PPTX viewer if available, otherwise show text content */}
-              {slide.individual_pptx_url ? (
+              {officeViewerUrl && !isLoadingOfficeUrl ? (
                 <div className="space-y-2">
                   <div className="relative rounded-lg border overflow-hidden bg-white dark:bg-neutral-800" style={{ aspectRatio: '16/9' }}>
                     <iframe
-                      src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(slide.individual_pptx_url)}`}
+                      src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(officeViewerUrl)}`}
                       className="w-full h-full border-0"
                       title={`Slide ${slide.slide_number} preview`}
                       allowFullScreen
@@ -409,6 +493,13 @@ export function SlideCard({ slide, slides = [], projectId, isParallelProcessing 
                   </div>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
                     Live PowerPoint preview
+                  </p>
+                </div>
+              ) : (slide.individual_pptx_url && isLoadingOfficeUrl) ? (
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg border">
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center">
+                    <Loader2 className="w-4 h-4 inline mr-2 animate-spin" />
+                    Loading preview...
                   </p>
                 </div>
               ) : (

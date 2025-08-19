@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
+import { useStorageUrl } from '@/hooks/useStorageUrl'
+import { refreshStorageUrlIfNeeded } from '@/lib/storage-urls'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -153,6 +155,13 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId, onView
 
   const refreshSignedUrl = async (originalUrl: string): Promise<string | null> => {
     try {
+      // Use the centralized refresh utility
+      const refreshedUrl = await refreshStorageUrlIfNeeded(originalUrl)
+      if (refreshedUrl) {
+        return refreshedUrl
+      }
+
+      // Fallback to manual refresh if needed
       const filePath = extractFilePathFromUrl(originalUrl)
       if (!filePath) {
         console.error('Could not extract file path from URL:', originalUrl)
@@ -295,8 +304,8 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId, onView
     setSelectedIteration(1)
   }
 
-  const getCurrentImageUrl = (refinement: RefinementIteration): string | null => {
-    if (!refinement.image_file_url) return null
+  const getCurrentImageUrl = (refinement: RefinementIteration): string | undefined => {
+    if (!refinement.image_file_url) return undefined
     
     // Check if we have a refreshed URL for this refinement
     const refreshedUrl = refreshedUrls[refinement.id]
@@ -337,24 +346,43 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId, onView
 
   // Proactively check if URLs might be expired and refresh them
   useEffect(() => {
-    const checkAndRefreshUrls = async () => {
-      if (!open || Object.keys(refinements).length === 0) return
+    if (!open || Object.keys(refinements).length === 0) return
+    
+    let isMounted = true
+    const refreshedIds = new Set<string>()
 
+    const checkAndRefreshUrls = async () => {
       const urlsToRefresh: Array<{id: string, url: string}> = []
       
       Object.values(refinements).flat().forEach(refinement => {
-        if (refinement.image_file_url && !refreshedUrls[refinement.id]) {
+        // Skip if already refreshed in this session
+        if (refinement.image_file_url && !refreshedIds.has(refinement.id)) {
           // Check if the URL looks like it might be expired (basic heuristic)
           try {
             const url = new URL(refinement.image_file_url)
             const params = new URLSearchParams(url.search)
-            const exp = params.get('exp')
-            if (exp) {
-              const expTime = parseInt(exp) * 1000 // Convert to milliseconds
-              const now = Date.now()
-              // If expires within the next 5 minutes, refresh proactively
-              if (expTime - now < 5 * 60 * 1000) {
+            const token = params.get('token')
+            
+            if (token) {
+              // Try to decode the JWT to check expiration
+              try {
+                const payload = token.split('.')[1]
+                if (payload) {
+                  const decoded = JSON.parse(atob(payload))
+                  const exp = decoded.exp
+                  if (exp) {
+                    const now = Math.floor(Date.now() / 1000)
+                    // If expired or expires within the next 5 minutes, refresh
+                    if (now >= (exp - 300)) {
+                      urlsToRefresh.push({id: refinement.id, url: refinement.image_file_url})
+                      refreshedIds.add(refinement.id) // Mark as being refreshed
+                    }
+                  }
+                }
+              } catch {
+                // If we can't decode, assume it needs refresh
                 urlsToRefresh.push({id: refinement.id, url: refinement.image_file_url})
+                refreshedIds.add(refinement.id)
               }
             }
           } catch {
@@ -365,9 +393,11 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId, onView
 
       // Refresh URLs in batches to avoid overwhelming the server
       for (const {id, url} of urlsToRefresh.slice(0, 3)) {
+        if (!isMounted) break
+        
         try {
           const newUrl = await refreshSignedUrl(url)
-          if (newUrl) {
+          if (newUrl && isMounted) {
             setRefreshedUrls(prev => ({
               ...prev,
               [id]: newUrl
@@ -382,7 +412,11 @@ export function RefinementModal({ open, onOpenChange, projectId, slideId, onView
     }
 
     checkAndRefreshUrls()
-  }, [open, refinements, refreshedUrls, refreshSignedUrl])
+    
+    return () => {
+      isMounted = false
+    }
+  }, [open, refinements]) // Remove refreshedUrls and refreshSignedUrl from dependencies to avoid loops
 
   const downloadHtml = () => {
     const current = getCurrentRefinement()

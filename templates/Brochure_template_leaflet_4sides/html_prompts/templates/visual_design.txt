@@ -1,6 +1,6 @@
 BROCHURE OVERLAY - CRITICAL VISUAL DESIGN REQUIREMENTS
 
-🚨 TRANSPARENCY IS ABSOLUTELY MANDATORY 🚨
+TRANSPARENCY IS ABSOLUTELY MANDATORY
 
 CRITICAL COLOR RULES:
 1. Body Background: transparent (NEVER change this)
@@ -10,19 +10,21 @@ CRITICAL COLOR RULES:
 5. Text Shadows: 0 2px 4px rgba(0,0,0,0.5) - For readability
 
 FORBIDDEN STYLES (NEVER USE):
-❌ background-color: (any value except transparent on body)
-❌ background: (any value)
-❌ color: black or any dark color
-❌ border: (unless white/transparent)
-❌ Any DaisyUI card classes
-❌ Any bg-* Tailwind classes
+- background-color: (any value except transparent on body)
+- background: (any value)
+- color: black or any dark color
+- border: (unless white/transparent)
+- Any DaisyUI card classes
+- Any bg-* Tailwind classes
+- Emoji characters anywhere in HTML
 
 MANDATORY STYLES (ALWAYS USE):
-✅ style="background-color: transparent;" on body
-✅ style="color: #ffffff;" or style="color: white;" on ALL text
-✅ text-shadow: 0 2px 4px rgba(0,0,0,0.5) on text
-✅ Simple div containers with NO backgrounds
-✅ Flexbox/grid for layout
+- style="background-color: transparent;" on body
+- style="color: #ffffff;" or style="color: white;" on ALL text
+- text-shadow: 0 2px 4px rgba(0,0,0,0.5) on text
+- Simple div containers with NO backgrounds
+- Flexbox/grid for layout
+- Lucide icons only (NO emojis)
 
 TYPOGRAPHY REQUIREMENTS:
 - Font: 'Helvetica Neue', Helvetica, Arial, sans-serif

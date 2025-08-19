@@ -108,29 +108,60 @@ function validateServerEnv() {
   }
 }
 
-// Export validated environment variables
-export const env = validateEnv()
+// Lazy-load environment variables to avoid initialization issues
+let _env: z.infer<typeof envSchema> | null = null
+let _serverEnv: z.infer<typeof serverEnvSchema> | null = null
 
-// Export server environment variables (only use on server-side)
-export const serverEnv = typeof window === 'undefined' ? validateServerEnv() : null
+// Export validated environment variables (lazy loaded)
+export const env = new Proxy({} as z.infer<typeof envSchema>, {
+  get(target, prop) {
+    if (!_env) {
+      _env = validateEnv()
+    }
+    return _env[prop as keyof typeof _env]
+  }
+})
+
+// Export server environment variables (only use on server-side, lazy loaded)
+export const serverEnv = typeof window === 'undefined' 
+  ? new Proxy({} as z.infer<typeof serverEnvSchema>, {
+      get(target, prop) {
+        if (!_serverEnv) {
+          _serverEnv = validateServerEnv()
+        }
+        return _serverEnv[prop as keyof typeof _serverEnv]
+      }
+    })
+  : null
 
 // Type definitions for better intellisense
 export type Env = z.infer<typeof envSchema>
 export type ServerEnv = z.infer<typeof serverEnvSchema>
 
-// Helper functions
-export const isProduction = env.NODE_ENV === 'production'
-export const isDevelopment = env.NODE_ENV === 'development'
-export const isStaging = env.NODE_ENV === 'staging'
+// Helper functions (lazy evaluation)
+export const isProduction = () => env.NODE_ENV === 'production'
+export const isDevelopment = () => env.NODE_ENV === 'development'
+export const isStaging = () => env.NODE_ENV === 'staging'
 
-// Feature flag helpers
-export const features = {
-  realtime: env.NEXT_PUBLIC_ENABLE_REALTIME,
-  aiChat: env.NEXT_PUBLIC_ENABLE_AI_CHAT,
-  export: env.NEXT_PUBLIC_ENABLE_EXPORT,
-  collaboration: env.NEXT_PUBLIC_ENABLE_COLLABORATION,
-  serviceWorker: env.NEXT_PUBLIC_ENABLE_SW,
-} as const
+// Feature flag helpers (lazy evaluation)
+export const features = new Proxy({} as {
+  readonly realtime: boolean
+  readonly aiChat: boolean
+  readonly export: boolean
+  readonly collaboration: boolean
+  readonly serviceWorker: boolean
+}, {
+  get(target, prop) {
+    switch(prop) {
+      case 'realtime': return env.NEXT_PUBLIC_ENABLE_REALTIME
+      case 'aiChat': return env.NEXT_PUBLIC_ENABLE_AI_CHAT
+      case 'export': return env.NEXT_PUBLIC_ENABLE_EXPORT
+      case 'collaboration': return env.NEXT_PUBLIC_ENABLE_COLLABORATION
+      case 'serviceWorker': return env.NEXT_PUBLIC_ENABLE_SW
+      default: return undefined
+    }
+  }
+})
 
 // Validation helper for runtime checks
 export function ensureEnvVar(name: string, value: string | undefined): string {
@@ -145,15 +176,16 @@ export function ensureEnvVar(name: string, value: string | undefined): string {
 
 // Development helper to log environment status
 export function logEnvStatus() {
-  if (isDevelopment) {
+  if (isDevelopment()) {
     console.log('🌍 Environment Configuration:')
     console.log(`   NODE_ENV: ${env.NODE_ENV}`)
     console.log(`   API URL: ${env.NEXT_PUBLIC_API_URL}`)
     console.log(`   App URL: ${env.NEXT_PUBLIC_APP_URL}`)
     console.log(`   Supabase URL: ${env.NEXT_PUBLIC_SUPABASE_URL}`)
     console.log('🎛️  Feature Flags:')
-    Object.entries(features).forEach(([key, value]) => {
-      console.log(`   ${key}: ${value ? '✅' : '❌'}`)
+    const flagKeys = ['realtime', 'aiChat', 'export', 'collaboration', 'serviceWorker'] as const
+    flagKeys.forEach((key) => {
+      console.log(`   ${key}: ${features[key] ? '✅' : '❌'}`)
     })
   }
 }

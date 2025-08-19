@@ -2,10 +2,10 @@
   "tracking_metadata": {
     "session_start": "2025-08-19T01:57:36.433345",
     "workflow_type": "parallel_slide_processing",
-    "total_slides": 2,
-    "completed_slides": 2,
+    "total_slides": 4,
+    "completed_slides": 4,
     "failed_slides": 0,
-    "last_updated": "2025-08-19T01:58:29.197815"
+    "last_updated": "2025-08-19T02:02:54.907082"
   },
   "workflow_state": {},
   "layout_analysis": {
@@ -15,7 +15,7 @@
     ],
     "has_dynamic_models": true,
     "dynamic_models_count": 1,
-    "timestamp": "2025-08-19T01:57:43.212025",
+    "timestamp": "2025-08-19T02:01:19.116518",
     "sample_layout": {
       "index": 0,
       "placeholder_count": 10,
@@ -63,6 +63,30 @@
       "storage_path": "projects/b58c0bac-42a3-49ef-ae9b-6a2b09a9d308/individual_slides/56d0ee45-c25b-49ea-990e-eb291018819e/slide_2_20250819_015826.pptx",
       "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/b58c0bac-42a3-49ef-ae9b-6a2b09a9d308/individual_slides/56d0ee45-c25b-49ea-990e-eb291018819e/slide_2_20250819_015826.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2I1OGMwYmFjLTQyYTMtNDllZi1hZTliLTZhMmIwOWE5ZDMwOC9pbmRpdmlkdWFsX3NsaWRlcy81NmQwZWU0NS1jMjViLTQ5ZWEtOTkwZS1lYjI5MTAxODgxOWUvc2xpZGVfMl8yMDI1MDgxOV8wMTU4MjYucHB0eCIsImlhdCI6MTc1NTU2MTUwNiwiZXhwIjoxNzU1NjQ3OTA2fQ.J7pSisetz6dQt8NTAdOJTs12zUseZFpxuPZQyc4jA6U",
       "file_size": 2722640
+    },
+    {
+      "slide_id": "e452d82d-9c64-485c-aa01-be6a796e2e63",
+      "slide_number": 2,
+      "status": "completed",
+      "timestamp": "2025-08-19T02:02:12.776596",
+      "template_path": "templates/Brochure_template_leaflet_4sides/Brochure_template_leaflet_4sides.pptx",
+      "has_html_image": false,
+      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_2_20250819_020212_9af3f4a0.pptx",
+      "storage_path": "projects/ed0aba79-4819-46ad-945a-37b2112252e1/individual_slides/e452d82d-9c64-485c-aa01-be6a796e2e63/slide_2_20250819_020212.pptx",
+      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/ed0aba79-4819-46ad-945a-37b2112252e1/individual_slides/e452d82d-9c64-485c-aa01-be6a796e2e63/slide_2_20250819_020212.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2VkMGFiYTc5LTQ4MTktNDZhZC05NDVhLTM3YjIxMTIyNTJlMS9pbmRpdmlkdWFsX3NsaWRlcy9lNDUyZDgyZC05YzY0LTQ4NWMtYWEwMS1iZTZhNzk2ZTJlNjMvc2xpZGVfMl8yMDI1MDgxOV8wMjAyMTIucHB0eCIsImlhdCI6MTc1NTU2MTczMiwiZXhwIjoxNzU1NjQ4MTMyfQ.qmFzLeiL7-HSeKuK6hnvJn1Gu3q_bhWuDAlxhIcc24Q",
+      "file_size": 2765544
+    },
+    {
+      "slide_id": "19b9acc7-c893-4317-a502-b7842349bed4",
+      "slide_number": 1,
+      "status": "completed",
+      "timestamp": "2025-08-19T02:02:52.194815",
+      "template_path": "templates/Brochure_template_leaflet_4sides/Brochure_template_leaflet_4sides.pptx",
+      "has_html_image": false,
+      "file_path": "/var/folders/0t/3pyynpzd6pdg4bvck36mb0080000gn/T/individual_slides/slide_1_20250819_020251_1b5c9679.pptx",
+      "storage_path": "projects/ed0aba79-4819-46ad-945a-37b2112252e1/individual_slides/19b9acc7-c893-4317-a502-b7842349bed4/slide_1_20250819_020251.pptx",
+      "file_url": "https://sogrnydikjolyacpcfew.supabase.co/storage/v1/object/sign/presentations/projects/ed0aba79-4819-46ad-945a-37b2112252e1/individual_slides/19b9acc7-c893-4317-a502-b7842349bed4/slide_1_20250819_020251.pptx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xYzdlNWQwYS01MzA1LTQ1ZWEtYjM1OS0yMTlkNDY2NzNmNDIiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJwcmVzZW50YXRpb25zL3Byb2plY3RzL2VkMGFiYTc5LTQ4MTktNDZhZC05NDVhLTM3YjIxMTIyNTJlMS9pbmRpdmlkdWFsX3NsaWRlcy8xOWI5YWNjNy1jODkzLTQzMTctYTUwMi1iNzg0MjM0OWJlZDQvc2xpZGVfMV8yMDI1MDgxOV8wMjAyNTEucHB0eCIsImlhdCI6MTc1NTU2MTc3MiwiZXhwIjoxNzU1NjQ4MTcyfQ.iUkdwdONErfB0Sh4kcyPlmpuqXKSPFunUzCNY7ZFLxM",
+      "file_size": 426785
     }
   ],
   "final_presentation": {
@@ -72,7 +96,7 @@
     "total_slides": 0,
     "file_size": 0,
     "error": null,
-    "timestamp": "2025-08-19T01:58:29.197811"
+    "timestamp": "2025-08-19T02:02:54.907080"
   },
   "errors": [],
   "performance_metrics": {}

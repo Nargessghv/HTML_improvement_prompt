@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
+import { refreshStorageUrlIfNeeded } from '@/lib/storage-urls'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -255,9 +256,36 @@ export default function ProjectDetailPage() {
 
   const downloadFile = async (file: ProjectFile) => {
     try {
-      // Use the signed download URL directly
+      // Refresh the URL if it's expired before downloading
+      const freshUrl = await refreshStorageUrlIfNeeded(file.download_url)
+      
+      if (!freshUrl) {
+        // If we can't refresh, try to get a new URL from the backend
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          toast.error('Please sign in again to download files')
+          return
+        }
+        
+        const response = await fetch(`/api/projects/${projectId}/files/${file.id}/download`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to get download URL')
+        }
+        
+        // The backend will redirect to the actual file
+        window.open(response.url, '_blank')
+        toast.success(`Downloaded ${file.file_name}`)
+        return
+      }
+      
+      // Use the refreshed URL to download
       const link = document.createElement('a')
-      link.href = file.download_url
+      link.href = freshUrl
       link.download = file.file_name
       document.body.appendChild(link)
       link.click()

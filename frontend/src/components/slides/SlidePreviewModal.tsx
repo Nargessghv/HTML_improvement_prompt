@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuthSimple'
+import { refreshStorageUrlIfNeeded } from '@/lib/storage-urls'
 import { RefinementModal } from '@/components/refinement/RefinementModal'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -68,7 +69,7 @@ interface SlidePreviewModalProps {
 }
 
 export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClose, onSlideChange }: SlidePreviewModalProps) {
-  const { session, supabase } = useSupabaseAuth()
+  const { session, supabase } = useSupabaseAuth() // Use the supabase from the hook
   const [slideFiles, setSlideFiles] = useState<SlideFile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -194,7 +195,7 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
         }
       }
       
-      // Get all refinement iterations
+      // Get all refinement iterations including the final one
       const { data: refinements, count } = await supabase
         .from('html_refinements')
         .select('*')
@@ -202,11 +203,61 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
         .order('iteration_number', { ascending: true })
       
       setRefinementCount(count || 0)
-      setRefinementIterations(refinements || [])
       
+      // Refresh URLs for old refinements if needed
       if (refinements && refinements.length > 0) {
+        const refreshedRefinements = await Promise.all(
+          refinements.map(async (refinement) => {
+            // Try to refresh image URLs
+            if (refinement.image_file_url) {
+              try {
+                console.log('Attempting to refresh URL for refinement:', refinement.id)
+                
+                // Always try to create a new signed URL directly
+                const urlObj = new URL(refinement.image_file_url)
+                const pathMatch = urlObj.pathname.match(/\/storage\/v1\/object\/sign\/html-refinements\/(.+)/)
+                
+                if (pathMatch) {
+                  const filePath = decodeURIComponent(pathMatch[1].split('?')[0])
+                  console.log('Extracted file path:', filePath)
+                  
+                  const { data, error } = await supabase.storage
+                    .from('html-refinements')
+                    .createSignedUrl(filePath, 3600) // 1 hour expiry
+                  
+                  if (error) {
+                    console.error('Error creating signed URL:', error)
+                  } else if (data?.signedUrl) {
+                    console.log('Successfully created new signed URL')
+                    refinement.image_file_url = data.signedUrl
+                  }
+                } else {
+                  console.warn('Could not extract file path from URL')
+                }
+              } catch (error) {
+                console.error('Error refreshing image URL:', error)
+              }
+            }
+            
+            // Try to refresh PPTX URLs
+            if (refinement.pptx_file_url) {
+              try {
+                const freshUrl = await refreshStorageUrlIfNeeded(refinement.pptx_file_url)
+                if (freshUrl) {
+                  refinement.pptx_file_url = freshUrl
+                }
+              } catch (error) {
+                console.warn('Could not refresh PPTX URL:', error)
+              }
+            }
+            
+            return refinement
+          })
+        )
+        
+        setRefinementIterations(refreshedRefinements)
         contentAvailable.hasVersions = true
-        contentAvailable.hasImage = refinements.some(r => r.image_file_url)
+        contentAvailable.hasImage = refreshedRefinements.some(r => r.image_file_url)
         
         if (!contentAvailable.hasPptx) {
           contentAvailable.hasPptx = refinements.some(r => r.pptx_file_url)
@@ -367,9 +418,14 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
         <DialogContent 
-          className="!w-[80vw] !h-[80vh] !max-w-[80vw] !max-h-[80vh] !p-0 !gap-0 overflow-hidden bg-white sm:!max-w-[80vw] flex flex-col" 
+          className="!w-[80vw] !h-[80vh] !max-w-[80vw] !max-h-[80vh] !p-0 !gap-0 overflow-hidden bg-white sm:!max-w-[80vw] flex flex-col"
+          onPointerDownOutside={(e) => {
+            e.preventDefault()
+            onClose()
+          }}
+          onEscapeKeyDown={onClose}
           showCloseButton={false}
         >
           <DialogHeader className="sr-only">
@@ -395,7 +451,10 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={onClose} 
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onClose()
+                }} 
                 className="h-8 w-8 p-0 hover:bg-gray-100 flex-shrink-0 ml-4"
               >
                 <X className="w-4 h-4" />
@@ -498,42 +557,51 @@ export function SlidePreviewModal({ slide, slides = [], projectId, isOpen, onClo
                 {showIterationsCarousel && (
                   <div className="px-4 pb-3 bg-gray-50">
                     <div className="flex gap-3 overflow-x-auto py-2">
-                      {refinementIterations.map((iteration, index) => (
-                        <button
-                          key={iteration.id}
-                          onClick={() => {
-                            setSelectedIterationIndex(index)
-                            if (iteration.pptx_file_url) {
-                              setCurrentPptxUrl(iteration.pptx_file_url)
-                            } else if (iteration.image_file_url) {
-                              // If no PPTX, show image preview
-                              setPreviewImageUrl(iteration.image_file_url)
-                            }
-                          }}
-                          className={`relative flex-shrink-0 rounded-md overflow-hidden border-2 transition-all cursor-pointer ${
-                            selectedIterationIndex === index 
-                              ? 'border-red-600 shadow-md ring-2 ring-red-600/20' 
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                          title={`Click to view iteration ${iteration.iteration_number}`}
-                        >
-                          {iteration.image_file_url ? (
-                            <img 
-                              src={iteration.image_file_url} 
-                              alt={`Iteration ${iteration.iteration_number}`}
-                              className="w-48 h-32 object-cover"
-                            />
-                          ) : (
-                            <div className="w-48 h-32 bg-gray-200 flex items-center justify-center">
-                              <span className="text-sm text-gray-500">No preview</span>
+                      {refinementIterations.map((iteration, index) => {
+                        // Check if this is the final iteration (either marked as final or last in the list)
+                        const isFinalIteration = iteration.is_final || 
+                          (index === refinementIterations.length - 1)
+                        
+                        return (
+                          <button
+                            key={iteration.id}
+                            onClick={() => {
+                              setSelectedIterationIndex(index)
+                              if (iteration.pptx_file_url) {
+                                setCurrentPptxUrl(iteration.pptx_file_url)
+                              } else if (iteration.image_file_url) {
+                                // If no PPTX, show image preview
+                                setPreviewImageUrl(iteration.image_file_url)
+                              }
+                            }}
+                            className={`relative flex-shrink-0 rounded-md overflow-hidden border-2 transition-all cursor-pointer ${
+                              selectedIterationIndex === index 
+                                ? 'border-red-600 shadow-md ring-2 ring-red-600/20' 
+                                : isFinalIteration
+                                  ? 'border-green-500 hover:border-green-600'
+                                  : 'border-gray-300 hover:border-gray-400'
+                            }`}
+                            title={`Click to view iteration ${iteration.iteration_number}${isFinalIteration ? ' (Final)' : ''}`}
+                          >
+                            {iteration.image_file_url ? (
+                              <img 
+                                src={iteration.image_file_url} 
+                                alt={`Iteration ${iteration.iteration_number}`}
+                                className="w-48 h-32 object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-48 h-32 bg-gray-200 flex items-center justify-center">
+                                <span className="text-sm text-gray-500">No preview</span>
+                              </div>
+                            )}
+                            <div className={`absolute bottom-0 left-0 right-0 ${isFinalIteration ? 'bg-green-600/80' : 'bg-black/70'} text-white text-xs py-0.5 px-1 text-center`}>
+                              v{iteration.iteration_number}
+                              {isFinalIteration && ' (Final)'}
                             </div>
-                          )}
-                          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs py-0.5 px-1 text-center">
-                            v{iteration.iteration_number}
-                            {iteration.is_final && ' (Final)'}
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
