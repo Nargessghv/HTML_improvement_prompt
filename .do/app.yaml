@@ -61,34 +61,6 @@ services:
         value: "/app"
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: OPENAI_API_KEY
-        value: "${OPENAI_API_KEY}"
-      - key: OPENAI_MODEL
-        value: "gpt-4o"
-      - key: OPENAI_MODEL_FAST
-        value: "gpt-4o-mini"
-      - key: SUPABASE_URL
-        value: "${SUPABASE_URL}"
-      - key: SUPABASE_ANON_KEY
-        value: "${SUPABASE_ANON_KEY}"
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        value: "${SUPABASE_SERVICE_ROLE_KEY}"
-      - key: LANGFUSE_PUBLIC_KEY
-        value: "${LANGFUSE_PUBLIC_KEY}"
-      - key: LANGFUSE_SECRET_KEY
-        value: "${LANGFUSE_SECRET_KEY}"
-      - key: LANGFUSE_HOST
-        value: "https://cloud.langfuse.com"
-      - key: AZURE_STORAGE_CONNECTION_STRING
-        value: "${AZURE_STORAGE_CONNECTION_STRING}"
-      - key: AZURE_STORAGE_CONTAINER_NAME
-        value: "presentations-prod"
-      - key: USE_PARALLEL_HTML_CONTENT
-        value: "true"
-      - key: USE_PARALLEL_HTML_REFINEMENT
-        value: "true"
-      - key: USE_PARALLEL_SLIDE_PROCESSING
-        value: "true"
     health_check:
       http_path: /health
 
