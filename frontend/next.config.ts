@@ -65,9 +65,10 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 30, // Shorter cache for signed URLs
   },
 
-  // Performance optimization
+  // Performance optimization and build fixes
   experimental: {
     optimizePackageImports: ['@supabase/supabase-js'],
+    missingSuspenseWithCSRBailout: false,
   },
 
   // Docker deployment configuration
