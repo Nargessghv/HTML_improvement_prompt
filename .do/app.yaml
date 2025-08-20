@@ -1,0 +1,110 @@
+# Digital Ocean App Platform Configuration
+# PowerPoint Slide Creator - Production Deployment
+
+name: ekona-slide-creator
+region: nyc
+
+services:
+  # Frontend Service - Next.js
+  - name: frontend
+    source_dir: /
+    dockerfile_path: Dockerfile.frontend
+    github:
+      repo: https://github.com/ekona-ai/slides-creator  # Update with your GitHub repo
+      branch: main
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: "${NEXT_PUBLIC_SUPABASE_URL}"
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        value: "${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+      - key: NEXT_PUBLIC_API_URL
+        value: "${backend.PRIVATE_URL}"
+      - key: NEXT_PUBLIC_APP_URL
+        value: "${APP_URL}"
+      - key: NEXT_PUBLIC_APP_NAME
+        value: "ekona Slide Creator"
+      - key: NEXT_PUBLIC_COMPANY_NAME
+        value: "ekona"
+      - key: NEXTAUTH_SECRET
+        value: "${NEXTAUTH_SECRET}"
+      - key: JWT_SECRET
+        value: "${JWT_SECRET}"
+      - key: NEXT_PUBLIC_STORAGE_BUCKET
+        value: "presentations-prod"
+      - key: NEXT_PUBLIC_ENABLE_REALTIME
+        value: "true"
+      - key: NEXT_PUBLIC_ENABLE_AI_CHAT
+        value: "true"
+      - key: NEXT_PUBLIC_ENABLE_EXPORT
+        value: "true"
+    health_check:
+      http_path: /health
+
+  # Backend Service - Python FastAPI
+  - name: backend
+    source_dir: /
+    dockerfile_path: Dockerfile.backend
+    github:
+      repo: https://github.com/ekona-ai/slides-creator  # Update with your GitHub repo
+      branch: main
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: basic-s  # Larger instance for AI processing
+    envs:
+      - key: PYTHONPATH
+        value: "/app"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OPENAI_API_KEY
+        value: "${OPENAI_API_KEY}"
+      - key: OPENAI_MODEL
+        value: "gpt-4o"
+      - key: OPENAI_MODEL_FAST
+        value: "gpt-4o-mini"
+      - key: SUPABASE_URL
+        value: "${SUPABASE_URL}"
+      - key: SUPABASE_ANON_KEY
+        value: "${SUPABASE_ANON_KEY}"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: "${SUPABASE_SERVICE_ROLE_KEY}"
+      - key: LANGFUSE_PUBLIC_KEY
+        value: "${LANGFUSE_PUBLIC_KEY}"
+      - key: LANGFUSE_SECRET_KEY
+        value: "${LANGFUSE_SECRET_KEY}"
+      - key: LANGFUSE_HOST
+        value: "https://cloud.langfuse.com"
+      - key: AZURE_STORAGE_CONNECTION_STRING
+        value: "${AZURE_STORAGE_CONNECTION_STRING}"
+      - key: AZURE_STORAGE_CONTAINER_NAME
+        value: "presentations-prod"
+      - key: USE_PARALLEL_HTML_CONTENT
+        value: "true"
+      - key: USE_PARALLEL_HTML_REFINEMENT
+        value: "true"
+      - key: USE_PARALLEL_SLIDE_PROCESSING
+        value: "true"
+    health_check:
+      http_path: /health
+
+# Global environment variables
+envs:
+  - key: APP_URL
+    value: "econtent.ekona.ai"  # Update after deployment
+  - key: CORS_ORIGINS
+    value: "econtent.ekona.ai"  # Update after deployment
+
+# Alerts
+alerts:
+  - rule: CPU_UTILIZATION
+    value: 80
+  - rule: MEM_UTILIZATION  
+    value: 80
+  - rule: RESTART_COUNT
+    value: 10

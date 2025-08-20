@@ -1,0 +1,73 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+DEPLOYMENT.md
+*.md
+
+# Environment files (use build args instead)
+.env
+.env.*
+!.env.production
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime directories
+node_modules
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Generated content (will be created in container)
+generated_presentations/
+html_debug/
+
+# Build artifacts
+.next
+out
+dist
+build
+
+# Testing
+.coverage
+.pytest_cache
+coverage/
+.nyc_output
+
+# Local development
+.env.local
+.env.development
+
+# Backup files
+*.bak
+*.backup
+*.sql
+
+# Temporary files
+tmp/
+temp/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore

@@ -70,6 +70,9 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['@supabase/supabase-js'],
   },
 
+  // Docker deployment configuration
+  output: 'standalone',
+
   // Build optimization
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
