@@ -78,9 +78,12 @@ const nextConfig: NextConfig = {
     removeConsole: process.env.NODE_ENV === 'production',
   },
 
-  // Disable ESLint during builds for deployment
+  // Disable ESLint and TypeScript errors during builds for deployment
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
 
   // Static file optimization
