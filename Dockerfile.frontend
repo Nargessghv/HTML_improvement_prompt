@@ -6,15 +6,18 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 # Copy package files
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --only=production
+COPY frontend/package.json ./
+RUN npm install --omit=dev
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy dependencies
-COPY --from=deps /app/node_modules ./node_modules
+# Copy package.json for all dependencies (including dev)
+COPY frontend/package.json ./
+RUN npm install
+
+# Copy source code
 COPY frontend/ .
 
 # Build the application
@@ -26,6 +29,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Install curl for health checks
+RUN apk add --no-cache curl
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
