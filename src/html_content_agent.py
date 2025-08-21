@@ -529,6 +529,7 @@ class HTMLContentGenerationAgent:
     ) -> SlideContent:
         """
         Enhance a single slide with HTML visualizations where appropriate
+        IMPROVED: New flow - check placeholder suitability first, then generate HTML with exact dimensions
 
         Args:
             slide_content: Original slide content
@@ -543,24 +544,52 @@ class HTMLContentGenerationAgent:
         enhanced_content = {}
         html_generated_this_slide = False
 
+        # NEW FLOW: Get placeholder information first
+        layout_info = layouts_info.get(slide_content.layout_index) if layouts_info else None
+        if not layout_info:
+            print(f"        ⚠️ No layout info found for layout {slide_content.layout_index}, using original content")
+            return slide_content
+
+        placeholders_info = layout_info.get("placeholders", [])
+        
         for placeholder_name, content_text in slide_content.content.items():
             print(f"        📝 Checking '{placeholder_name}'...")
             print(f"           Content preview: {content_text[:100]}...")
 
-            # Check if this placeholder should have HTML visualization
+            # NEW: Get placeholder information first
+            placeholder_info = None
+            for p_info in placeholders_info:
+                if p_info.get("name") == placeholder_name:
+                    placeholder_info = p_info
+                    break
+
+            if not placeholder_info:
+                print(f"        ⚠️ No placeholder info found for '{placeholder_name}', keeping original content")
+                enhanced_content[placeholder_name] = content_text
+                continue
+
+            # NEW: Check placeholder suitability first
+            is_suitable = self._is_placeholder_suitable_for_html(placeholder_info)
+            if not is_suitable:
+                print(f"        ❌ Placeholder '{placeholder_name}' not suitable for HTML, keeping original content")
+                enhanced_content[placeholder_name] = content_text
+                continue
+
+            # NEW: Check if content is suitable for HTML visualization
             should_generate = self._should_generate_html_visualization(
-                placeholder_name, content_text
+                placeholder_name, content_text, placeholder_info
             )
 
             if should_generate:
                 print(f"        🎨 Generating HTML for '{placeholder_name}'")
 
-                # Get actual placeholder dimensions from layout info
-                placeholder_width, placeholder_height = self._get_placeholder_dimensions(
-                    slide_content.layout_index, placeholder_name, layouts_info
-                )
+                # Use exact placeholder dimensions from placeholder_info
+                placeholder_width = placeholder_info.get("width_px", 1577)
+                placeholder_height = placeholder_info.get("height_px", 603)
                 
-                # Generate enhanced HTML content (using actual dimensions)
+                print(f"        📐 Using exact placeholder dimensions: {placeholder_width}x{placeholder_height}px")
+                
+                # Generate enhanced HTML content with exact dimensions
                 html_content = self._generate_html_visualization_content(
                     placeholder_name=placeholder_name,
                     original_content=content_text,
@@ -576,7 +605,7 @@ class HTMLContentGenerationAgent:
                 if html_content:
                     enhanced_content[placeholder_name] = html_content
                     html_generated_this_slide = True
-                    print(f"        ✅ Generated HTML for '{placeholder_name}'")
+                    print(f"        ✅ Generated HTML for '{placeholder_name}' with exact dimensions")
                 else:
                     # Keep original content if HTML generation fails
                     enhanced_content[placeholder_name] = content_text
@@ -690,6 +719,7 @@ class HTMLContentGenerationAgent:
     ) -> SlideContent:
         """
         Enhance a single slide that is planned to be HTML with HTML visualizations
+        IMPROVED: New flow - check placeholder suitability first, then generate HTML with exact dimensions
 
         Args:
             slide_content: Original slide content
@@ -705,24 +735,52 @@ class HTMLContentGenerationAgent:
         enhanced_content = {}
         html_generated_this_slide = False
 
+        # NEW FLOW: Get placeholder information first
+        layout_info = layouts_info.get(slide_content.layout_index) if layouts_info else None
+        if not layout_info:
+            print(f"        ⚠️ No layout info found for layout {slide_content.layout_index}, using original content")
+            return slide_content
+
+        placeholders_info = layout_info.get("placeholders", [])
+
         for placeholder_name, content_text in slide_content.content.items():
             print(f"        📝 Checking '{placeholder_name}'...")
             print(f"           Content preview: {content_text[:100]}...")
 
-            # Check if this placeholder should have HTML visualization
+            # NEW: Get placeholder information first
+            placeholder_info = None
+            for p_info in placeholders_info:
+                if p_info.get("name") == placeholder_name:
+                    placeholder_info = p_info
+                    break
+
+            if not placeholder_info:
+                print(f"        ⚠️ No placeholder info found for '{placeholder_name}', keeping original content")
+                enhanced_content[placeholder_name] = content_text
+                continue
+
+            # NEW: Check placeholder suitability first
+            is_suitable = self._is_placeholder_suitable_for_html(placeholder_info)
+            if not is_suitable:
+                print(f"        ❌ Placeholder '{placeholder_name}' not suitable for HTML, keeping original content")
+                enhanced_content[placeholder_name] = content_text
+                continue
+
+            # NEW: Check if content is suitable for HTML visualization
             should_generate = self._should_generate_html_visualization(
-                placeholder_name, content_text
+                placeholder_name, content_text, placeholder_info
             )
 
             if should_generate:
                 print(f"        🎨 Generating HTML for '{placeholder_name}'")
 
-                # Get actual placeholder dimensions from layout info
-                placeholder_width, placeholder_height = self._get_placeholder_dimensions(
-                    slide_content.layout_index, placeholder_name, layouts_info or {}
-                )
+                # Use exact placeholder dimensions from placeholder_info
+                placeholder_width = placeholder_info.get("width_px", 1577)
+                placeholder_height = placeholder_info.get("height_px", 603)
                 
-                # Generate enhanced HTML content with actual dimensions
+                print(f"        📐 Using exact placeholder dimensions: {placeholder_width}x{placeholder_height}px")
+                
+                # Generate enhanced HTML content with exact dimensions
                 html_content = self._generate_html_visualization_content(
                     placeholder_name=placeholder_name,
                     original_content=content_text,
@@ -738,7 +796,7 @@ class HTMLContentGenerationAgent:
                 if html_content:
                     enhanced_content[placeholder_name] = html_content
                     html_generated_this_slide = True
-                    print(f"        ✅ Generated HTML for '{placeholder_name}'")
+                    print(f"        ✅ Generated HTML for '{placeholder_name}' with exact dimensions")
                 else:
                     # Keep original content if HTML generation fails
                     enhanced_content[placeholder_name] = content_text
@@ -758,14 +816,16 @@ class HTMLContentGenerationAgent:
         )
 
     def _should_generate_html_visualization(
-        self, placeholder_name: str, content_text: str
+        self, placeholder_name: str, content_text: str, placeholder_info: dict = None
     ) -> bool:
         """
         Determine if a placeholder should have HTML visualization
+        IMPROVED: Now considers placeholder dimensions and suitability
 
         Args:
             placeholder_name: Name of the placeholder
             content_text: Current content text
+            placeholder_info: Placeholder information including dimensions and type
 
         Returns:
             True if HTML visualization should be generated
@@ -777,6 +837,13 @@ class HTMLContentGenerationAgent:
         is_icon_placeholder = "icon" in placeholder_lower
         if is_icon_placeholder:
             return False
+
+        # NEW: Check placeholder suitability first if info is available
+        if placeholder_info:
+            is_suitable = self._is_placeholder_suitable_for_html(placeholder_info)
+            if not is_suitable:
+                print(f"    ❌ Placeholder '{placeholder_name}' not suitable for HTML (size/type constraints)")
+                return False
 
         # ✅ EXPANDED DETECTION LOGIC:
 
@@ -907,6 +974,57 @@ class HTMLContentGenerationAgent:
             return True
 
         return False
+
+    def _is_placeholder_suitable_for_html(self, placeholder_info: dict) -> bool:
+        """
+        Check if a placeholder is suitable for HTML visualization based on size and type
+        
+        Args:
+            placeholder_info: Dictionary containing placeholder information
+            
+        Returns:
+            True if placeholder is suitable for HTML visualization
+        """
+        try:
+            # Get placeholder dimensions
+            width_px = placeholder_info.get("width_px", 0)
+            height_px = placeholder_info.get("height_px", 0)
+            placeholder_type = placeholder_info.get("type", 0)
+            
+            # Check minimum size requirements for HTML visualization
+            min_width = 300  # Minimum width for meaningful visualization
+            min_height = 200  # Minimum height for meaningful visualization
+            min_area = 60000  # Minimum area (width * height) for complex visualizations
+            
+            # Check if placeholder is too small
+            if width_px < min_width or height_px < min_height:
+                print(f"        📏 Placeholder too small: {width_px}x{height_px}px (min: {min_width}x{min_height}px)")
+                return False
+                
+            # Check if placeholder has sufficient area for complex visualizations
+            area = width_px * height_px
+            if area < min_area:
+                print(f"        📏 Placeholder area too small: {area}px² (min: {min_area}px²)")
+                return False
+            
+            # Check aspect ratio - avoid extremely narrow or tall placeholders
+            aspect_ratio = width_px / height_px if height_px > 0 else 1
+            if aspect_ratio < 0.5 or aspect_ratio > 3.0:
+                print(f"        📏 Placeholder aspect ratio unsuitable: {aspect_ratio:.2f} (should be between 0.5 and 3.0)")
+                return False
+            
+            # Check placeholder type - prefer picture, chart, or content placeholders
+            suitable_types = [8, 14, 2]  # PICTURE, CHART, BODY
+            if placeholder_type not in suitable_types:
+                print(f"        📏 Placeholder type {placeholder_type} not suitable for HTML")
+                return False
+                
+            print(f"        ✅ Placeholder suitable for HTML: {width_px}x{height_px}px, aspect: {aspect_ratio:.2f}")
+            return True
+            
+        except Exception as e:
+            print(f"        ⚠️ Error checking placeholder suitability: {e}")
+            return False
 
     def _generate_html_visualization_content(
         self,
