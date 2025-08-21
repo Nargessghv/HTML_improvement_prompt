@@ -20,16 +20,10 @@ services:
         value: production
       - key: NEXT_PUBLIC_API_URL
         value: "${backend.PRIVATE_URL}"
-      - key: NEXT_PUBLIC_APP_URL
-        value: "${APP_URL}"
       - key: NEXT_PUBLIC_APP_NAME
         value: "ekona Slide Creator"
       - key: NEXT_PUBLIC_COMPANY_NAME
         value: "ekona"
-      - key: NEXTAUTH_SECRET
-        value: "${NEXTAUTH_SECRET}"
-      - key: JWT_SECRET
-        value: "${JWT_SECRET}"
       - key: NEXT_PUBLIC_STORAGE_BUCKET
         value: "presentations-prod"
       - key: NEXT_PUBLIC_ENABLE_REALTIME
