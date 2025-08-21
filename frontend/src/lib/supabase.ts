@@ -1,16 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Supabase configuration with validation
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || 'https://placeholder.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || 'placeholder-key'
+// Get Supabase configuration with runtime validation
+function getSupabaseConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || 'https://placeholder.supabase.co'
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || 'placeholder-key'
 
-// Validate URL format
-if (supabaseUrl === 'https://placeholder.supabase.co') {
-  console.warn('Using placeholder Supabase URL - check environment variables')
+  // Validate URL format
+  if (supabaseUrl === 'https://placeholder.supabase.co') {
+    console.warn('⚠️  Using placeholder Supabase URL - check environment variables')
+  }
+
+  return { supabaseUrl, supabaseAnonKey }
 }
 
-// Create Supabase client
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Create Supabase client with runtime configuration
+const config = getSupabaseConfig()
+export const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey)
 
 // Database type definitions
 export type Database = {
