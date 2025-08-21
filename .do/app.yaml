@@ -18,6 +18,10 @@ services:
     envs:
       - key: NODE_ENV
         value: production
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_API_URL
         value: "${backend.PRIVATE_URL}"
       - key: NEXT_PUBLIC_APP_NAME
