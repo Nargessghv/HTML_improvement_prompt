@@ -6,11 +6,29 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   
   // Supabase Configuration (Required)
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url('Invalid Supabase URL'),
+  NEXT_PUBLIC_SUPABASE_URL: z.string().min(1, 'Supabase URL is required')
+    .refine((url) => {
+      // Allow placeholder during deployment
+      if (url === 'https://placeholder.supabase.co') return true
+      try {
+        new URL(url)
+        return true
+      } catch {
+        return false
+      }
+    }, 'Invalid Supabase URL format'),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, 'Supabase anonymous key is required'),
   
-  // Backend API Configuration (Required)
-  NEXT_PUBLIC_API_URL: z.string().url('Invalid API URL'),
+  // Backend API Configuration (Required - but can be placeholder during deployment)
+  NEXT_PUBLIC_API_URL: z.string().min(1, 'API URL is required')
+    .refine((url) => {
+      try {
+        new URL(url)
+        return true
+      } catch {
+        return false
+      }
+    }, 'Invalid API URL format').optional().default('http://localhost:8000'),
   
   // Application Configuration
   NEXT_PUBLIC_APP_URL: z.string().url('Invalid app URL').default('http://localhost:3000'),
