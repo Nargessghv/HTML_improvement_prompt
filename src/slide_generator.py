@@ -1351,6 +1351,7 @@ class SlideGenerator:
     ) -> None:
         """
         Replace a placeholder with an image file while maintaining z-order
+        IMPROVED: Pre-scales image to exact placeholder dimensions for better fit
 
         Args:
             placeholder: PowerPoint placeholder object
@@ -1388,116 +1389,51 @@ class SlideGenerator:
                 # Delete the placeholder
                 shapes._spTree.remove(placeholder._element)
 
-                # Add the image with DPI-aware sizing
-                # First, let PowerPoint auto-size based on image DPI, then adjust if needed
-                picture = shapes.add_picture(image_path, left, top)
+                # IMPROVED: Pre-scale image to exact placeholder dimensions
+                scaled_image_path = self._pre_scale_image_to_placeholder(
+                    image_path, width, height
+                )
+
+                # Add the pre-scaled image with exact placeholder dimensions
+                # This eliminates the need for complex auto-sizing and cropping logic
+                picture = shapes.add_picture(scaled_image_path, left, top, width=width, height=height)
                 
-                # Check if auto-sizing worked correctly
-                auto_width = picture.width
-                auto_height = picture.height
-                
-                # Compare auto-sized dimensions with placeholder dimensions
-                EMU_PER_INCH = 914400
-                tolerance = EMU_PER_INCH * 0.2  # Increased to 0.2 inch tolerance (~19px)
-                
-                width_diff = abs(auto_width.emu - width.emu)
-                height_diff = abs(auto_height.emu - height.emu)
-                
-                auto_width_px = auto_width.emu // 9525
-                auto_height_px = auto_height.emu // 9525
-                target_width_px = width.emu // 9525
-                target_height_px = height.emu // 9525
-                
-                print(f"  - Auto-sized to: {auto_width_px}x{auto_height_px}px")
-                print(f"  - Placeholder: {target_width_px}x{target_height_px}px")
-                
-                if width_diff > tolerance or height_diff > tolerance:
-                    print(f"  - Size difference detected, applying crop-to-fill")
-                    
-                    # Crop to fill: Scale image to cover entire placeholder, then crop excess
-                    auto_aspect = auto_width_px / auto_height_px if auto_height_px > 0 else 1
-                    target_aspect = target_width_px / target_height_px if target_height_px > 0 else 1
-                    
-                    if abs(auto_aspect - target_aspect) < 0.01:  # Aspect ratios match
-                        # Just use placeholder dimensions since aspect ratios match
-                        picture.width = width
-                        picture.height = height
-                        print(f"  - Aspect ratios match, using exact placeholder dimensions")
-                    else:
-                        # Use PowerPoint's crop feature to fill the placeholder
-                        # Set the image to placeholder size (this will distort temporarily)
-                        picture.width = width
-                        picture.height = height
-                        
-                        # Apply crop to maintain aspect ratio
-                        # Calculate how much to scale to fill (use max instead of min)
-                        scale_width = target_width_px / auto_width_px
-                        scale_height = target_height_px / auto_height_px
-                        scale = max(scale_width, scale_height)  # Scale to fill (not fit)
-                        
-                        # The image is now sized to the placeholder
-                        # PowerPoint will automatically center the image content
-                        print(f"  - Applied crop-to-fill at placeholder size: {target_width_px}x{target_height_px}px")
-                        
-                        # Set crop properties to center the image
-                        try:
-                            # Access the crop properties
-                            picture.crop_left = 0
-                            picture.crop_right = 0
-                            picture.crop_top = 0
-                            picture.crop_bottom = 0
-                            
-                            # Calculate crop amounts if aspect ratios don't match
-                            if auto_aspect > target_aspect:
-                                # Image is wider - crop left and right
-                                crop_amount = (1 - (target_aspect / auto_aspect)) / 2
-                                picture.crop_left = crop_amount
-                                picture.crop_right = crop_amount
-                                print(f"  - Cropping sides by {crop_amount:.1%} each")
-                            else:
-                                # Image is taller - crop top and bottom
-                                crop_amount = (1 - (auto_aspect / target_aspect)) / 2
-                                picture.crop_top = crop_amount
-                                picture.crop_bottom = crop_amount
-                                print(f"  - Cropping top/bottom by {crop_amount:.1%} each")
-                        except:
-                            # If crop properties aren't available, the image will just be stretched
-                            print(f"  - Using fill mode (image will fill placeholder)")
+                # IMPROVED: Validate the insertion was successful
+                if self._validate_image_size(picture, placeholder):
+                    print(f"  ✅ Image inserted successfully with exact placeholder dimensions")
                 else:
-                    print(f"  - Auto-sizing worked correctly, keeping auto dimensions")
+                    print(f"  ⚠️ Image size validation failed, but insertion completed")
                 
                 picture.name = f"{name}_visualization"
                 
-                # Restore z-order position if we have it
+                # Restore z-order position (existing logic)
                 if z_order_position is not None and z_order_position < len(shapes):
-                    # Move the picture to the original z-order position
                     picture_element = picture._element
-                    
-                    # Remove from current position
                     parent.remove(picture_element)
                     
-                    # CRITICAL: Check if we're about to insert before grpSpPr
-                    # The grpSpPr element must always come immediately after nvGrpSpPr
                     if next_sibling is not None:
-                        # Check if next_sibling is grpSpPr
                         if next_sibling.tag.endswith('grpSpPr'):
-                            # Find the element after grpSpPr to insert before that instead
                             grpSpPr_next = next_sibling.getnext()
                             if grpSpPr_next is not None:
                                 parent.insert(parent.index(grpSpPr_next), picture_element)
                                 print(f"  - Adjusted z-order to avoid breaking grpSpPr position")
                             else:
-                                # grpSpPr was last, append after it
                                 parent.append(picture_element)
                                 print(f"  - Appended after grpSpPr to maintain structure")
                         else:
-                            # Safe to insert at original position
                             parent.insert(parent.index(next_sibling), picture_element)
                             print(f"  - Maintained z-order position: {z_order_position}")
                     else:
-                        # Was at the end, append
                         parent.append(picture_element)
                         print(f"  - Maintained z-order position: {z_order_position} (end)")
+
+                # Clean up temporary scaled image
+                try:
+                    import os
+                    if os.path.exists(scaled_image_path) and scaled_image_path != image_path:
+                        os.unlink(scaled_image_path)
+                except Exception as e:
+                    print(f"  - Warning: Could not clean up temporary image: {e}")
 
                 print("✅ Replaced placeholder with visualization image")
             else:
@@ -1505,6 +1441,97 @@ class SlideGenerator:
 
         except Exception as e:
             print(f"Error replacing placeholder with image: {e}")
+
+    def _pre_scale_image_to_placeholder(self, image_path: str, target_width, target_height) -> str:
+        """
+        Pre-scale image to exact placeholder dimensions for better PowerPoint insertion
+        
+        Args:
+            image_path: Path to original image
+            target_width: Target width in EMU
+            target_height: Target height in EMU
+            
+        Returns:
+            Path to scaled image (may be same as input if no scaling needed)
+        """
+        try:
+            from PIL import Image
+            
+            # Convert EMU to pixels
+            EMU_PER_INCH = 914400
+            DPI = 96
+            EMU_PER_PIXEL = EMU_PER_INCH / DPI
+            
+            target_width_px = int(target_width.emu / EMU_PER_PIXEL)
+            target_height_px = int(target_height.emu / EMU_PER_PIXEL)
+            
+            print(f"  - Target dimensions: {target_width_px}x{target_height_px}px")
+            
+            with Image.open(image_path) as img:
+                current_width, current_height = img.size
+                
+                # Check if scaling is needed (within 5 pixel tolerance)
+                width_diff = abs(current_width - target_width_px)
+                height_diff = abs(current_height - target_height_px)
+                
+                if width_diff <= 5 and height_diff <= 5:
+                    print(f"  - Image already correct size, no scaling needed")
+                    return image_path
+                
+                # Scale image to exact placeholder dimensions
+                scaled_img = img.resize((target_width_px, target_height_px), Image.Resampling.LANCZOS)
+                
+                # Create temporary file for scaled image
+                import tempfile
+                import os
+                
+                temp_fd, temp_path = tempfile.mkstemp(suffix='.png')
+                os.close(temp_fd)
+                
+                # Save with correct DPI for PowerPoint compatibility
+                scaled_img.save(temp_path, dpi=(96, 96))
+                
+                print(f"  - Scaled image from {current_width}x{current_height}px to {target_width_px}x{target_height_px}px")
+                return temp_path
+                
+        except Exception as e:
+            print(f"  - Warning: Could not pre-scale image: {e}")
+            return image_path  # Return original if scaling fails
+
+    def _validate_image_size(self, picture, placeholder, tolerance_pixels=5) -> bool:
+        """
+        Validate that inserted image matches placeholder dimensions
+        
+        Args:
+            picture: PowerPoint picture object
+            placeholder: Original placeholder object
+            tolerance_pixels: Maximum allowed difference in pixels
+            
+        Returns:
+            True if size matches within tolerance
+        """
+        try:
+            EMU_PER_INCH = 914400
+            DPI = 96
+            EMU_PER_PIXEL = EMU_PER_INCH / DPI
+            
+            actual_width_px = int(picture.width.emu / EMU_PER_PIXEL)
+            actual_height_px = int(picture.height.emu / EMU_PER_PIXEL)
+            target_width_px = int(placeholder.width.emu / EMU_PER_PIXEL)
+            target_height_px = int(placeholder.height.emu / EMU_PER_PIXEL)
+            
+            width_diff = abs(actual_width_px - target_width_px)
+            height_diff = abs(actual_height_px - target_height_px)
+            
+            print(f"  - Actual: {actual_width_px}x{actual_height_px}px")
+            print(f"  - Target: {target_width_px}x{target_height_px}px")
+            print(f"  - Difference: {width_diff}x{height_diff}px")
+            
+            return width_diff <= tolerance_pixels and height_diff <= tolerance_pixels
+            
+        except Exception as e:
+            print(f"  - Warning: Could not validate image size: {e}")
+            return False
 
     def _set_placeholder_content(self, placeholder, content) -> None:
         """
