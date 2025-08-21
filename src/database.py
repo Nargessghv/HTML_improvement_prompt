@@ -132,12 +132,22 @@ class SupabaseClient:
             # Prefer service role key for backend operations to bypass RLS
             self.supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
             
+            # Check environment variables without logging values
+            db_logger.info(f"Environment check - SUPABASE_URL: {'✅' if self.supabase_url else '❌'}")
+            db_logger.info(f"Environment check - Supabase keys: {'✅' if self.supabase_key else '❌'}")
+            
             if not self.supabase_url or not self.supabase_key:
                 raise ValueError("SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY must be set in environment variables")
             
-            # Validate URL format
-            if not self.supabase_url.startswith(('https://', 'http://')):
-                raise ValueError("SUPABASE_URL must be a valid HTTP/HTTPS URL")
+            # Validate URL format with graceful fallback for deployment
+            if self.supabase_url and not self.supabase_url.startswith(('https://', 'http://')):
+                db_logger.warning(f"Invalid Supabase URL format: {self.supabase_url}")
+                # Try to add protocol prefix if missing
+                if '.' in self.supabase_url and not self.supabase_url.startswith(('https://', 'http://')):
+                    self.supabase_url = f"https://{self.supabase_url}"
+                    db_logger.info(f"Added https:// prefix to Supabase URL: {self.supabase_url}")
+                else:
+                    raise ValueError("SUPABASE_URL must be a valid HTTP/HTTPS URL")
             
             # Log which key type is being used for debugging
             key_type = "service_role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anon"
