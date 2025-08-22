@@ -6,17 +6,46 @@ HTML VISUALIZATION CONTEXT:
 
 {detailed_specs}
 
-HTML VIEWPORT REQUIREMENTS:
+🚨 CRITICAL VIEWPORT CONSTRAINT REQUIREMENTS:
 - Exact dimensions: {viewport_width}x{viewport_height} pixels
-- Body element MUST have: class="w-[{viewport_width}px] h-[{viewport_height}px]"
+- Body element MUST have: class="w-[{viewport_width}px] h-[{viewport_height}px] overflow-hidden"
 - Body background MUST be: style="background-color: transparent;"
-- ALL content MUST fit within these dimensions without scrolling
-- Use responsive layouts (grid, flexbox) to ensure proper fit
+- ALL content MUST fit within these dimensions - NO EXCEPTIONS
+- If content is too large, REDUCE text sizes, padding, and spacing IMMEDIATELY
+
+🎨 MANDATORY EKONA/SWISS RED COLOR ENFORCEMENT:
+- ALL text elements: text-[#dc261e] (Ekona red)
+- ALL borders: border-[#dc261e] (Ekona red)
+- ALL accent elements: text-[#ff0000] (Swiss red)
+- ALL lines in diagrams: stroke="#dc261e" (Ekona red)
+- ALL connection lines: stroke="#dc261e" (Ekona red)
+- NO default colors - always override with brand colors
+
+📏 STRICT CONTENT SIZING RULES:
+- Text sizes: Use text-xs (12px) for body, text-sm (14px) for headings
+- For small placeholders: Use text-[10px] for body, text-[8px] for small text
+- Padding: Use p-1 (4px) or p-2 (8px) maximum
+- Margins: Use m-1 (4px) maximum
+- Gaps: Use gap-1 (4px) or gap-2 (8px) maximum
+- Card padding: Use p-2 (8px) maximum
+- Diagram height: Use max-h-[{viewport_height//3}px] maximum
+- If text doesn't fit: REDUCE font sizes immediately (text-[8px], text-[6px])
 
 HTML GENERATION TASK:
 Create a professional HTML visualization for the above content that:
 1. Converts the descriptive content into compelling visual elements
 2. Uses appropriate components (cards, charts, diagrams, timelines)
-3. Maintains strict brand compliance
-4. Fits perfectly within the specified viewport
+3. Maintains strict brand compliance with ALL elements in Ekona/Swiss red
+4. Fits perfectly within the specified viewport with NO overflow
 5. Has a transparent background with solid component backgrounds
+6. ALL lines, borders, and heading text use brand colors (#dc261e, #ff0000)
+
+⚠️ CRITICAL: If content doesn't fit, REDUCE sizes immediately - better small and complete than large and cropped.
+
+📏 CONTENT FITTING STRATEGY:
+1. Start with smallest fonts: text-[8px] for body, text-[10px] for headings
+2. Use minimal spacing: p-1, m-1, gap-1
+3. If still doesn't fit: Use text-[6px] for body, text-[8px] for headings
+4. Prioritize content over aesthetics - readability is secondary to fitting
+5. Use single-line layouts where possible
+6. Remove decorative elements if space is limited

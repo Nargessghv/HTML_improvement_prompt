@@ -2075,6 +2075,19 @@ class HTMLRefinementAgent:
 
                 break  # Early exit if no changes are needed
 
+        # Final content validation after iteration is complete
+        print(f"  🔍 Performing final content validation for slide {slide_number}...")
+        final_validation_result = await self._validate_final_content(
+            current_html, slide_purpose, slide_number, project_id, slide_id
+        )
+        
+        if final_validation_result and final_validation_result.needs_additional_iteration:
+            print(f"  ⚠️ Final validation failed for slide {slide_number}, continuing iteration...")
+            # Continue with additional iteration
+            return await self._refine_html_content_advanced(
+                slide_contents, presentation_plan, topic, config, project_id, slide_id, max_iterations
+            )
+
         print(f"  ✅ Finished refinement loop for slide {slide_number}.")
         return current_html
 
@@ -2490,6 +2503,7 @@ The following changes were already tried in previous iterations. DO NOT reverse 
 
 **⚠️ CRITICAL: Do not undo previous fixes or flip-flop between solutions.**
 **Focus on NEW issues not yet addressed, or build upon previous improvements.**
+**🚨 FINAL DECISION RULE: Only mark as "no changes" when ALL criteria are met - no cropping, proper colors, meaningful content.**
 """
 
     def _create_user_prompt(
@@ -2511,11 +2525,21 @@ If any content is missing in the image it means it is either outside the boundar
 
 {self._format_refinement_history_context(refinement_history)}
 
+**🎯 FINAL VERSION DECISION CRITERIA (CRITICAL):**
+**ONLY mark as "no changes" when ALL criteria are met:**
+1. **NO CONTENT CROPPING**: All content is fully visible within viewport boundaries
+2. **PROPER SIZING**: Content fits perfectly within specified dimensions without overflow
+3. **EKONA/SWISS RED COMPLIANCE**: all secondary elements use correct brand colors (#dc261e for Ekona red, #ff0000 for Swiss red)
+4. **MEANINGFUL CONTENT**: Content effectively communicates the slide's purpose
+5. **VISUAL QUALITY**: Professional appearance with proper hierarchy and spacing
+
 **EVALUATION CRITERIA:**
 • Does the visualization effectively communicate the slide's purpose?
 • Is the content well-organized and visually clear?
 • Are all required elements present and properly positioned?
 • Does the design enhance understanding of the intended message?
+• **CRITICAL**: Is ALL content visible without cropping or overflow?
+• **CRITICAL**: Are ALL elements using correct Ekona/Swiss red brand colors?
 
 **HTML CODE TO EVALUATE:**
 ```html
@@ -2525,9 +2549,13 @@ If any content is missing in the image it means it is either outside the boundar
 **INSTRUCTIONS:**
 1. Review the slide's purpose and requirements above
 2. Examine the rendered image to see how the current HTML performs
-3. Determine if the HTML successfully fulfills the slide's purpose
-4. If improvements are needed, refine the HTML code to better meet the requirements
-5. Focus on purpose alignment, not just visual aesthetics""",
+3. **CRITICAL CHECK**: Verify NO content is cropped or overflowing
+4. **CRITICAL CHECK**: Verify ALL elements use correct brand colors
+5. Determine if the HTML successfully fulfills the slide's purpose
+6. If improvements are needed, refine the HTML code to better meet the requirements
+7. **FINAL DECISION**: Only mark as "no changes" when ALL criteria are met
+
+**🚨 FINAL DECISION RULE: Only mark as "no changes" when ALL criteria are met - no cropping, proper colors, meaningful content.**""",
             },
             {
                 "type": "image_url",
@@ -2570,6 +2598,86 @@ If any content is missing in the image it means it is either outside the boundar
         
         return prompt
 
+    async def _validate_final_content(
+        self, html_content: str, slide_purpose: str, slide_number: int, 
+        project_id: str = None, slide_id: str = None
+    ) -> Optional[dict]:
+        """
+        Advanced final content validation after iteration is complete.
+        Checks if content is meaningful, properly sized, and brand compliant.
+        """
+        try:
+            # Create validation prompt
+            validation_prompt = f"""**FINAL CONTENT VALIDATION FOR SLIDE {slide_number}**
+
+**SLIDE PURPOSE:** {slide_purpose}
+
+**VALIDATION CRITERIA:**
+1. **CONTENT MEANINGFULNESS**: Does the content effectively communicate the slide's purpose?
+2. **NO CROPPING**: Is ALL content visible within viewport boundaries?
+3. **BRAND COMPLIANCE**: Are all secondary elements using correct Ekona/Swiss red colors?
+4. **PROFESSIONAL QUALITY**: Is the design polished and business-appropriate?
+5. **PURPOSE ALIGNMENT**: Does the visualization support the slide's objectives?
+
+**HTML TO VALIDATE:**
+```html
+{html_content}
+```
+
+**INSTRUCTIONS:**
+Analyze the HTML content against the validation criteria above.
+If ANY criteria are not met, respond with "NEEDS_ADDITIONAL_ITERATION" and explain why.
+If ALL criteria are met, respond with "VALIDATION_PASSED".
+
+**RESPONSE FORMAT:**
+{{"validation_status": "VALIDATION_PASSED" or "NEEDS_ADDITIONAL_ITERATION", "reasoning": "explanation", "needs_additional_iteration": true/false}}"""
+
+            # Get LLM validation
+            response = await self._get_llm_validation(validation_prompt)
+            
+            if response and response.get("validation_status") == "NEEDS_ADDITIONAL_ITERATION":
+                print(f"    ❌ Final validation failed: {response.get('reasoning', 'Unknown issue')}")
+                return {
+                    "needs_additional_iteration": True,
+                    "reasoning": response.get("reasoning", "Final validation failed")
+                }
+            else:
+                print(f"    ✅ Final validation passed for slide {slide_number}")
+                return {
+                    "needs_additional_iteration": False,
+                    "reasoning": "All validation criteria met"
+                }
+                
+        except Exception as e:
+            print(f"    ⚠️ Final validation error: {e}")
+            return None
+
+    async def _get_llm_validation(self, validation_prompt: str) -> Optional[dict]:
+        """Get LLM validation response for final content check"""
+        try:
+            # Use the same LLM client for validation
+            response = self.llm_client.generate_vision_content(
+                validation_prompt,
+                None,  # No image for validation
+                config=None
+            )
+            
+            if response:
+                # Parse JSON response
+                import json
+                import re
+                
+                # Try to extract JSON from response
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    return json.loads(json_match.group(0))
+                    
+            return None
+            
+        except Exception as e:
+            print(f"    ⚠️ LLM validation error: {e}")
+            return None
+
     def _get_system_prompt_legacy(self) -> str:
         """DEPRECATED: Old hardcoded system prompt - DO NOT USE"""
         return """You are an expert web developer and presentation design specialist.
@@ -2582,13 +2690,22 @@ Your response MUST be a JSON object that strictly follows this format:
 `{"html_code": "<FULL_HTML_CODE>", "reasoning": "...", "changes_applied": ["...", "..."]}`.
 Do NOT provide any other text, explanations, or markdown.
 
+**🎯 FINAL VERSION DECISION CRITERIA (CRITICAL FOR ITERATION CONTROL):**
+**ONLY mark as "no changes" and finalize iteration when ALL criteria are met:**
+1. **NO CONTENT CROPPING**: All content is fully visible within viewport boundaries
+2. **PROPER SIZING**: Content fits perfectly within specified dimensions without overflow
+3. **EKONA/SWISS RED COMPLIANCE**: all secondary elements, use correct brand colors (#dc261e for Ekona red, #ff0000 for Swiss red) - like connection lines, 
+4. **MEANINGFUL CONTENT**: Content effectively communicates the slide's purpose
+5. **VISUAL QUALITY**: Professional appearance with proper hierarchy and spacing
+
 **CRITICAL EVALUATION PRIORITIES:**
 
 **1. 🚨 CRITICAL HEIGHT CONSTRAINT ANALYSIS (ABSOLUTE TOP PRIORITY) 🚨:**
-- **DETECT MISSING CONTENT**: If ANY content is missing from the bottom of the image, the HTML HEIGHT is TOO LARGE and content is CROPPED
+- **DETECT MISSING CONTENT**: If ANY content is missing from the bottom, left, right or top of the image, the HTML HEIGHT is TOO LARGE and content is CROPPED
+- **DETECT OVERFLOWING CONTENT**: If ANY content is overflowing from the bottom, left, right or top of the image, the HTML HEIGHT is TOO LARGE and content is CROPPED
 - **CHECK VIEWPORT DIMENSIONS**: Extract w-[NNNpx] h-[NNNpx] from body class - this is the ABSOLUTE MAXIMUM allowed size
 - **CALCULATE TOTAL HEIGHT**: body padding + card padding + content + gaps MUST be < viewport height
-- **MERMAID DIAGRAM OVERFLOW**: If Mermaid diagrams are cut off, they are exceeding viewport height - CRITICAL FIX NEEDED  
+- **MERMAID DIAGRAM OVERFLOW**: If Mermaid diagrams are cut off, they are exceeding viewport height - CRITICAL FIX NEEDED - reduce diagram complexity.
 - **IMMEDIATE ACTION REQUIRED**: If bottom content is missing, reduce padding, text sizes, or content to fit within height limit
 - **HEIGHT MATH**: For h-[456px]: p-4(32px) + card-body p-4(32px) + content + gaps MUST be < 456px
 - **VALIDATION**: If rendered content is taller than specified h-[NNNpx], it WILL be cropped and invisible
@@ -2605,8 +2722,12 @@ Do NOT provide any other text, explanations, or markdown.
 - **Grid/Flex Usage**: Is CSS Grid or Flexbox used effectively for layout?
 - **Safe Margins**: Are there appropriate margins (minimum 20px) on all sides?
 
-**4. Color Palette Validation:** 
-- Are ALL elements using the correct Ekona colors? Check every text element, background, accent, and component for brand compliance.
+**4. 🎨 MANDATORY EKONA/SWISS RED COLOR ENFORCEMENT:**
+- **PRIMARY BRAND COLOR**: Ekona Red (#dc261e) - Use for ALL primary elements, headings, accents
+- **SECONDARY BRAND COLOR**: Swiss Red (#ff0000) - Use for secondary elements, highlights
+- **COLOR COMPLIANCE CHECK**: Verify EVERY element uses correct brand colors
+- **NO DEFAULT COLORS**: Never use default component colors - always override with brand colors
+- **VISUAL CONSISTENCY**: Ensure consistent brand color application throughout
 
 **5. Purpose Assessment:** 
 - Does the HTML effectively communicate the slide's intended message?
@@ -2638,6 +2759,13 @@ Do NOT provide any other text, explanations, or markdown.
 - **Card Body Overflow**: REDUCE card-body padding: p-6→p-4→p-3, use flex-shrink
 - **Grid Gaps Too Large**: REDUCE gaps: gap-6→gap-4→gap-2 for grid layouts
 - **CALCULATION CHECK**: Sum all padding + content height < viewport h-[NNNpx]
+
+**🎨 BRAND COLOR ENFORCEMENT SOLUTIONS:**
+- **Primary Elements**: Use `text-[#dc261e]` for headings, `bg-[#dc261e]` for primary backgrounds
+- **Secondary Elements**: Use `text-[#ff0000]` for highlights, `border-[#ff0000]` for borders
+- **Card Headers**: Use `bg-[#dc261e] text-white` for card titles
+- **Accent Elements**: Use `text-[#dc261e]` for icons, buttons, and interactive elements
+- **Override Defaults**: Always specify brand colors explicitly, never rely on default component colors
 
 **MANDATORY CARD PATTERNS TO ENFORCE:**
 ```html

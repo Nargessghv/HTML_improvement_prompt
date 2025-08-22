@@ -496,19 +496,42 @@ IMPORTANT HTML NOTES:
             # Fallback to a minimal prompt if file not found
             base_prompt = "Generate valid HTML content for PowerPoint slides."
         
-        # Add adaptive layout guidance for unusual viewport sizes
+        # Add STRICT viewport constraint guidance for ALL sizes
         aspect_ratio = viewport_width / viewport_height if viewport_height > 0 else 1.0
         is_short_placeholder = viewport_height < 500
+        
+        # Calculate dynamic font sizes based on viewport dimensions
+        dynamic_font_sizes = self._calculate_dynamic_font_sizes(viewport_width, viewport_height)
+        
+        # ALWAYS add strict sizing rules regardless of viewport size
+        strict_sizing_rules = f"""
+🚨 CRITICAL VIEWPORT CONSTRAINT ENFORCEMENT:
+- Viewport: {viewport_width}x{viewport_height}px - ALL content MUST fit
+- Dynamic Font Sizing: {dynamic_font_sizes}
+- Padding: Use p-1 (4px) or p-2 (8px) maximum
+- Margins: Use m-1 (4px) maximum
+- Gaps: Use gap-1 (4px) or gap-2 (8px) maximum
+- Card padding: Use p-2 (8px) maximum
+- Diagram height: Use max-h-[{viewport_height//3}px] maximum
+- NO OVERFLOW: If content doesn't fit, REDUCE sizes immediately
+
+🎨 MANDATORY COLOR ENFORCEMENT:
+- ALL borders: border-[#dc261e] (Ekona red)
+- ALL lines: stroke="#dc261e" (Ekona red)
+- NO default colors - always override with brand colors"""
         
         if is_short_placeholder and aspect_ratio > 2.5:
             layout_addon = f"""
 HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
 - Height is LIMITED ({viewport_height}px) - use horizontal layouts
 - Use compact spacing: gap-2, p-2, mb-2
-- Reduce text sizes: text-sm for body, text-base for headings
+- Reduce text sizes: text-xs for body, text-sm for headings
 - Prioritize key information only
 - Use single-row layouts where possible"""
             base_prompt += "\n\n" + layout_addon
+        
+        # Always add strict sizing rules
+        base_prompt += "\n\n" + strict_sizing_rules
         
         # Save system prompt for debugging
         if placeholder_name != "unknown":
@@ -527,6 +550,29 @@ HTML LAYOUT ADAPTATION - SHORT & WIDE VIEWPORT:
                 pass
         
         return base_prompt
+    
+    def _calculate_dynamic_font_sizes(self, viewport_width: int, viewport_height: int) -> str:
+        """
+        Calculate appropriate font sizes based on viewport dimensions.
+        Ensures text fits within the available space.
+        """
+        # Calculate available space for content (accounting for padding)
+        available_width = viewport_width - 16  # 8px padding on each side
+        available_height = viewport_height - 16  # 8px padding on each side
+        
+        # Calculate area and determine font size strategy
+        area = available_width * available_height
+        
+        if area < 50000:  # Very small placeholders (< 50k pixels)
+            return "text-xs (12px) for headings, text-[10px] for body, text-[8px] for small text"
+        elif area < 100000:  # Small placeholders (< 100k pixels)
+            return "text-sm (14px) for headings, text-xs (12px) for body, text-[10px] for small text"
+        elif area < 200000:  # Medium placeholders (< 200k pixels)
+            return "text-base (16px) for headings, text-sm (14px) for body, text-xs (12px) for small text"
+        elif area < 400000:  # Large placeholders (< 400k pixels)
+            return "text-lg (18px) for headings, text-base (16px) for body, text-sm (14px) for small text"
+        else:  # Very large placeholders
+            return "text-xl (20px) for headings, text-lg (18px) for body, text-base (16px) for small text"
     
     def get_html_user_prompt(
         self,

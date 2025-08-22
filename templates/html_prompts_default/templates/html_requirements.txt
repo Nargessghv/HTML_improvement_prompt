@@ -1,34 +1,57 @@
 DEFAULT HTML REQUIREMENTS AND SPECIFICATIONS:
 
-VIEWPORT REQUIREMENTS:
-1. **Overall Container**: The `<body>` of the HTML MUST be exactly `{viewport_width}x{viewport_height}` pixels. Use Tailwind classes `w-[{viewport_width}px] h-[{viewport_height}px]`. The root element should be a flex container (`flex`, `w-full`, `h-full`) to manage layout.
+🚨 CRITICAL VIEWPORT CONSTRAINT REQUIREMENTS:
+1. **Overall Container**: The `<body>` of the HTML MUST be exactly `{viewport_width}x{viewport_height}` pixels. Use Tailwind classes `w-[{viewport_width}px] h-[{viewport_height}px] overflow-hidden`. The root element should be a flex container (`flex`, `w-full`, `h-full`) to manage layout.
 
-2. **Diagram Sizing**: The `div` containing a Mermaid diagram should NOT fill the entire container if there is other content.
+2. **STRICT CONTENT SIZING**: ALL content MUST fit within viewport with NO overflow.
+   - Text sizes: Use text-xs (12px) for body, text-sm (14px) for headings
+   - For small placeholders: Use text-[10px] for body, text-[8px] for small text
+   - For very small placeholders: Use text-[8px] for body, text-[6px] for small text
+   - Padding: Use p-1 (4px) or p-2 (8px) maximum
+   - Margins: Use m-1 (4px) maximum
+   - Gaps: Use gap-1 (4px) or gap-2 (8px) maximum
+   - Card padding: Use p-2 (8px) maximum
+   - Diagram height: Use max-h-[{viewport_height//3}px] maximum
+   - If text doesn't fit: REDUCE font sizes immediately (text-[8px], text-[6px])
+
+3. **Diagram Sizing**: The `div` containing a Mermaid diagram should NOT fill the entire container if there is other content.
    - Use flexbox or grid to allocate space
-   - The diagram's container should have padding (e.g., `p-8`)
+   - The diagram's container should have MINIMAL padding (e.g., `p-2` or `p-3`)
    - Example Layout:
-     <body class="w-[{viewport_width}px] h-[{viewport_height}px] flex flex-col p-8" style="background-color: transparent;">
-       <h1 class="text-3xl font-bold mb-4">Diagram Title</h1>
-       <div class="mermaid flex-grow">
+     <body class="w-[{viewport_width}px] h-[{viewport_height}px] flex flex-col p-2 overflow-hidden" style="background-color: transparent;">
+       <h1 class="text-xs font-bold mb-1">Diagram Title</h1>
+       <div class="mermaid flex-grow max-h-[{viewport_height//3}px]">
          ... Mermaid diagram ...
        </div>
      </body>
 
-3. **No Overflow**: All content MUST fit within the `{viewport_width}x{viewport_height}` viewport without any scrolling or content being cut off.
+4. **NO OVERFLOW**: All content MUST fit within the `{viewport_width}x{viewport_height}` viewport without any scrolling or content being cut off. If content is too large, REDUCE sizes immediately.
+
+🎨 MANDATORY COLOR ENFORCEMENT:
+- ALL headings Text Elements: Use Ekona Red (#dc261e) for ALL headings
+- ALL Borders: Use Ekona Red (#dc261e) for ALL borders and lines
+- ALL Lines in Diagrams: Use Ekona Red (#dc261e) for ALL connection lines
+- Background: TRANSPARENT for PowerPoint integration
+- Component Backgrounds: White (#ffffff) for cards and panels
 
 VISUAL DESIGN:
 - Components:
   - Use DaisyUI and Flowbite components for layout and elements
   - Use Mermaid.js for diagrams
   - Use Tailwind CSS for spacing and layout
+  - ALWAYS override colors with inline styles using exact hex values
 
 MERMAID DIAGRAM STYLING:
 - **Separate Title**: The main title MUST be a standard HTML tag (e.g., `<h1>`) placed OUTSIDE the `<div class="mermaid">`.
 - **Wrap in Components**: Wrap the Mermaid `div` inside a DaisyUI `card` for a professional frame.
 - **Focus on Structure**: Provide clean, well-structured Mermaid syntax.
+- **ALL LINES RED**: Ensure all connection lines and elements use Ekona Red (#dc261e)
+- **Height Constraint**: Use max-h-[{viewport_height//2}px] to prevent overflow
 
 ADVANCED VISUALIZATION (D3.js):
 - **Use for Timelines and Roadmaps**: D3.js is preferred for timeline and roadmap visualizations.
 - **Use for Custom Visuals**: For complex, data-driven, or highly polished visualizations.
 - **Container Element**: Include `<div id="d3-container" class="w-full h-full"></div>`.
 - **Data in Script Tag**: Define data as JSON array inside a `<script>` tag.
+- **ALL LINES RED**: Ensure all connection lines, borders use Ekona Red (#dc261e) in D3.js
+- **Height Constraint**: Use max-height to prevent overflow within viewport
